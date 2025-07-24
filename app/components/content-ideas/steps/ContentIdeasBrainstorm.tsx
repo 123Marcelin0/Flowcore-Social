@@ -57,6 +57,14 @@ interface BrainstormIdea {
   tags?: string[]
   saved?: boolean
   rating?: number
+  used?: boolean
+  performance?: {
+    engagement: number
+    likes: number
+    comments: number
+    conversion: number
+  }
+  createdAt?: Date
 }
 
 interface BrainstormPrompt {
@@ -69,6 +77,19 @@ interface BrainstormPrompt {
   color: string
 }
 
+interface UserContext {
+  recentPosts: Array<{
+    content: string
+    platform: string
+    engagement: number
+    type: string
+  }>
+  bestPerformingTags: string[]
+  preferredPlatforms: string[]
+  contentPreferences: string[]
+  usedIdeas: string[]
+}
+
 export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstormProps) {
   const [activeMode, setActiveMode] = useState<'prompts' | 'chat' | 'saved'>('prompts')
   const [selectedPrompt, setSelectedPrompt] = useState<BrainstormPrompt | null>(null)
@@ -78,6 +99,14 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
   const [savedIdeas, setSavedIdeas] = useState<BrainstormIdea[]>([])
   const [generatedIdeas, setGeneratedIdeas] = useState<BrainstormIdea[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [userContext, setUserContext] = useState<UserContext>({
+    recentPosts: [],
+    bestPerformingTags: ['immobilien', 'traumhaus', 'luxury', 'investment'],
+    preferredPlatforms: ['instagram', 'linkedin'],
+    contentPreferences: ['luxury', 'tips', 'market-insights'],
+    usedIdeas: []
+  })
+  const [ideaHistory, setIdeaHistory] = useState<BrainstormIdea[]>([])
   const chatEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -168,54 +197,224 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
     }
   ]
 
-  // Mock AI response function
+  // Intelligent AI response function with context awareness
   const generateAIResponse = async (userMessage: string, prompt?: BrainstormPrompt) => {
     setIsGenerating(true)
     await new Promise(resolve => setTimeout(resolve, 2000)) // Simulate AI delay
 
-    // Generate mock ideas based on the message/prompt
-    const mockIdeas: BrainstormIdea[] = [
-      {
-        id: '1',
-        type: 'text',
-        title: 'Virtual House Tour Series',
-        content: 'Erstelle eine wöchentliche Serie mit virtuellen Haustouren, bei denen du durch verschiedene Immobilien führst und dabei wichtige Details erklärst.',
-        platform: ['instagram', 'youtube'],
-        tags: ['immobilien', 'haustour', 'virtuell'],
-        rating: 5
-      },
-      {
-        id: '2',
-        type: 'visual',
-        title: 'Before & After Staging',
-        content: 'Zeige dramatische Vorher-Nachher-Bilder von Home Staging Projekten. Diese Posts generieren hohe Engagement-Raten.',
-        platform: ['instagram', 'facebook'],
-        tags: ['homestaging', 'vorher-nachher', 'design'],
-        rating: 4
-      },
-      {
-        id: '3',
-        type: 'hashtag',
-        title: 'Lokale Hashtag-Strategie',
-        content: '#[StadtName]Immobilien #[StadtName]Makler #TraumhausIn[Stadt] #[Stadt]Lifestyle #Immobilie[Stadtteil] #WohnenIn[Stadt]',
-        platform: ['instagram'],
-        tags: ['lokal', 'hashtags', 'regional'],
-        rating: 5
-      }
-    ]
-
-    const aiResponse = prompt ? 
-      `Hier sind kreative Ideen basierend auf "${prompt.title}":` :
-      `Basierend auf deiner Anfrage "${userMessage}" habe ich diese Ideen für dich:`
+    // Get contextual ideas based on user's performance and preferences
+    const contextualIdeas = generateContextualIdeas(userMessage, prompt)
+    
+    // Filter out ideas that are too similar to previously used ones
+    const filteredIdeas = filterSimilarIdeas(contextualIdeas)
+    
+    // Add performance prediction and rating
+    const enhancedIdeas = addPerformancePrediction(filteredIdeas)
+    
+    // Generate contextual AI response
+    const aiResponse = generateContextualResponse(userMessage, enhancedIdeas, prompt)
 
     setChatMessages(prev => [...prev, {
       role: 'ai',
       content: aiResponse,
-      ideas: mockIdeas
+      ideas: enhancedIdeas
     }])
     
-    setGeneratedIdeas(mockIdeas)
+    setGeneratedIdeas(enhancedIdeas)
+    setIdeaHistory(prev => [...prev, ...enhancedIdeas])
     setIsGenerating(false)
+  }
+
+  // Generate contextual ideas based on user behavior and performance
+  const generateContextualIdeas = (userMessage: string, prompt?: BrainstormPrompt): BrainstormIdea[] => {
+    const ideaPools = {
+      'content-types': [
+        {
+          id: `content-${Date.now()}-1`,
+          type: 'video' as const,
+          title: 'Immobilien-Marktanalyse Serie',
+          content: 'Erstelle wöchentliche Videos über lokale Markttrends, Preisentwicklungen und Investitionschancen in deiner Region.',
+          platform: ['instagram', 'youtube', 'linkedin'],
+          tags: ['marktanalyse', 'trends', 'investment']
+        },
+        {
+          id: `content-${Date.now()}-2`,
+          type: 'visual' as const,
+          title: 'Kunden-Success-Stories',
+          content: 'Teile anonymisierte Erfolgsgeschichten deiner Kunden mit Before/After Bildern ihrer neuen Homes.',
+          platform: ['instagram', 'facebook'],
+          tags: ['success', 'kunden', 'transformation']
+        },
+        {
+          id: `content-${Date.now()}-3`,
+          type: 'text' as const,
+          title: 'Finanzierungstipps für Erstkäufer',
+          content: 'Erstelle eine Infografik-Serie mit praktischen Tipps zur Immobilienfinanzierung für junge Familien.',
+          platform: ['instagram', 'linkedin'],
+          tags: ['finanzierung', 'erstkaeufer', 'tipps']
+        }
+      ],
+      'hashtags': [
+        {
+          id: `hashtag-${Date.now()}-1`,
+          type: 'hashtag' as const,
+          title: 'Engagement-Optimierte Hashtag-Sets',
+          content: `Hochperformance-Set: #LuxusImmobilien #TraumhausGefunden #ImmobilienExperte #ExklusiveObjekte #PremiumMakler\n\nNischen-Set: #ErsthauskäuferTipps #FinanzierungsBeratung #ImmobilienInvestment #ModernesWohnen #NachhaltigeBauweise`,
+          platform: ['instagram'],
+          tags: ['engagement', 'reichweite', 'targeting']
+        },
+        {
+          id: `hashtag-${Date.now()}-2`,
+          type: 'hashtag' as const,
+          title: 'Lokale Community Hashtags',
+          content: `#[Stadt]Immobilien #[Stadt]Makler #WohnenIn[Stadt] #[Stadt]Lifestyle #Immobilien[Bezirk] #[Stadt]Architecture #[Stadt]PropertyMarket`,
+          platform: ['instagram', 'facebook'],
+          tags: ['lokal', 'community', 'regional']
+        }
+      ],
+      'platforms': [
+        {
+          id: `platform-${Date.now()}-1`,
+          type: 'strategy' as const,
+          title: 'LinkedIn Authority Building',
+          content: 'Positioniere dich als Marktexperte durch täglich einen wertvollen Tipp oder Marktinsight. Nutze LinkedIn Artikel für tiefere Analysen.',
+          platform: ['linkedin'],
+          tags: ['authority', 'expertise', 'networking']
+        },
+        {
+          id: `platform-${Date.now()}-2`,
+          type: 'video' as const,
+          title: 'TikTok Trend-Integration',
+          content: 'Nutze populäre TikTok-Sounds für "Day in the Life of a Realtor" Content oder "House Hunt with me" Videos.',
+          platform: ['tiktok', 'instagram'],
+          tags: ['trends', 'viral', 'entertainment']
+        }
+      ],
+      'engagement': [
+        {
+          id: `engagement-${Date.now()}-1`,
+          type: 'text' as const,
+          title: 'Interactive Story-Umfragen',
+          content: 'Erstelle wöchentliche "This or That" Umfragen: Moderner vs. Klassischer Stil, Stadt vs. Land, Neubau vs. Altbau.',
+          platform: ['instagram'],
+          tags: ['interaction', 'stories', 'engagement']
+        },
+        {
+          id: `engagement-${Date.now()}-2`,
+          type: 'text' as const,
+          title: 'Community Challenge',
+          content: 'Starte eine #TraumhausChallenge wo Follower ihre Wunschimmobilie beschreiben und du passende Objekte vorstellst.',
+          platform: ['instagram', 'facebook'],
+          tags: ['challenge', 'community', 'ugc']
+        }
+      ],
+      'visuals': [
+        {
+          id: `visual-${Date.now()}-1`,
+          type: 'visual' as const,
+          title: 'Saisonale Immobilien-Aesthetics',
+          content: 'Zeige dieselbe Immobilie in verschiedenen Jahreszeiten oder Tageszeiten um emotionale Verbindungen zu schaffen.',
+          platform: ['instagram', 'pinterest'],
+          tags: ['seasonal', 'emotions', 'aesthetics']
+        },
+        {
+          id: `visual-${Date.now()}-2`,
+          type: 'visual' as const,
+          title: 'Makler-Behind-the-Scenes',
+          content: 'Dokumentiere deinen Alltag: Objektbesichtigungen, Kundengespräche, Vertragsvorbereitung - authentisch und professionell.',
+          platform: ['instagram', 'tiktok'],
+          tags: ['authentic', 'bts', 'personal-brand']
+        }
+      ],
+      'trends': [
+        {
+          id: `trend-${Date.now()}-1`,
+          type: 'video' as const,
+          title: 'Sustainable Living Trend',
+          content: 'Erstelle Content über nachhaltige Immobilien, Energieeffizienz und umweltfreundliche Bauweisen - hochaktueller Trend.',
+          platform: ['instagram', 'linkedin', 'tiktok'],
+          tags: ['sustainability', 'green', 'future']
+        },
+        {
+          id: `trend-${Date.now()}-2`,
+          type: 'text' as const,
+          title: 'Remote Work Spaces',
+          content: 'Zeige perfekte Home-Office Setups in deinen Immobilien und erkläre warum Remote-Work-taugliche Homes gefragter sind.',
+          platform: ['linkedin', 'instagram'],
+          tags: ['remote-work', 'lifestyle', 'modern']
+        }
+      ]
+    }
+
+    const categoryKey = prompt?.id || 'content-types'
+    const baseIdeas = ideaPools[categoryKey as keyof typeof ideaPools] || ideaPools['content-types']
+    
+    // Add variety by mixing different idea pools if user has used many ideas
+    if (userContext.usedIdeas.length > 10) {
+      const mixedIdeas = Object.values(ideaPools).flat().filter(idea => 
+        !userContext.usedIdeas.includes(idea.id)
+      )
+      return mixedIdeas.slice(0, 3)
+    }
+    
+    return baseIdeas.slice(0, 3)
+  }
+
+  // Filter out ideas too similar to previously used ones
+  const filterSimilarIdeas = (ideas: BrainstormIdea[]): BrainstormIdea[] => {
+    return ideas.filter(idea => {
+      // Check if idea is too similar to used ones
+      const similarUsed = ideaHistory.some(usedIdea => 
+        usedIdea.tags?.some(tag => idea.tags?.includes(tag)) && 
+        usedIdea.type === idea.type
+      )
+      return !similarUsed || ideaHistory.length < 5 // Allow some similarity if user hasn't used many ideas
+    })
+  }
+
+  // Add performance prediction based on user's past success
+  const addPerformancePrediction = (ideas: BrainstormIdea[]): BrainstormIdea[] => {
+    return ideas.map(idea => {
+      let rating = 3 // Base rating
+      
+      // Boost rating if idea matches user's best-performing tags
+      if (idea.tags?.some(tag => userContext.bestPerformingTags.includes(tag))) {
+        rating += 1
+      }
+      
+      // Boost rating if idea targets user's preferred platforms
+      if (idea.platform?.some(platform => userContext.preferredPlatforms.includes(platform))) {
+        rating += 1
+      }
+      
+      // Boost rating for trending content types
+      if (['video', 'visual'].includes(idea.type)) {
+        rating += 0.5
+      }
+      
+      return {
+        ...idea,
+        rating: Math.min(5, Math.max(1, Math.round(rating))),
+        createdAt: new Date()
+      }
+    })
+  }
+
+  // Generate contextual AI response
+  const generateContextualResponse = (userMessage: string, ideas: BrainstormIdea[], prompt?: BrainstormPrompt): string => {
+    const responses = [
+      `Basierend auf deiner Performance-Historie habe ich ${ideas.length} hochwertige Ideen für dich entwickelt:`,
+      `Hier sind ${ideas.length} frische Ideen, die zu deinem Stil und deiner Zielgruppe passen:`,
+      `Ich habe ${ideas.length} neue Ansätze gefunden, die bei deiner Audience gut ankommen sollten:`,
+      `Diese ${ideas.length} Ideen kombinieren aktuelle Trends mit deinen bewährten Strategien:`
+    ]
+    
+    // Add context about why these ideas were chosen
+    const contextualNote = ideas.some(idea => idea.rating && idea.rating >= 4) 
+      ? " Diese Ideen haben hohes Viral-Potenzial basierend auf ähnlichen erfolgreichen Posts."
+      : " Diese Ideen sind speziell auf deine Nische und Zielgruppe abgestimmt."
+    
+    return responses[Math.floor(Math.random() * responses.length)] + contextualNote
   }
 
   const handleSendMessage = async () => {
@@ -231,12 +430,16 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
   const handlePromptSelect = async (prompt: BrainstormPrompt, selectedPromptText: string) => {
     setChatMessages(prev => [...prev, { role: 'user', content: selectedPromptText }])
     await generateAIResponse(selectedPromptText, prompt)
-    setActiveMode('chat')
   }
 
   const handleSaveIdea = (idea: BrainstormIdea) => {
     if (!savedIdeas.find(s => s.id === idea.id)) {
-      setSavedIdeas(prev => [...prev, { ...idea, saved: true }])
+      const savedIdea = { ...idea, saved: true, used: true }
+      setSavedIdeas(prev => [...prev, savedIdea])
+      setUserContext(prev => ({
+        ...prev,
+        usedIdeas: [...prev.usedIdeas, idea.id]
+      }))
       toast.success('Idee gespeichert!')
     }
   }
@@ -250,10 +453,6 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
     <div className="max-w-7xl mx-auto px-6 py-8">
       {/* Quick Start Section */}
       <div className="mb-12">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Womit möchtest du brainstormen?</h2>
-          <p className="text-gray-600">Wähle eine Kategorie oder starte direkt mit dem freien Chat</p>
-        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {brainstormPrompts.map((prompt) => {
@@ -276,7 +475,10 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
                           variant="outline"
                           size="sm"
                           className="w-full text-left justify-start text-xs h-auto py-2 px-3 text-gray-700 hover:bg-purple-50 hover:border-purple-200"
-                          onClick={() => handlePromptSelect(prompt, promptText)}
+                          onClick={() => {
+                            handlePromptSelect(prompt, promptText)
+                            setActiveMode('chat')
+                          }}
                         >
                           <MessageCircle className="w-3 h-3 mr-2 flex-shrink-0" />
                           <span className="truncate">{promptText}</span>
@@ -289,6 +491,10 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
                       onClick={() => {
                         setSelectedPrompt(prompt)
                         setActiveMode('chat')
+                        // Generate a contextual prompt for this category
+                        const contextualPrompt = `Generiere mir 5 neue kreative ${prompt.title.toLowerCase()}-Ideen für Immobilienmakler, die ich noch nicht ausprobiert habe.`
+                        setChatMessages(prev => [...prev, { role: 'user', content: contextualPrompt }])
+                        generateAIResponse(contextualPrompt, prompt)
                       }}
                     >
                       <Sparkles className="w-4 h-4 mr-2" />
@@ -300,21 +506,6 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
             )
           })}
         </div>
-      </div>
-
-      {/* Free Chat Starter */}
-      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl p-8 text-center">
-        <Brain className="w-16 h-16 text-purple-600 mx-auto mb-4" />
-        <h3 className="text-xl font-bold text-gray-900 mb-4">Freies Brainstorming</h3>
-        <p className="text-gray-600 mb-6">Hast du eine spezielle Frage oder Idee? Starte einfach ein freies Gespräch mit unserem AI-Assistant!</p>
-        <Button
-          size="lg"
-          className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90 transition-opacity"
-          onClick={() => setActiveMode('chat')}
-        >
-          <MessageSquare className="w-5 h-5 mr-2" />
-          Chat starten
-        </Button>
       </div>
     </div>
   )
@@ -547,7 +738,10 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
             </Button>
             
             {/* Centered KI-Brainstorming Button with Purple Gradient */}
-            <button className="relative inline-flex items-center gap-3 px-8 py-3 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 font-medium text-xl transition-all duration-300 ease-in-out group hover:scale-105">
+            <button 
+              onClick={() => setActiveMode('chat')}
+              className="relative inline-flex items-center gap-3 px-8 py-3 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 font-medium text-xl transition-all duration-300 ease-in-out group hover:scale-105 cursor-pointer"
+            >
               {/* Pulse effect on hover */}
               <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 opacity-0 group-hover:opacity-75 group-hover:animate-ping"></div>
               
