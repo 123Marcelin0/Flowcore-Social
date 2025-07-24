@@ -1,0 +1,1384 @@
+"use client"
+
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from "react"
+import {
+  Plus,
+  MessageSquare,
+  Instagram,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Video,
+  Edit3,
+  Copy,
+  Trash2,
+  ChevronDown,
+  Image as ImageIcon,
+  Play,
+  Heart,
+  MessageCircle,
+  Search,
+  Sparkles,
+  Send,
+  X,
+  Bot,
+  Calendar as CalendarIcon,
+  Loader2
+} from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { CalendarPopup } from "@/components/ui/calendar-popup"
+import { AIPostWorkflow } from "./ai-post-workflow"
+import { PostDetailPopup } from "./post-detail-popup"
+import { DynamicText } from "./dynamic-text"
+import { usePost } from "@/lib/post-context"
+import { useAuth } from "@/lib/auth-context"
+import { useDate } from "@/lib/date-context"
+import { supabase } from "@/lib/supabase"
+import { toast } from "sonner"
+
+// Local Post interface that matches the PostDetailPopup component
+interface Post {
+  id: string
+  media: string
+  mediaType: "image" | "video"
+  text: string
+  platforms: ("instagram" | "facebook" | "twitter" | "linkedin" | "tiktok")[]
+  status: "scheduled" | "published" | "draft" | "failed"
+  date: string
+  likes?: number
+  comments?: number
+}
+
+interface TimeInterval {
+  startDate: Date
+  startTime?: string
+  endDate?: Date
+  endTime?: string
+}
+
+type Platform = 'instagram' | 'facebook' | 'twitter' | 'linkedin' | 'tiktok'
+type PostStatus = 'draft' | 'scheduled' | 'published' | 'failed'
+
+// Convert PostContext Post to component Post format
+const convertPostContextToComponentPost = (post: any): Post => {
+  // Use scheduled date and time if available, otherwise fall back to created date
+  let displayDate = post.createdAt;
+  
+  if (post.scheduledDate && post.scheduledTime) {
+    // Create date object with careful timezone handling to maintain precision
+    // Parse the date string (YYYY-MM-DD) and time string (HH:MM) separately
+    const [year, month, day] = post.scheduledDate.split('-').map(Number);
+    const [hours, minutes] = post.scheduledTime.split(':').map(Number);
+    
+    // Create date in local timezone to avoid timezone shifts
+    const scheduledDateTime = new Date(year, month - 1, day, hours, minutes, 0, 0);
+    displayDate = scheduledDateTime.toISOString();
+  } else if (post.scheduledDate) {
+    // If only date is available, use it carefully to avoid timezone shifts
+    const [year, month, day] = post.scheduledDate.split('-').map(Number);
+    const dateOnly = new Date(year, month - 1, day, 12, 0, 0, 0); // Use noon to avoid timezone issues
+    displayDate = dateOnly.toISOString();
+  }
+
+  return {
+    id: post.id,
+    media: post.image || '/placeholder.jpg',
+    mediaType: 'image',
+    text: post.content,
+    platforms: post.platforms as Platform[],
+    status: post.status as PostStatus,
+    date: displayDate,
+    likes: post.likes,
+    comments: post.comments
+  }
+}
+
+const statusColors = {
+  scheduled: "bg-blue-100 text-blue-700",
+  published: "bg-green-100 text-green-700",
+  draft: "bg-gray-100 text-gray-700",
+  failed: "bg-red-100 text-red-700"
+}
+
+const statusLabels = {
+  scheduled: "Geplant",
+  published: "Veröffentlicht",
+  draft: "In Bearbeitung",
+  failed: "Fehlgeschlagen"
+}
+
+export const DashboardOverview = memo(function DashboardOverview() {
+  const { user } = useAuth()
+  const { state, actions } = usePost()
+  const { state: dateState } = useDate()
+  const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>([])
+  const [selectedStatus, setSelectedStatus] = useState<string>("Alle")
+  const [isAiChatOpen, setIsAiChatOpen] = useState(false)
+  const [chatMessage, setChatMessage] = useState("")
+  const [chatHistory, setChatHistory] = useState<Array<{id: string, type: 'user' | 'ai', message: string, timestamp: Date}>>([])
+  const [isTyping, setIsTyping] = useState(false)
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [selectedInterval, setSelectedInterval] = useState<TimeInterval | undefined>()
+  const [timeFilter, setTimeFilter] = useState("Zuletzt erstellt")
+  const [isAiWorkflowOpen, setIsAiWorkflowOpen] = useState(false)
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null)
+  const [isPostDetailOpen, setIsPostDetailOpen] = useState(false)
+  const [showTimeoutMessage, setShowTimeoutMessage] = useState(false)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
+
+  // Show timeout message after 10 seconds of loading
+  useEffect(() => {
+    if (state.loading) {
+      const timer = setTimeout(() => {
+        setShowTimeoutMessage(true)
+      }, 10000)
+      return () => clearTimeout(timer)
+    } else {
+      setShowTimeoutMessage(false)
+    }
+  }, [state.loading])
+
+  // Subscribe to real-time post changes
+  useEffect(() => {
+    const unsubscribe = actions.subscribeToChanges((event) => {
+      // Handle sync events for real-time updates
+      switch (event.type) {
+        case 'post_created':
+          if (event.source !== 'user_action') {
+            toast.info('New post created', { 
+              description: 'Posts updated from server',
+              duration: 2000 
+            })
+          }
+          break
+        case 'post_updated':
+          if (event.source !== 'user_action') {
+            toast.info('Post updated', { 
+              description: 'Changes synchronized',
+              duration: 2000 
+            })
+          }
+          break
+        case 'post_deleted':
+          if (event.source !== 'user_action') {
+            toast.info('Post deleted', { 
+              description: 'Changes synchronized',
+              duration: 2000 
+            })
+          }
+          break
+        case 'batch_sync':
+          if (event.source === 'periodic' && event.posts && event.posts.length > 0) {
+            console.log('Dashboard synchronized with server')
+          }
+          break
+      }
+    })
+    
+    return unsubscribe
+  }, [actions])
+
+  // Manual sync trigger
+  const handleManualSync = useCallback(async () => {
+    await actions.syncPosts('manual')
+    toast.success('Dashboard synchronized')
+  }, [actions])
+
+  // Get posts from context and convert to component format - memoized
+  const posts = useMemo(() => {
+    return Object.values(state.posts).map(convertPostContextToComponentPost)
+  }, [state.posts])
+
+  // Memoized filtered posts
+  const filteredPosts = useMemo(() => {
+    return posts.filter((post: Post) => {
+      const platformMatch = selectedPlatforms.length === 0 || 
+        post.platforms.some(p => selectedPlatforms.includes(p))
+      const statusMatch = selectedStatus === "Alle" || 
+        statusLabels[post.status as keyof typeof statusLabels] === selectedStatus
+
+      // Add date filtering
+      let dateMatch = true
+      if (selectedInterval) {
+        const postDate = new Date(post.date)
+        const startDateTime = new Date(selectedInterval.startDate)
+        startDateTime.setHours(
+          parseInt(selectedInterval.startTime?.split(":")[0] || "0"),
+          parseInt(selectedInterval.startTime?.split(":")[1] || "0")
+        )
+        
+        const endDateTime = selectedInterval.endDate ? new Date(selectedInterval.endDate) : undefined
+        if (endDateTime) {
+          endDateTime.setHours(
+            parseInt(selectedInterval.endTime?.split(":")[0] || "23"),
+            parseInt(selectedInterval.endTime?.split(":")[1] || "59")
+          )
+          dateMatch = postDate >= startDateTime && postDate <= endDateTime
+        } else {
+          dateMatch = postDate >= startDateTime
+        }
+      }
+
+      return platformMatch && statusMatch && dateMatch
+    })
+  }, [posts, selectedPlatforms, selectedStatus, selectedInterval, dateState.currentDate])
+
+  // Will add empty state check later after functions are defined
+
+  const scrollToBottom = useCallback(() => {
+    if (chatContainerRef.current) {
+      const scrollHeight = chatContainerRef.current.scrollHeight
+      chatContainerRef.current.scrollTo({
+        top: scrollHeight,
+        behavior: 'smooth'
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isAiChatOpen) {
+      scrollToBottom()
+    }
+  }, [chatHistory, isTyping, isAiChatOpen, scrollToBottom])
+
+  const togglePlatform = useCallback((platform: Platform) => {
+    setSelectedPlatforms(prev => 
+      prev.includes(platform) 
+        ? prev.filter(p => p !== platform)
+        : [...prev, platform]
+    )
+  }, [])
+
+  const handleAiToggle = useCallback(() => {
+    setIsAiChatOpen(!isAiChatOpen)
+  }, [isAiChatOpen])
+
+  // Generate initial large suggestions for empty chat
+  const getInitialSuggestions = useCallback(() => {
+    const hasDrafts = filteredPosts.filter(p => p.status === 'draft').length > 0
+    const hasScheduled = filteredPosts.filter(p => p.status === 'scheduled').length > 0
+    
+    const suggestions: Array<{ id: string; text: string; icon: string }> = [
+      { id: 'analyze-performance', text: 'Post-Performance analysieren', icon: '📊' },
+      { id: 'content-ideas', text: 'Content-Ideen generieren', icon: '💡' },
+      { id: 'schedule-help', text: 'Posting-Zeiten optimieren', icon: '📅' }
+    ]
+
+    if (hasDrafts || hasScheduled) {
+      const totalContent = Number(hasDrafts) + Number(hasScheduled)
+      suggestions.push({ 
+        id: 'review-content', 
+        text: `${totalContent} Inhalte verwalten`, 
+        icon: '📝' 
+      })
+    }
+
+    return suggestions.slice(0, 4)
+  }, [filteredPosts])
+
+  // Generate small hashtag-style quick actions during conversation
+  const getQuickActions = useCallback(() => {
+    const actions: Array<{ id: string; text: string; icon: string }> = []
+    const lastMessage = chatHistory[chatHistory.length - 1]
+    const lastFewMessages = chatHistory.slice(-3) // Look at last 3 messages for context
+    const conversationText = lastFewMessages.map(m => m.message.toLowerCase()).join(' ')
+    
+    // Advanced context analysis with more specific keywords
+    const hasContentKeywords = /content|idee|post|artikel|story|text|bild|video/i.test(conversationText)
+    const hasAnalyticsKeywords = /performance|analytics|zahlen|statistik|reichweite|engagement|likes|kommentare/i.test(conversationText)
+    const hasHashtagKeywords = /hashtag|#|tag|trending|viral/i.test(conversationText)
+    const hasScheduleKeywords = /zeit|planen|schedule|wann|timing|kalender/i.test(conversationText)
+    const hasTrendsKeywords = /trend|aktuell|viral|popular|neu|hot/i.test(conversationText)
+    const hasOptimizeKeywords = /verbessern|optimier|besser|mehr|steigern|erhöhen/i.test(conversationText)
+    const hasStrategyKeywords = /strategie|plan|konzept|vorgehens|ansatz/i.test(conversationText)
+    const hasImmobilienKeywords = /immobilie|haus|wohnung|makler|verkauf|kauf|finanzierung/i.test(conversationText)
+    const hasPlatformKeywords = /instagram|facebook|linkedin|tiktok|twitter|story|reel/i.test(conversationText)
+    const hasFinancingKeywords = /finanzierung|hypothek|kredit|investment|darlehen/i.test(conversationText)
+    
+    // Context-based dynamic actions (priority actions based on conversation)
+    if (lastMessage?.type === 'ai') {
+      // If AI just gave content ideas
+      if (hasContentKeywords) {
+        actions.push({ id: 'create-post', text: 'Post erstellen', icon: '✨' })
+        actions.push({ id: 'more-ideas', text: 'Mehr Ideen', icon: '💡' })
+        actions.push({ id: 'content-strategy', text: 'Content-Strategie', icon: '🎯' })
+      }
+      
+      // If AI mentioned hashtags
+      if (hasHashtagKeywords) {
+        actions.push({ id: 'more-hashtags', text: 'Mehr Tags', icon: '#️⃣' })
+        actions.push({ id: 'hashtag-strategy', text: 'Tag-Strategie', icon: '🎯' })
+        actions.push({ id: 'trending-tags', text: 'Trending Tags', icon: '🔥' })
+      }
+      
+      // If AI talked about timing/scheduling
+      if (hasScheduleKeywords) {
+        actions.push({ id: 'schedule-now', text: 'Jetzt planen', icon: '⏰' })
+        actions.push({ id: 'best-times', text: 'Beste Zeiten', icon: '📅' })
+        actions.push({ id: 'auto-schedule', text: 'Auto-Schedule', icon: '🤖' })
+      }
+      
+      // If AI gave analytics/performance info
+      if (hasAnalyticsKeywords) {
+        actions.push({ id: 'deep-dive', text: 'Details', icon: '🔍' })
+        actions.push({ id: 'compare-posts', text: 'Vergleichen', icon: '📊' })
+        actions.push({ id: 'competitor-analysis', text: 'Wettbewerb', icon: '🎯' })
+      }
+      
+      // If AI mentioned trends
+      if (hasTrendsKeywords) {
+        actions.push({ id: 'trend-content', text: 'Trend-Post', icon: '🔥' })
+        actions.push({ id: 'viral-tips', text: 'Viral-Tipps', icon: '🚀' })
+        actions.push({ id: 'trending-topics', text: 'Trending Topics', icon: '📈' })
+      }
+      
+      // If conversation was about optimization
+      if (hasOptimizeKeywords) {
+        actions.push({ id: 'next-steps', text: 'Nächste Schritte', icon: '📈' })
+        actions.push({ id: 'quick-wins', text: 'Quick Wins', icon: '⚡' })
+        actions.push({ id: 'optimize-content', text: 'Content optimieren', icon: '🎯' })
+      }
+      
+      // If conversation was about real estate
+      if (hasImmobilienKeywords) {
+        actions.push({ id: 'property-content', text: 'Immobilien-Content', icon: '🏠' })
+        actions.push({ id: 'market-insights', text: 'Markt-Insights', icon: '📊' })
+        actions.push({ id: 'client-stories', text: 'Kunden-Geschichten', icon: '👥' })
+      }
+      
+      // If conversation was about financing
+      if (hasFinancingKeywords) {
+        actions.push({ id: 'financing-content', text: 'Finanzierungs-Content', icon: '💰' })
+        actions.push({ id: 'mortgage-tips', text: 'Hypothek-Tipps', icon: '🏦' })
+        actions.push({ id: 'investment-advice', text: 'Investment-Beratung', icon: '📈' })
+      }
+      
+      // If conversation was about specific platforms
+      if (hasPlatformKeywords) {
+        if (conversationText.includes('instagram')) {
+          actions.push({ id: 'story-ideas', text: 'Story-Ideen', icon: '📱' })
+          actions.push({ id: 'reel-suggestions', text: 'Reel-Vorschläge', icon: '🎬' })
+        }
+        if (conversationText.includes('linkedin')) {
+          actions.push({ id: 'professional-content', text: 'Professioneller Content', icon: '💼' })
+          actions.push({ id: 'industry-insights', text: 'Branchen-Insights', icon: '📊' })
+        }
+        if (conversationText.includes('tiktok')) {
+          actions.push({ id: 'video-ideas', text: 'Video-Ideen', icon: '🎥' })
+          actions.push({ id: 'trending-sounds', text: 'Trending Sounds', icon: '🎵' })
+        }
+      }
+    }
+    
+    // Conversation flow-based actions with more variety
+    const messageCount = chatHistory.length
+    
+    if (messageCount <= 2) {
+      // Early conversation - broad exploration
+      if (!hasContentKeywords) actions.push({ id: 'content-ideas', text: 'Content-Ideen', icon: '💡' })
+      if (!hasAnalyticsKeywords) actions.push({ id: 'analytics', text: 'Performance', icon: '📊' })
+      if (!hasTrendsKeywords) actions.push({ id: 'trending', text: 'Trends', icon: '🔥' })
+      if (!hasImmobilienKeywords) actions.push({ id: 'property-focus', text: 'Immobilien-Fokus', icon: '🏠' })
+    } else if (messageCount <= 5) {
+      // Mid conversation - specific actions
+      if (!hasHashtagKeywords) actions.push({ id: 'hashtags', text: 'Hashtags', icon: '#️⃣' })
+      if (!hasScheduleKeywords) actions.push({ id: 'timing', text: 'Timing', icon: '⏰' })
+      if (!hasOptimizeKeywords) actions.push({ id: 'optimize', text: 'Optimieren', icon: '🎯' })
+      if (!hasFinancingKeywords) actions.push({ id: 'financing-tips', text: 'Finanzierungstipps', icon: '💰' })
+    } else {
+      // Deep conversation - advanced actions
+      actions.push({ id: 'strategy-review', text: 'Strategie', icon: '🎯' })
+      actions.push({ id: 'action-plan', text: 'Aktionsplan', icon: '📋' })
+      actions.push({ id: 'summary', text: 'Zusammenfassung', icon: '📝' })
+      actions.push({ id: 'content-audit', text: 'Content-Audit', icon: '📋' })
+    }
+    
+    // Smart base actions that adapt to context
+    const adaptiveBaseActions = []
+    
+    // Only suggest what hasn't been covered
+    if (!conversationText.includes('konkurren') && !conversationText.includes('mitbewerb')) {
+      adaptiveBaseActions.push({ id: 'competitor', text: 'Konkurrenz', icon: '🎯' })
+    }
+    
+    if (!conversationText.includes('zielgruppe') && !conversationText.includes('audience')) {
+      adaptiveBaseActions.push({ id: 'audience', text: 'Zielgruppe', icon: '👥' })
+    }
+    
+    if (!conversationText.includes('kalender') && !conversationText.includes('content-plan')) {
+      adaptiveBaseActions.push({ id: 'content-calendar', text: 'Content-Plan', icon: '📅' })
+    }
+    
+    if (!conversationText.includes('seo') && !conversationText.includes('suchmaschine')) {
+      adaptiveBaseActions.push({ id: 'seo-optimization', text: 'SEO-Optimierung', icon: '🔍' })
+    }
+    
+    if (!conversationText.includes('email') && !conversationText.includes('newsletter')) {
+      adaptiveBaseActions.push({ id: 'email-marketing', text: 'Email-Marketing', icon: '📧' })
+    }
+    
+    // Add adaptive actions if there's space
+    adaptiveBaseActions.forEach(action => {
+      if (actions.length < 6 && !actions.find(a => a.id === action.id)) {
+        actions.push(action)
+      }
+    })
+    
+    // Fallback actions if no specific context detected
+    if (actions.length === 0) {
+      const fallbackActions = [
+        { id: 'help-me', text: 'Hilf mir', icon: '🤝' },
+        { id: 'inspire-me', text: 'Inspiriere mich', icon: '✨' },
+        { id: 'quick-tip', text: 'Quick-Tipp', icon: '💡' },
+        { id: 'what-next', text: 'Was nun?', icon: '❓' },
+        { id: 'trending-topics', text: 'Trending Topics', icon: '🔥' },
+        { id: 'content-audit', text: 'Content-Audit', icon: '📋' }
+      ]
+      
+      actions.push(...fallbackActions.slice(0, 4))
+    }
+    
+    // Shuffle actions to avoid always showing the same order
+    return actions
+      .slice(0, 6)
+      .sort(() => Math.random() - 0.5) // Random shuffle
+  }, [chatHistory, filteredPosts])
+
+  // Process AI response to optimize formatting and remove redundant content
+  const processAIResponse = useCallback((response: string) => {
+    // Remove dynamic action suggestions at the end
+    let cleanedResponse = response
+      .replace(/---[\s\S]*?(\[.*?\]\(.*?\)[\s\S]*?)*---/g, '')
+      .replace(/\*\*Nächste Schritte[\s\S]*$/g, '')
+      .replace(/\*\*Aktionen:?\*\*[\s\S]*$/g, '')
+      .replace(/- \[.*?\]\(.*?\)[\s\S]*?$/gm, '')
+      .replace(/Wenn du Unterstützung.*?wissen!/g, '')
+      .replace(/Falls du.*?wissen!/g, '')
+      .replace(/Lass es mich wissen.*?$/g, '')
+      .trim()
+
+    // Make content more compressed while preserving structure
+    cleanedResponse = cleanedResponse
+      .replace(/\n\n\n+/g, '\n\n') // Remove excessive line breaks
+      .replace(/- \*\*Content-Idee\*\*:/g, '**Idee:**')
+      .replace(/- \*\*Hashtags\*\*:/g, '**Tags:**')
+      .replace(/Hier sind fünf frische Content-Ideen.*?engagieren:/i, '**5 Content-Ideen:**')
+      .replace(/Diese Ideen sind.*?engagieren:/i, '')
+      .replace(/Hier sind.*?die du.*?kannst\.?:?/i, '**Empfehlungen:**')
+      
+    return cleanedResponse
+  }, [])
+
+  // Render markdown formatting for AI messages
+  const renderMessageWithMarkdown = useCallback((message: string) => {
+    // Split by bold markers and render accordingly
+    const parts = message.split(/(\*\*[^*]+\*\*)/g)
+    
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        // Bold text
+        return (
+          <span key={index} className="font-semibold text-gray-900">
+            {part.slice(2, -2)}
+          </span>
+        )
+      } else {
+        // Regular text with line breaks
+        return part.split('\n').map((line, lineIndex, arr) => (
+          <span key={`${index}-${lineIndex}`}>
+            {line}
+            {lineIndex < arr.length - 1 && <br />}
+          </span>
+        ))
+      }
+    })
+  }, [])
+
+  const handleSendMessage = useCallback(async () => {
+    if (!chatMessage.trim()) return
+
+    const newMessage = {
+      id: Date.now().toString(),
+      type: 'user' as const,
+      message: chatMessage,
+      timestamp: new Date()
+    }
+
+    setChatHistory(prev => [...prev, newMessage])
+    setChatMessage("")
+    setIsTyping(true)
+
+    try {
+      // Get the current user's session token
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        throw new Error('No authentication token found')
+      }
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          query: chatMessage + "\n\nBitte antworte prägnant und strukturiert. Verwende **fett** für wichtige Begriffe und halte dich kurz, außer bei detaillierten Fragen.",
+          // conversation_id will be managed by the API
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to get AI response')
+      }
+
+      // Process the AI response to optimize formatting
+      const processedResponse = processAIResponse(data.response)
+
+      const aiResponse = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai' as const,
+        message: processedResponse,
+        timestamp: new Date()
+      }
+      setChatHistory(prev => [...prev, aiResponse])
+      setIsTyping(false)
+    } catch (error) {
+      console.error('Error sending message to AI:', error)
+      const errorResponse = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai' as const,
+        message: "Entschuldigung, ich konnte Ihre Nachricht nicht verarbeiten. Bitte versuchen Sie es erneut.",
+        timestamp: new Date()
+      }
+      setChatHistory(prev => [...prev, errorResponse])
+      setIsTyping(false)
+      
+      // Show error toast
+      toast.error('Fehler beim Senden der Nachricht', {
+        description: 'Bitte versuchen Sie es erneut.'
+      })
+    }
+  }, [chatMessage, processAIResponse])
+
+  const handleQuickAction = useCallback((actionId: string, actionText: string) => {
+    const prompts = {
+      // Content-related actions
+      'analyze-performance': 'Analysiere meine Post-Performance kurz und gib 3 konkrete Verbesserungstipps.',
+      'content-ideas': 'Gib mir 5 prägnante Content-Ideen mit je einem Satz Beschreibung.',
+      'create-post': 'Hilf mir einen Post zu erstellen - kurz und strukturiert.',
+      'more-ideas': 'Gib mir weitere kreative Content-Ideen basierend auf unserer Diskussion.',
+      'trend-content': 'Erstelle einen Post-Entwurf basierend auf den aktuellen Trends.',
+      
+      // Hashtag-related actions
+      'hashtags': 'Die 15 wichtigsten Hashtags für meine Branche.',
+      'more-hashtags': 'Liste 10 weitere effektive Hashtags für meine Nische auf.',
+      'hashtag-strategy': 'Erkläre eine Hashtag-Strategie für maximale Reichweite.',
+      
+      // Scheduling and timing
+      'schedule-help': 'Nenne die 3 besten Posting-Zeiten für maximale Reichweite.',
+      'schedule-now': 'Wann ist die beste Zeit zum Posten heute/diese Woche?',
+      'timing': 'Optimale Posting-Zeiten für verschiedene Plattformen.',
+      'best-times': 'Die besten Zeiten für meine Zielgruppe - kurz und knapp.',
+      
+      // Analytics and performance
+      'analytics': 'Die 5 wichtigsten KPIs, die ich verfolgen sollte.',
+      'deep-dive': 'Vertiefe die Performance-Analyse mit konkreten Zahlen.',
+      'compare-posts': 'Vergleiche meine besten und schlechtesten Posts.',
+      
+      // Trends and viral content
+      'trending': 'Top 3 Social Media Trends, die ich sofort nutzen kann.',
+      'viral-tips': '5 bewährte Strategien für virale Inhalte.',
+      
+      // Optimization and improvement
+      'optimize': '3 sofort umsetzbare Optimierungen für meine Social Media Strategie.',
+      'next-steps': 'Was sind meine konkreten nächsten Schritte?',
+      'quick-wins': '3 Quick-Win Optimierungen, die ich heute umsetzen kann.',
+      
+      // Strategy and planning
+      'strategy-review': 'Bewerte meine aktuelle Social Media Strategie.',
+      'action-plan': 'Erstelle einen strukturierten Aktionsplan für die nächsten 2 Wochen.',
+      'content-calendar': 'Hilf mir bei der Content-Planung für den nächsten Monat.',
+      
+      // Audience and targeting
+      'audience': 'Analysiere meine Zielgruppe und gib Targeting-Tipps.',
+      'competitor': 'Wie kann ich mich von der Konkurrenz abheben?',
+      
+      // General help and inspiration
+      'help-me': 'Wobei kann ich dir am besten helfen?',
+      'inspire-me': 'Inspiriere mich mit einer kreativen Idee.',
+      'quick-tip': 'Gib mir einen schnellen, umsetzbaren Tipp.',
+      'what-next': 'Was sollte mein nächster Schritt sein?',
+      'summary': 'Fasse unsere Diskussion zusammen und gib konkrete Handlungsempfehlungen.',
+      
+      // Legacy actions
+      'review-content': 'Checke meine Inhalte und gib 3 Quick-Win Optimierungen.'
+    }
+    
+    const prompt = prompts[actionId as keyof typeof prompts] || actionText
+    setChatMessage(prompt)
+    
+    // Auto-send the message
+    setTimeout(() => {
+      handleSendMessage()
+    }, 100)
+  }, [handleSendMessage])
+
+  const handleTimeFilterSelect = useCallback((filter: string) => {
+    setTimeFilter(filter)
+    if (filter === "Benutzerdefiniert") {
+      setIsCalendarOpen(true)
+    } else if (filter === "Gesamter Zeitraum") {
+      setSelectedInterval(undefined)
+    } else {
+      // Set predefined intervals
+      const now = new Date()
+      let startDate = new Date()
+      let endDate = new Date()
+      
+      switch (filter) {
+        case "Nächste 24 Stunden":
+          startDate = now
+          endDate = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+          break
+        case "Diese Woche":
+          startDate = now
+          endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+          break
+        case "Dieser Monat":
+          startDate = now
+          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+          break
+        default:
+          setSelectedInterval(undefined)
+          return
+      }
+      
+      setSelectedInterval({
+        startDate,
+        startTime: "00:00",
+        endDate,
+        endTime: "23:59"
+      })
+    }
+  }, [])
+
+  const handleIntervalSelect = useCallback((interval: TimeInterval) => {
+    setSelectedInterval(interval)
+    setTimeFilter(`${interval.startDate.toLocaleDateString("de-DE")} - ${interval.endDate?.toLocaleDateString("de-DE")}`)
+  }, [])
+
+  const handleOpenAiWorkflow = useCallback(() => {
+    setIsAiWorkflowOpen(true)
+  }, [])
+
+  const handlePostClick = useCallback((post: Post) => {
+    setSelectedPost(post)
+    setIsPostDetailOpen(true)
+  }, [])
+
+  const handlePostSave = useCallback(async (updatedPost: Post) => {
+    if (!user) return
+    
+    try {
+      // Parse the date with precision to avoid timezone shifts
+      const postDate = new Date(updatedPost.date);
+      
+      // Extract date and time components in local timezone to maintain precision
+      const scheduledDate = `${postDate.getFullYear()}-${String(postDate.getMonth() + 1).padStart(2, '0')}-${String(postDate.getDate()).padStart(2, '0')}`;
+      const scheduledTime = `${String(postDate.getHours()).padStart(2, '0')}:${String(postDate.getMinutes()).padStart(2, '0')}`;
+      
+      // Convert the post data to match the database schema
+      const updateData = {
+        title: updatedPost.text ? updatedPost.text.substring(0, 100) : 'Untitled Post',
+        content: updatedPost.text,
+        platforms: updatedPost.platforms,
+        image: updatedPost.media,
+        status: updatedPost.status,
+        scheduledDate: scheduledDate,
+        scheduledTime: scheduledTime,
+        likes: updatedPost.likes || 0,
+        comments: updatedPost.comments || 0,
+        shares: 0 // Set default since it's not in the Post interface
+      };
+
+      // Update the post in the database and global state
+      await actions.updatePost(updatedPost.id, updateData);
+      
+      // Update the selected post in local state immediately so the popup reflects changes
+      setSelectedPost(updatedPost);
+      
+      // Force a refresh of all posts to ensure all views are updated
+      await actions.fetchPosts();
+      
+      toast.success('Post updated successfully!');
+      
+    } catch (error) {
+      console.error('Error updating post:', error);
+      toast.error('Failed to update post');
+    }
+  }, [user, actions]);
+
+  const handlePostDelete = useCallback(async (postId: string) => {
+    if (!user) return
+    
+    try {
+      await actions.deletePost(postId)
+    } catch (error) {
+      console.error('Error deleting post:', error)
+    }
+  }, [user, actions])
+
+  const handlePostDuplicate = useCallback(async (post: Post) => {
+    if (!user) return
+    
+    try {
+      await actions.addPost({
+        title: `${post.id} (Copy)`,
+        content: post.text,
+        platforms: post.platforms,
+        image: post.media,
+        scheduledDate: new Date().toISOString().split('T')[0],
+        scheduledTime: '12:00',
+        status: 'draft',
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        createdAt: new Date().toLocaleDateString(),
+        updatedAt: new Date().toLocaleDateString()
+      })
+    } catch (error) {
+      console.error('Error duplicating post:', error)
+    }
+  }, [user, actions])
+
+  const handleUpdatePostStatus = useCallback(async (postId: string, status: PostStatus) => {
+    if (!user) return
+    
+    try {
+      await actions.updatePost(postId, { status })
+    } catch (error) {
+      console.error('Error updating post status:', error)
+    }
+  }, [user, actions])
+
+  if (state.loading && showTimeoutMessage) {
+    return (
+      <div className="h-full w-full bg-gray-50/50 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <X className="w-8 h-8 text-yellow-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Database Setup Required</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            The application is taking too long to load. This usually means the database tables haven't been set up yet.
+          </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <p className="text-sm text-blue-800 font-medium mb-2">Quick Setup:</p>
+            <ol className="text-xs text-blue-700 text-left space-y-1">
+              <li>1. Go to your Supabase dashboard</li>
+              <li>2. Open the SQL Editor</li>
+              <li>3. Run the SQL scripts from database/schema.sql</li>
+              <li>4. Refresh this page</li>
+            </ol>
+          </div>
+          <div className="flex gap-2 justify-center">
+            <Button onClick={() => window.location.reload()} size="sm">
+              Refresh Page
+            </Button>
+            <Button onClick={() => setShowTimeoutMessage(false)} variant="outline" size="sm">
+              Continue Anyway
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (state.loading) {
+    return (
+      <div className="h-full w-full bg-gray-50/50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-teal-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (state.error && Object.keys(state.posts).length === 0) {
+    return (
+      <div className="h-full w-full bg-gray-50/50 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <X className="w-8 h-8 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Dashboard</h3>
+          <p className="text-sm text-gray-600 mb-4">{state.error}</p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <p className="text-sm text-blue-800 font-medium mb-2">Possible Solutions:</p>
+            <ol className="text-xs text-blue-700 text-left space-y-1">
+              <li>1. Check your internet connection</li>
+              <li>2. Verify Supabase configuration</li>
+              <li>3. Run database setup scripts</li>
+              <li>4. Try refreshing the page</li>
+            </ol>
+          </div>
+          <div className="flex gap-2 justify-center">
+            <Button onClick={() => actions.fetchPosts()} size="sm">
+              Try Again
+            </Button>
+            <Button onClick={() => window.location.reload()} variant="outline" size="sm">
+              Refresh Page
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full w-full bg-gray-50/50 overflow-y-auto">
+      {/* Top Header Section */}
+      <div className={`max-w-[1400px] mx-auto pl-4 ${isAiChatOpen ? 'pb-2' : 'pb-8'}`}>
+        <div className="mb-4">
+          {/* Status Filter and Actions */}
+          <div className="w-full flex items-center justify-between gap-4 mb-4">
+            <div className="flex-1 flex justify-center">
+              {/* Status Filter */}
+              <div className="flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-0.5">
+                {["Alle", "Geplant", "Veröffentlicht", "In Bearbeitung"].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setSelectedStatus(status)}
+                    className={`px-6 py-2.5 text-sm font-medium transition-all relative
+                      ${selectedStatus === status
+                        ? 'rounded-full bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200'
+                        : 'text-gray-600 hover:bg-gray-50 rounded-full'
+                      }`}
+                  >
+                    {status}
+                  </button>
+                ))}
+                <button 
+                  onClick={handleAiToggle}
+                  className={`px-4 py-2.5 rounded-full flex items-center gap-1 transition-all
+                    ${isAiChatOpen 
+                      ? 'bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200' 
+                      : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                >
+                  <Search className="w-4 h-4" />
+                  <Sparkles className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleOpenAiWorkflow}
+                size="default" 
+                className="h-10 text-sm gap-2 px-4 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 rounded-full"
+              >
+                <Plus className="w-4 h-4" />
+                Neuer Post
+              </Button>
+            </div>
+          </div>
+
+          {/* AI Chat Window */}
+          <div className={`transition-all duration-300 ease-out ${isAiChatOpen ? 'opacity-100 mb-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+            <Card className="bg-white/95 backdrop-blur-sm border border-gray-100 shadow-lg rounded-2xl">
+              <div className="p-4 flex flex-col" style={{ height: isAiChatOpen ? 'calc(100vh - 140px)' : '0' }}>
+                {/* Chat Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full flex items-center justify-center">
+                      <Bot className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-gray-900">AI Assistant</h3>
+                      <p className="text-xs text-gray-500">Hier, um zu helfen</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsAiChatOpen(false)}
+                    className="h-8 w-8 p-0 hover:bg-gray-100 rounded-full"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                {/* Dynamic Text Component */}
+                {chatHistory.length === 0 && (
+                  <div className="mb-4">
+                    <DynamicText 
+                      conversationHistory={chatHistory}
+                      userPosts={posts}
+                      isTyping={isTyping}
+                      className="mb-4"
+                      onSuggestionClick={(suggestion) => {
+                        setChatMessage(suggestion);
+                        // Auto-send the suggestion after a short delay
+                        setTimeout(() => {
+                          handleSendMessage();
+                        }, 100);
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Chat Messages */}
+                <div className="space-y-3 flex-1 overflow-y-auto mb-4 scroll-smooth pr-2" 
+                     ref={chatContainerRef}
+                     style={{ 
+                       scrollbarWidth: 'thin',
+                       maxHeight: 'calc(100vh - 400px)' // Account for header, buttons, input
+                     }}>
+                  {chatHistory.length === 0 ? (
+                    <div className="text-center py-4">
+                      <div className="w-12 h-12 bg-gradient-to-r from-teal-500/10 to-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Sparkles className="w-6 h-6 text-teal-600" />
+                      </div>
+                      <p className="text-sm text-gray-600 mb-2">Willkommen beim AI Assistant!</p>
+                      <p className="text-xs text-gray-500 mb-4">Wählen Sie eine Aktion oder stellen Sie mir eine Frage.</p>
+                      
+                      {/* Big suggestions moved up under welcome message */}
+                      <div className="flex flex-col gap-3 mt-4">
+                        {getInitialSuggestions().map((suggestion) => (
+                          <button
+                            key={suggestion.id}
+                            onClick={() => handleQuickAction(suggestion.id, suggestion.text)}
+                            className="flex items-center gap-4 p-4 text-left bg-gradient-to-r from-gray-50 to-gray-100 hover:from-teal-50 hover:to-cyan-50 border border-gray-200 hover:border-teal-200 rounded-xl transition-all duration-200 group"
+                          >
+                            <span className="text-2xl">{suggestion.icon}</span>
+                            <span className="text-base font-medium text-gray-700 group-hover:text-teal-700">
+                              {suggestion.text}
+                            </span>
+                            <Send className="w-5 h-5 text-gray-400 group-hover:text-teal-500 ml-auto transition-colors" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {chatHistory.map((msg) => (
+                        <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-2xl px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                            msg.type === 'user' 
+                              ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {msg.type === 'ai' ? renderMessageWithMarkdown(msg.message) : msg.message}
+                          </div>
+                        </div>
+                      ))}
+                      {isTyping && (
+                        <div className="flex justify-start">
+                          <div className="bg-gray-100 px-3 py-2 rounded-2xl">
+                            <div className="flex space-x-1">
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Dynamic Action Buttons - only show small actions when chat has history */}
+                {chatHistory.length > 0 && (
+                  <div className="mb-3 flex-shrink-0">
+                    <div className="flex flex-wrap gap-2">
+                      {getQuickActions().map((action) => (
+                        <button
+                          key={action.id}
+                          onClick={() => handleQuickAction(action.id, action.text)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gradient-to-r from-gray-100 to-gray-200 hover:from-teal-100 hover:to-cyan-100 border border-gray-200 hover:border-teal-300 rounded-full transition-all duration-200 group"
+                        >
+                          <span className="text-sm">{action.icon}</span>
+                          <span className="text-gray-700 group-hover:text-teal-700">{action.text}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Chat Input */}
+                <div className="flex gap-2 flex-shrink-0 mt-auto pt-2 border-t border-gray-100">
+                  <Input
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    placeholder="Stellen Sie mir eine Frage..."
+                    className="flex-1 border-gray-200 focus:border-teal-500 focus:ring-teal-500/20 rounded-full"
+                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  />
+                  <Button
+                    onClick={handleSendMessage}
+                    size="sm"
+                    className="h-10 w-10 p-0 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 rounded-full"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Content with smooth transition */}
+          <div className={`transition-all duration-300 ease-out ${isAiChatOpen ? 'transform translate-y-2' : ''}`}>
+            {/* Platform Filter */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                {[
+                  { icon: Instagram, value: "instagram" },
+                  { icon: Facebook, value: "facebook" },
+                  { icon: Twitter, value: "twitter" },
+                  { icon: Linkedin, value: "linkedin" },
+                  { icon: Video, value: "tiktok" }
+                ].map(({ icon: Icon, value }) => (
+                  <button
+                    key={value}
+                    onClick={() => togglePlatform(value as Platform)}
+                    className={`inline-flex items-center p-2 rounded-full border transition-all
+                      ${selectedPlatforms.includes(value as Platform)
+                        ? 'bg-blue-50 text-blue-600 border-blue-200 shadow-sm'
+                        : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
+                      }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </button>
+                ))}
+              </div>
+
+              {/* Time Filter */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="default" 
+                    className="h-10 text-sm gap-2 px-4 rounded-full border-gray-200 bg-white hover:bg-gray-50 transition-all"
+                  >
+                    {timeFilter}
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-48 rounded-xl shadow-xl border-gray-100 bg-white/95 backdrop-blur-sm p-2">
+                  <DropdownMenuItem 
+                    className="text-sm py-2.5 px-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => handleTimeFilterSelect("Gesamter Zeitraum")}
+                  >
+                    Gesamter Zeitraum
+                  </DropdownMenuItem>
+                  <div className="h-px bg-gray-100 my-2" />
+                  <DropdownMenuItem 
+                    className="text-sm py-2.5 px-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => handleTimeFilterSelect("Nächste 24 Stunden")}
+                  >
+                    Nächste 24 Stunden
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    className="text-sm py-2.5 px-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => handleTimeFilterSelect("Diese Woche")}
+                  >
+                    Diese Woche
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    className="text-sm py-2.5 px-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => handleTimeFilterSelect("Dieser Monat")}
+                  >
+                    Dieser Monat
+                  </DropdownMenuItem>
+                  <div className="h-px bg-gray-100 my-2" />
+                  <DropdownMenuItem 
+                    className="text-sm py-2.5 px-3 rounded-lg hover:bg-teal-50 hover:text-teal-600 transition-colors cursor-pointer flex items-center gap-2"
+                    onClick={() => handleTimeFilterSelect("Benutzerdefiniert")}
+                  >
+                    <CalendarIcon className="w-4 h-4" />
+                    Benutzerdefiniert
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        <div className={`transition-all duration-300 ease-out ${isAiChatOpen ? 'transform translate-y-2' : ''}`}>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-medium text-gray-400">
+              Beiträge & Entwürfe
+            </h2>
+            <span className="text-xs text-gray-400">{filteredPosts.length} Beiträge</span>
+          </div>
+
+          {/* Post Grid */}
+          <div className="grid grid-cols-4 gap-3 pb-4">
+            {filteredPosts.map((post) => (
+              <Card 
+                key={post.id} 
+                className="overflow-hidden group border border-gray-100 shadow-sm bg-white hover:shadow-md transition-all duration-300 rounded-2xl cursor-pointer"
+                onClick={() => handlePostClick(post)}
+              >
+                {/* Media Preview */}
+                <div className="aspect-video relative bg-gray-50 rounded-t-2xl overflow-hidden">
+                  {post.mediaType === 'video' && (
+                    <div className="absolute top-2 right-2 z-10">
+                      <div className="w-6 h-6 bg-black/70 rounded-full flex items-center justify-center">
+                        <Play className="w-3 h-3 text-white ml-0.5" />
+                      </div>
+                    </div>
+                  )}
+                  <img
+                    src={post.media}
+                    alt="Post preview"
+                    className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+                    loading="lazy"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement
+                      target.src = '/placeholder.svg'
+                    }}
+                  />
+                  
+                  {/* Status Badge */}
+                  <div className="absolute top-3 right-3">
+                    <Badge 
+                      className={`${
+                        post.status === 'published' 
+                          ? 'bg-green-50/90 text-green-600 border-green-200' 
+                          : post.status === 'scheduled'
+                          ? 'bg-blue-50/90 text-blue-600 border-blue-200'
+                          : post.status === 'draft'
+                          ? 'bg-gray-50/90 text-gray-600 border-gray-200'
+                          : 'bg-red-50/90 text-red-600 border-red-200'
+                      } text-xs px-2.5 py-1 rounded-full border shadow-sm backdrop-blur-sm`}
+                    >
+                      {post.status === 'published' ? 'Published' : 
+                       post.status === 'scheduled' ? 'Scheduled' : 
+                       post.status === 'draft' ? 'Draft' : 'Failed'}
+                    </Badge>
+                  </div>
+
+                  {/* Hover Overlay */}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-4 text-white">
+                      {post.likes !== undefined && (
+                        <div className="flex items-center gap-1">
+                          <Heart className="w-4 h-4" />
+                          <span className="text-sm font-medium">{post.likes}</span>
+                        </div>
+                      )}
+                      {post.comments !== undefined && (
+                        <div className="flex items-center gap-1">
+                          <MessageCircle className="w-4 h-4" />
+                          <span className="text-sm font-medium">{post.comments}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Content Preview */}
+                <div className="p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    {post.platforms.slice(0, 4).map((platform) => {
+                      const Icon = {
+                        instagram: Instagram,
+                        facebook: Facebook,
+                        twitter: Twitter,
+                        linkedin: Linkedin,
+                        tiktok: Video
+                      }[platform]
+                      return (
+                        <div
+                          key={platform}
+                          className="w-6 h-6 bg-gray-50 rounded-full flex items-center justify-center"
+                        >
+                          {Icon && <Icon className="w-3.5 h-3.5 text-gray-600" />}
+                        </div>
+                      )
+                    })}
+                    {post.platforms.length > 4 && (
+                      <div className="w-6 h-6 bg-gray-50 rounded-full flex items-center justify-center">
+                        <span className="text-xs text-gray-600">+{post.platforms.length - 4}</span>
+                      </div>
+                    )}
+                    <span className="text-xs text-gray-500 ml-auto">
+                      {post.status === 'scheduled' ? 
+                        `📅 ${new Date(post.date).toLocaleDateString('de-DE', { 
+                          day: '2-digit', 
+                          month: '2-digit',
+                          year: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}` : 
+                        new Date(post.date).toLocaleDateString('de-DE', { 
+                          day: '2-digit', 
+                          month: '2-digit' 
+                        })
+                      }
+                    </span>
+                  </div>
+                  
+                  <p className="text-sm text-gray-700 mb-4 line-clamp-3 leading-relaxed">
+                    {post.text}
+                  </p>
+                  
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2">
+                    {post.status === 'published' ? (
+                      <>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          className="flex-1 border-gray-200 rounded-full h-8 hover:bg-gray-50 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Handle view analytics
+                          }}
+                        >
+                          View Analytics
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          className="flex-1 border-gray-200 rounded-full h-8 hover:bg-gray-50 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Handle boost post
+                          }}
+                        >
+                          Boost Post
+                        </Button>
+                      </>
+                    ) : post.status === 'scheduled' ? (
+                      <>
+                        <Button 
+                          size="sm" 
+                          className="flex-1 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white rounded-full h-8 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Handle post now
+                          }}
+                        >
+                          Post Now
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="flex-1 border-gray-200 rounded-full h-8 hover:bg-gray-50 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Handle reschedule
+                          }}
+                        >
+                          Reschedule
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button 
+                          size="sm" 
+                          className="flex-1 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white rounded-full h-8 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Handle post now
+                          }}
+                        >
+                          Post Now
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="flex-1 border-gray-200 rounded-full h-8 hover:bg-gray-50 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Handle schedule
+                          }}
+                        >
+                          Schedule
+                        </Button>
+                      </>
+                    )}
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="px-2 h-8 w-8 rounded-full hover:bg-gray-100"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        // Handle edit
+                      }}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Empty State */}
+          {filteredPosts.length === 0 && (
+            <div className="text-center py-8">
+              <Video className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <h3 className="text-sm font-medium text-gray-900 mb-1">
+                Keine Beiträge gefunden
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Passe deine Filter an oder erstelle einen neuen Beitrag.
+              </p>
+              <Button 
+                onClick={handleOpenAiWorkflow}
+                size="sm" 
+                className="h-7 text-xs gap-1.5 px-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 rounded-full"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Neuer Post
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Calendar Popup */}
+      <CalendarPopup
+        isOpen={isCalendarOpen}
+        selectedInterval={selectedInterval}
+        onIntervalSelect={handleIntervalSelect}
+        onClose={() => setIsCalendarOpen(false)}
+      />
+
+      {/* AI Post Workflow */}
+            <AIPostWorkflow
+        open={isAiWorkflowOpen} 
+        onOpenChange={setIsAiWorkflowOpen} 
+        onPostCreated={actions.fetchPosts}
+      />
+
+      {/* Post Detail Popup */}
+      <PostDetailPopup
+        post={selectedPost}
+        isOpen={isPostDetailOpen}
+        onClose={() => setIsPostDetailOpen(false)}
+        onSave={handlePostSave}
+        onDelete={handlePostDelete}
+        onDuplicate={handlePostDuplicate}
+      />
+    </div>
+  )
+}) 

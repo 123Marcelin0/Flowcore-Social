@@ -1,0 +1,414 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
+import { generateEmbedding } from '@/lib/openaiService'
+
+// Helper function to verify authentication
+async function verifyAuth(request: NextRequest) {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { authenticated: false, user: null, error: 'Missing or invalid authorization header' }
+  }
+
+  const token = authHeader.replace('Bearer ', '')
+  
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    
+    if (error || !user) {
+      return { authenticated: false, user: null, error: 'Invalid or expired token' }
+    }
+
+    return { authenticated: true, user, error: null }
+  } catch (error) {
+    return { authenticated: false, user: null, error: 'Authentication verification failed' }
+  }
+}
+
+// GET /api/posts - Retrieve all posts for authenticated user
+export async function GET(request: NextRequest) {
+  try {
+    // Verify authentication
+    const authResult = await verifyAuth(request)
+    if (!authResult.authenticated) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const user = authResult.user!
+
+    // Query posts for authenticated user
+    const { data: posts, error } = await supabase
+      .from('posts')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching posts:', error)
+      return NextResponse.json(
+        { success: false, error: 'Failed to retrieve posts' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      posts: posts || [],
+      message: 'Posts retrieved successfully'
+    }, { status: 200 })
+
+  } catch (error) {
+    console.error('GET /api/posts error:', error)
+    return NextResponse.json(
+      { success: false, error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+// POST /api/posts - Create a new post
+export async function POST(request: NextRequest) {
+  try {
+    // Verify authentication
+    const authResult = await verifyAuth(request)
+    if (!authResult.authenticated) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const user = authResult.user!
+
+    // Parse request body
+    let body
+    try {
+      body = await request.json()
+    } catch (error) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid JSON in request body' },
+        { status: 400 }
+      )
+    }
+
+    // Validate required fields
+    const { 
+      platform, 
+      content, 
+      description, // Alternative field name for content
+      title, // Post title if provided
+      media_urls, 
+      media_type, 
+      scheduled_publish_time,
+      likes, comments_count, shares, reach, impressions
+    } = body
+
+    if (!platform || !media_type) {
+      return NextResponse.json(
+        { success: false, error: 'Platform and media_type are required fields' },
+        { status: 400 }
+      )
+    }
+
+    // Use content or description field - store in content column
+    const postContent = content || description
+    if (!postContent) {
+      return NextResponse.json(
+        { success: false, error: 'Post content or description is required' },
+        { status: 400 }
+      )
+    }
+
+    // Validate platform value
+    const validPlatforms = ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'youtube', 'pinterest']
+    if (!validPlatforms.includes(platform)) {
+      return NextResponse.json(
+        { success: false, error: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // Validate media_type value
+    const validMediaTypes = ['image', 'video', 'text', 'carousel']
+    if (!validMediaTypes.includes(media_type)) {
+      return NextResponse.json(
+        { success: false, error: `Invalid media_type. Must be one of: ${validMediaTypes.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // Generate embedding for post content (and title if available)
+    let embedding = null
+    if (postContent) {
+      try {
+        // Combine title and content for embedding if both are available
+        const embeddingText = title ? `${title}\n\n${postContent}` : postContent
+        embedding = await generateEmbedding(embeddingText)
+        if (!embedding) {
+          console.warn('Failed to generate embedding for post content, proceeding without embedding')
+        }
+      } catch (error) {
+        console.error('Error generating embedding:', error)
+        // Continue with post creation even if embedding fails
+      }
+    }
+
+    // Prepare post data - use content column for text content
+    const postData: any = {
+      user_id: user.id,
+      content: postContent, // Map to content column in database
+      platforms: [platform],
+      media_urls: media_urls || [],
+      media_type,
+      scheduled_at: scheduled_publish_time || null,
+      status: 'draft',
+      comments_count: typeof comments_count === 'number' ? comments_count : 0,
+      likes: typeof likes === 'number' ? likes : 0,
+      shares: typeof shares === 'number' ? shares : 0,
+      reach: typeof reach === 'number' ? reach : 0,
+      impressions: typeof impressions === 'number' ? impressions : 0,
+      embedding: embedding,
+    }
+
+    // Add title if provided
+    if (title) {
+      postData.title = title
+    }
+
+    // Ensure image_url and video_url are correctly populated from media_urls
+    if (media_type === 'image' && media_urls && media_urls.length > 0) {
+      postData.image_url = media_urls[0]
+    } else {
+      postData.image_url = null
+    }
+    if (media_type === 'video' && media_urls && media_urls.length > 0) {
+      postData.video_url = media_urls[0]
+    } else {
+      postData.video_url = null
+    }
+
+    // Debug: Log the data being sent to database
+    console.log('POST /api/posts - Data being inserted:', JSON.stringify(postData, null, 2))
+
+    // Insert new post
+    const { data: newPost, error } = await supabase
+      .from('posts')
+      .insert([postData])
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating post:', error)
+      return NextResponse.json(
+        { success: false, error: 'Failed to create post' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      post: newPost,
+      message: 'Post created successfully'
+    }, { status: 201 })
+
+  } catch (error) {
+    console.error('POST /api/posts error:', error)
+    return NextResponse.json(
+      { success: false, error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT /api/posts - Update an existing post
+export async function PUT(request: NextRequest) {
+  try {
+    // Verify authentication
+    const authResult = await verifyAuth(request)
+    if (!authResult.authenticated) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const user = authResult.user!
+
+    // Parse request body
+    let body
+    try {
+      body = await request.json()
+    } catch (error) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid JSON in request body' },
+        { status: 400 }
+      )
+    }
+
+    // Validate required fields
+    const { 
+      id, 
+      platform, 
+      content,
+      description, // Alternative field name for content
+      title, // Post title if provided
+      media_urls, 
+      media_type, 
+      scheduled_publish_time,
+      likes, comments_count, shares, reach, impressions
+    } = body
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'Post ID is required for updates' },
+        { status: 400 }
+      )
+    }
+
+    // Verify post exists and belongs to user
+    const { data: existingPost, error: fetchError } = await supabase
+      .from('posts')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (fetchError || !existingPost) {
+      return NextResponse.json(
+        { success: false, error: 'Post not found or access denied' },
+        { status: 404 }
+      )
+    }
+
+    // Validate platform if provided
+    if (platform) {
+      const validPlatforms = ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'youtube', 'pinterest']
+      if (!validPlatforms.includes(platform)) {
+        return NextResponse.json(
+          { success: false, error: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Validate media_type if provided
+    if (media_type) {
+      const validMediaTypes = ['image', 'video', 'text', 'carousel']
+      if (!validMediaTypes.includes(media_type)) {
+        return NextResponse.json(
+          { success: false, error: `Invalid media_type. Must be one of: ${validMediaTypes.join(', ')}` },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Generate new embedding if content, description, or title is provided
+    const updateContent = content !== undefined ? content : description
+    let embedding = undefined // Keep existing embedding by default
+    if (content !== undefined || description !== undefined || title !== undefined) {
+      try {
+        if (updateContent || title) {
+          // Combine title and content for embedding if both are available
+          let embeddingText = updateContent || ''
+          if (title !== undefined) {
+            embeddingText = title ? (updateContent ? `${title}\n\n${updateContent}` : title) : (updateContent || '')
+          }
+          
+          if (embeddingText) {
+            embedding = await generateEmbedding(embeddingText)
+            if (!embedding) {
+              console.warn('Failed to generate embedding for updated content, proceeding without embedding update')
+              embedding = null
+            }
+          } else {
+            embedding = null // Clear embedding if all content fields are being cleared
+          }
+        } else {
+          embedding = null // Clear embedding if content is being cleared
+        }
+      } catch (error) {
+        console.error('Error generating embedding for update:', error)
+        embedding = null // Set to null if embedding generation fails
+      }
+    }
+
+    // Prepare update data - only include fields that are provided
+    const updateData: any = {}
+    if (platform !== undefined) updateData.platforms = [platform]
+    if (content !== undefined || description !== undefined) {
+      updateData.content = updateContent // Map to content column in database
+    }
+    if (title !== undefined) updateData.title = title
+    if (media_urls !== undefined) updateData.media_urls = media_urls
+    if (media_type !== undefined) {
+      updateData.media_type = media_type
+      // Update image_url/video_url if media_type or media_urls are explicitly changed
+      if (media_type === 'image' && media_urls && media_urls.length > 0) {
+        updateData.image_url = media_urls[0]
+        updateData.video_url = null // Clear video_url if type changes to image
+      } else if (media_type === 'video' && media_urls && media_urls.length > 0) {
+        updateData.video_url = media_urls[0]
+        updateData.image_url = null // Clear image_url if type changes to video
+      } else {
+        updateData.image_url = null // Clear if not image/video or media_urls is empty
+        updateData.video_url = null
+      }
+    }
+    if (scheduled_publish_time !== undefined) updateData.scheduled_at = scheduled_publish_time
+    if (comments_count !== undefined) updateData.comments_count = comments_count
+    if (likes !== undefined) updateData.likes = likes
+    if (shares !== undefined) updateData.shares = shares
+    if (reach !== undefined) updateData.reach = reach
+    if (impressions !== undefined) updateData.impressions = impressions
+    if (embedding !== undefined) updateData.embedding = embedding // Add the generated embedding
+
+    // Debug: Log the data being updated in database
+    console.log('PUT /api/posts - Data being updated:', JSON.stringify(updateData, null, 2))
+
+    // Update post
+    const { data: updatedPost, error } = await supabase
+      .from('posts')
+      .update(updateData)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating post:', error)
+      return NextResponse.json(
+        { success: false, error: 'Failed to update post' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      post: updatedPost,
+      message: 'Post updated successfully'
+    }, { status: 200 })
+
+  } catch (error) {
+    console.error('PUT /api/posts error:', error)
+    return NextResponse.json(
+      { success: false, error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  return NextResponse.json(
+    { success: false, error: 'Method not allowed' },
+    { status: 405 }
+  )
+}
+
+export async function PATCH(request: NextRequest) {
+  return NextResponse.json(
+    { success: false, error: 'Method not allowed' },
+    { status: 405 }
+  )
+} 

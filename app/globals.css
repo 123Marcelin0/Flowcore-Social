@@ -1,0 +1,336 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* AI Workflow Custom Styles */
+@import url('../styles/ai-workflow.css');
+
+/* Swipe Cards Styles */
+@import url('../styles/swipe-cards.css');
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@keyframes gradient-x {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 100% 0%;
+  }
+}
+
+.animate-gradient-x {
+  animation: gradient-x 3s linear infinite;
+}
+
+@keyframes success-glow {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  20% {
+    opacity: 0.4;
+    transform: scale(1.02);
+  }
+  40% {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@keyframes success-pulse {
+  0% {
+    transform: scale(1);
+  }
+  20% {
+    transform: scale(1.02);
+  }
+  40% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-success {
+  animation: success-pulse 2s ease-in-out;
+}
+
+.animate-success-glow {
+  animation: success-glow 2s ease-in-out;
+  animation-delay: 0.1s;
+}
+
+@keyframes border-travel {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 200% 0%;
+  }
+}
+
+@keyframes button-pulsar {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 0.95;
+  }
+}
+
+@keyframes loading {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes message-sent {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.05);
+  }
+  60% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-border-travel {
+  animation: border-travel 3s linear infinite;
+}
+
+.animate-button-pulsar {
+  animation: button-pulsar 3s ease-in-out infinite;
+}
+
+.animate-loading {
+  animation: loading 1s ease-in-out infinite;
+}
+
+.animate-message-sent {
+  animation: message-sent 0.6s ease-out;
+}
+
+.bg-gradient-conic {
+  background: conic-gradient(var(--tw-gradient-stops));
+}
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  50% {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+.animate-pulse-border {
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
+/* Smooth drag animations */
+[draggable="true"] {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  transform: scale(var(--drag-scale, 1)) rotate(var(--drag-rotate, 0deg));
+  opacity: var(--drag-opacity, 1);
+}
+
+/* Drag cursor for draggable elements */
+[draggable="true"] {
+  cursor: grab;
+}
+
+[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Smooth transitions for calendar cells */
+.calendar-cell {
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.calendar-cell:hover {
+  transform: translateY(-1px);
+}
+
+/* Optimistic update indicator */
+.optimistic-update {
+  position: relative;
+  opacity: 0.8;
+}
+
+.optimistic-update::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, transparent 30%, rgba(59, 130, 246, 0.1) 50%, transparent 70%);
+  background-size: 200% 200%;
+  animation: shimmer 2s infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Drag feedback animations */
+@keyframes drag-feedback {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(0.95) rotate(1deg);
+  }
+  100% {
+    transform: scale(0.95) rotate(1deg);
+  }
+}
+
+.drag-active {
+  animation: drag-feedback 0.3s ease-out;
+}
+
+/* Calendar drop zone animations */
+.drop-zone-active {
+  animation: drop-zone-pulse 1s ease-in-out infinite;
+}
+
+@keyframes drop-zone-pulse {
+  0%, 100% {
+    background-color: rgba(20, 184, 166, 0.1);
+    border-color: rgba(20, 184, 166, 0.3);
+  }
+  50% {
+    background-color: rgba(20, 184, 166, 0.2);
+    border-color: rgba(20, 184, 166, 0.5);
+  }
+}
