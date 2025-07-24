@@ -152,6 +152,10 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
   const [contentGoal, setContentGoal] = useState('')
   const [generatedContent, setGeneratedContent] = useState<any>(null)
   const [userOptimizationInput, setUserOptimizationInput] = useState('')
+  const [additionalKeywords, setAdditionalKeywords] = useState('')
+  const [generatedHashtags, setGeneratedHashtags] = useState<string[]>([])
+  const [generatedDescription, setGeneratedDescription] = useState('')
+  const [isGeneratingHashtags, setIsGeneratingHashtags] = useState(false)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -242,12 +246,113 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
     setIsGenerating(true)
     try {
       await new Promise(resolve => setTimeout(resolve, 2000))
-      setCurrentStep('upload')
-      toast.success('Finaler Content generiert!')
+      setCurrentStep('generate')
+      toast.success('Bereit für Hashtag-Generierung!')
     } catch (error) {
       toast.error('Fehler bei der Generierung')
     } finally {
       setIsGenerating(false)
+    }
+  }
+
+  const handleGenerateHashtagsAndDescription = async () => {
+    setIsGeneratingHashtags(true)
+    try {
+      const currentScript = customScript || generatedContent?.script || ''
+      
+      // Get the user's session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+
+      const keywords = additionalKeywords.trim() 
+        ? `\nZusätzliche Stichworte: ${additionalKeywords}` 
+        : ''
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          query: `Basierend auf diesem Content-Script generiere passende Hashtags und eine ansprechende Post-Beschreibung:
+
+SCRIPT:
+${currentScript}
+
+ZIELGRUPPE: ${targetAudience || 'Immobilienkäufer'}
+CONTENT-ZIEL: ${contentGoal || 'Immobilien-Content erstellen'}${keywords}
+
+Bitte antworte im folgenden JSON-Format:
+{
+  "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3", ...],
+  "description": "Eine ansprechende Beschreibung für den Post..."
+}
+
+Generiere 10-15 relevante Hashtags (Mix aus populären und nischigen) und eine 2-3 Sätze lange, ansprechende Beschreibung, die zum Engagement auffordert.`
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('API Error:', errorData)
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.success && data.response) {
+        try {
+          // Try to parse JSON from the response
+          const parsedResponse = JSON.parse(data.response.trim())
+          
+          if (parsedResponse.hashtags && parsedResponse.description) {
+            setGeneratedHashtags(parsedResponse.hashtags)
+            setGeneratedDescription(parsedResponse.description)
+            toast.success('Hashtags und Beschreibung erfolgreich generiert!')
+          } else {
+            throw new Error('Invalid response format')
+          }
+        } catch (parseError) {
+          // If JSON parsing fails, try to extract hashtags and description manually
+          const response_text = data.response
+          const hashtagMatch = response_text.match(/#[\w\u00C0-\u017F]+/g)
+          const hashtags = hashtagMatch ? hashtagMatch.slice(0, 15) : ['#immobilien', '#realestate', '#property']
+          
+          // Extract description (look for text that's not hashtags)
+          const descriptionMatch = response_text.replace(/#[\w\u00C0-\u017F]+/g, '').trim()
+          const description = descriptionMatch || 'Entdecken Sie diese einzigartige Immobilie! Perfekt für Ihr neues Zuhause. 🏠✨'
+          
+          setGeneratedHashtags(hashtags)
+          setGeneratedDescription(description)
+          toast.success('Hashtags und Beschreibung generiert!')
+        }
+      } else {
+        throw new Error(data.error || 'No response received from API')
+      }
+    } catch (error) {
+      console.error('Error generating hashtags and description:', error)
+      
+      // Fallback to default content
+      const fallbackHashtags = [
+        '#immobilien', '#realestate', '#property', '#traumhaus', '#wohnen',
+        '#makler', '#hausverkauf', '#investment', '#luxusimmobilien', '#neuhome'
+      ]
+      const fallbackDescription = `${contentGoal || 'Entdecken Sie diese einzigartige Immobilie'}! Perfekt für ${targetAudience || 'Immobilienkäufer'}. Kontaktieren Sie uns für weitere Informationen! 🏠✨`
+      
+      setGeneratedHashtags(fallbackHashtags)
+      setGeneratedDescription(fallbackDescription)
+      
+      if (error instanceof Error) {
+        toast.error(`Fallback-Content verwendet: ${error.message}`)
+      } else {
+        toast.error('Fallback-Content verwendet')
+      }
+    } finally {
+      setIsGeneratingHashtags(false)
     }
   }
 
@@ -319,19 +424,25 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
       if (!user) throw new Error('User not authenticated')
 
       const script = customScript || generatedContent?.script || ''
+      const finalHashtags = generatedHashtags.length > 0 ? generatedHashtags : (generatedContent?.hashtags || [])
+      const finalDescription = generatedDescription || 'Optimierter Content basierend auf Trend-Analyse'
+      
       const postData = {
         user_id: user.id,
         content: script,
-        content_text: script,
+        content_text: finalDescription,
+        description: finalDescription,
         status: status,
         platforms: ['instagram'], // Default platform
         media_type: uploadedFile ? 'video' : 'text',
         scheduled_for: publishDate?.toISOString() || null,
-        hashtags: generatedContent?.hashtags || [],
+        hashtags: finalHashtags,
         target_audience: targetAudience,
         content_goal: contentGoal,
         trend_source: trend.reel_url,
         original_trend_title: trend.title,
+        script_content: script,
+        additional_keywords: additionalKeywords,
         created_at: new Date().toISOString()
       }
 
@@ -775,6 +886,138 @@ Antworte nur mit dem optimierten Script, ohne zusätzliche Erklärungen.`
                       </>
                     )}
                   </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {currentStep === 'generate' && (
+              <Card className="bg-white/90 backdrop-blur-sm border-0 rounded-xl shadow-sm flex-1 flex flex-col">
+                <CardContent className="p-6 flex-1 flex flex-col">
+                  <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <Wand2 className="w-5 h-5 text-orange-600" />
+                    Content Generierung
+                  </h3>
+                  
+                  <div className="space-y-6 flex-1 flex flex-col">
+                    {/* Keywords Input */}
+                    <div>
+                      <Label htmlFor="keywords" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Zusätzliche Stichworte (optional)
+                      </Label>
+                      <Textarea
+                        id="keywords"
+                        placeholder="Basierend auf Script sofort generieren oder noch Stichworte mit eingeben (z.B. luxuriös, modern, familienfreundlich, Garten, Neubau...)"
+                        value={additionalKeywords}
+                        onChange={(e) => setAdditionalKeywords(e.target.value)}
+                        rows={3}
+                        className="text-sm"
+                        style={{ color: additionalKeywords ? '#000' : '#9CA3AF' }}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Diese Begriffe werden bei der Hashtag- und Beschreibungsgenerierung berücksichtigt
+                      </p>
+                    </div>
+
+                    {/* Generation Button */}
+                    <div className="text-center">
+                      <Button
+                        onClick={handleGenerateHashtagsAndDescription}
+                        disabled={isGeneratingHashtags}
+                        className="bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white px-8"
+                      >
+                        {isGeneratingHashtags ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Generiere Hashtags & Beschreibung...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            Hashtags & Beschreibung generieren
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {/* Generated Content Display */}
+                    {(generatedHashtags.length > 0 || generatedDescription) && (
+                      <div className="space-y-4 flex-1 bg-gray-50 rounded-lg p-4">
+                        {/* Generated Description */}
+                        {generatedDescription && (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <Label className="font-medium text-gray-900">Post-Beschreibung</Label>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => copyToClipboard(generatedDescription)}
+                              >
+                                <Copy className="w-4 h-4 mr-1" />
+                                Kopieren
+                              </Button>
+                            </div>
+                            <Textarea
+                              value={generatedDescription}
+                              onChange={(e) => setGeneratedDescription(e.target.value)}
+                              rows={3}
+                              className="bg-white"
+                            />
+                          </div>
+                        )}
+
+                        {/* Generated Hashtags */}
+                        {generatedHashtags.length > 0 && (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <Label className="font-medium text-gray-900">
+                                Hashtags ({generatedHashtags.length})
+                              </Label>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => copyToClipboard(generatedHashtags.join(' '))}
+                              >
+                                <Copy className="w-4 h-4 mr-1" />
+                                Alle kopieren
+                              </Button>
+                            </div>
+                            <div className="flex flex-wrap gap-2 p-3 bg-white rounded-lg border max-h-32 overflow-y-auto">
+                              {generatedHashtags.map((hashtag, index) => (
+                                <Badge
+                                  key={index}
+                                  variant="secondary"
+                                  className="bg-orange-100 text-orange-800 cursor-pointer hover:bg-orange-200 transition-colors"
+                                  onClick={() => copyToClipboard(hashtag)}
+                                >
+                                  {hashtag}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 pt-4">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setCurrentStep('customize')}
+                        className="flex-1"
+                      >
+                        <ArrowLeft className="w-4 h-4 mr-2" />
+                        Zurück
+                      </Button>
+                      <Button 
+                        onClick={() => setCurrentStep('upload')}
+                        disabled={!generatedHashtags.length && !generatedDescription}
+                        className="flex-1 bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white"
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Weiter zu Upload
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             )}
