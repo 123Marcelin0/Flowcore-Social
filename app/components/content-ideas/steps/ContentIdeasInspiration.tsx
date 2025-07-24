@@ -15,10 +15,12 @@ import {
   ExternalLink,
   MessageCircle,
   Eye,
-  Share2
+  Share2,
+  RotateCcw
 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from 'sonner'
+import { TrendOptimizationWorkflow } from "@/app/components/trend-optimization-workflow"
 import type { ContentStep } from "../hooks/useContentIdeas"
 
 interface TrendData {
@@ -40,14 +42,32 @@ interface TrendCardProps {
   trend: TrendData
   onSave: () => void
   isSaved: boolean
+  onSelect?: (trend: TrendData) => void
+  isSelectionMode?: boolean
 }
 
-const TrendCard: React.FC<TrendCardProps> = ({ trend, onSave, isSaved }) => {
-  const handleInstagramRedirect = () => {
+const TrendCard: React.FC<TrendCardProps> = ({ trend, onSave, isSaved, onSelect, isSelectionMode }) => {
+  const [isFlipped, setIsFlipped] = useState(false)
+
+  const handleInstagramRedirect = (e: React.MouseEvent) => {
+    e.stopPropagation()
     if (trend.reel_url) {
       window.open(trend.reel_url, '_blank', 'noopener,noreferrer')
     } else {
       toast.error('Instagram Link nicht verfügbar')
+    }
+  }
+
+  const handleFlip = () => {
+    if (isSelectionMode) return // Don't flip in selection mode
+    setIsFlipped(!isFlipped)
+  }
+
+  const handleCardClick = () => {
+    if (isSelectionMode && onSelect) {
+      onSelect(trend)
+    } else {
+      handleFlip()
     }
   }
 
@@ -59,83 +79,181 @@ const TrendCard: React.FC<TrendCardProps> = ({ trend, onSave, isSaved }) => {
   }
 
   return (
-    <Card className="overflow-hidden hover:shadow-lg transition-all duration-300 group border-0 bg-white rounded-2xl">
-      <CardContent className="p-0">
-        {/* Title */}
-        <div className="p-4 pb-2">
-          <h3 className="font-semibold text-gray-900 text-lg mb-1 line-clamp-2">
-            {trend.title || 'Untitled Trend'}
-          </h3>
-          <p className="text-sm text-gray-500">{trend.creator || 'Unknown Creator'}</p>
-        </div>
-
-        {/* Insight Data */}
-        <div className="px-4 pb-3">
-          <div className="flex items-center gap-4 text-sm text-gray-600">
-            {trend.likes_count !== undefined && (
-              <div className="flex items-center gap-1">
-                <Heart className="w-4 h-4 text-red-500" />
-                <span className="font-medium">{formatCount(trend.likes_count)}</span>
+    <div className="perspective-1000 h-[500px]">
+      <div
+        className={`
+          relative w-full h-full transition-transform duration-700 transform-style-preserve-3d cursor-pointer
+          ${isFlipped ? 'rotate-y-180' : ''}
+          ${isSelectionMode ? 'hover:scale-105 hover:shadow-xl' : ''}
+        `}
+        onClick={handleCardClick}
+      >
+        {/* Front Side */}
+        <Card className={`
+          absolute inset-0 w-full h-full backface-hidden overflow-hidden hover:shadow-lg transition-all duration-300 group border-0 bg-white rounded-2xl
+          ${isSelectionMode ? 'ring-2 ring-transparent hover:ring-orange-400 hover:ring-opacity-50' : ''}
+        `}>
+          <CardContent className="p-0 h-full flex flex-col">
+            {/* Selection Mode Indicator */}
+            {isSelectionMode && (
+              <div className="absolute top-4 left-4 z-10">
+                <Badge className="bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-white">
+                  Zum Optimieren klicken
+                </Badge>
               </div>
             )}
-            {trend.comments_count !== undefined && (
-              <div className="flex items-center gap-1">
-                <MessageCircle className="w-4 h-4 text-blue-500" />
-                <span className="font-medium">{formatCount(trend.comments_count)}</span>
-              </div>
-            )}
-            {trend.views_count !== undefined && (
-              <div className="flex items-center gap-1">
-                <Eye className="w-4 h-4 text-green-500" />
-                <span className="font-medium">{formatCount(trend.views_count)}</span>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Preview Image */}
-        <div className="aspect-[4/5] relative overflow-hidden mx-4 rounded-xl mb-4">
-          <img
-            src={trend.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop'}
-            alt={trend.title || 'Trend preview'}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement
-              target.src = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop'
-            }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-          
-          {/* Save Button Overlay */}
-          <Button
-            size="sm"
-            variant={isSaved ? "default" : "secondary"}
-            className={`absolute top-3 right-3 rounded-full w-8 h-8 p-0 ${
-              isSaved 
-                ? 'bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-white' 
-                : 'bg-white/90 backdrop-blur-sm text-gray-700 hover:bg-white'
-            }`}
-            onClick={(e) => {
-              e.stopPropagation()
-              onSave()
-            }}
-          >
-            <Bookmark className="w-4 h-4" />
-          </Button>
-        </div>
+            {/* Title */}
+            <div className="p-4 pb-2">
+              <h3 className="font-semibold text-gray-900 text-lg mb-1 line-clamp-2">
+                {trend.title || 'Untitled Trend'}
+              </h3>
+              <p className="text-sm text-gray-500">{trend.creator || 'Unknown Creator'}</p>
+            </div>
 
-        {/* Interactive Button */}
-        <div className="p-4 pt-0">
-          <Button
-            onClick={handleInstagramRedirect}
-            className="w-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white rounded-xl font-medium transition-all duration-200 group/btn"
-          >
-            <span>Instagram Reel ansehen</span>
-            <ExternalLink className="w-4 h-4 ml-2 group-hover/btn:translate-x-0.5 transition-transform duration-200" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+            {/* Insight Data */}
+            <div className="px-4 pb-3">
+              <div className="flex items-center gap-4 text-sm text-gray-600">
+                {trend.likes_count !== undefined && (
+                  <div className="flex items-center gap-1">
+                    <Heart className="w-4 h-4 text-red-500" />
+                    <span className="font-medium">{formatCount(trend.likes_count)}</span>
+                  </div>
+                )}
+                {trend.comments_count !== undefined && (
+                  <div className="flex items-center gap-1">
+                    <MessageCircle className="w-4 h-4 text-blue-500" />
+                    <span className="font-medium">{formatCount(trend.comments_count)}</span>
+                  </div>
+                )}
+                {trend.views_count !== undefined && (
+                  <div className="flex items-center gap-1">
+                    <Eye className="w-4 h-4 text-green-500" />
+                    <span className="font-medium">{formatCount(trend.views_count)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Preview Image */}
+            <div className="aspect-[4/5] relative overflow-hidden mx-4 rounded-xl mb-4 flex-1">
+              <img
+                src={trend.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop'}
+                alt={trend.title || 'Trend preview'}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement
+                  target.src = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop'
+                }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              
+              {/* Save Button Overlay */}
+              {!isSelectionMode && (
+                <Button
+                  size="sm"
+                  variant={isSaved ? "default" : "secondary"}
+                  className={`absolute top-3 right-3 rounded-full w-8 h-8 p-0 ${
+                    isSaved 
+                      ? 'bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-white' 
+                      : 'bg-white/90 backdrop-blur-sm text-gray-700 hover:bg-white'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSave()
+                  }}
+                >
+                  <Bookmark className="w-4 h-4" />
+                </Button>
+              )}
+              
+              {/* Flip Hint or Selection Hint */}
+              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-center gap-2 text-white/80 text-sm bg-black/20 backdrop-blur-sm rounded-lg py-2">
+                {isSelectionMode ? (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>Klicken für KI-Optimierung</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Klicken für Script</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Interactive Button */}
+            <div className="p-4 pt-0">
+              <Button
+                onClick={handleInstagramRedirect}
+                className="w-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white rounded-xl font-medium transition-all duration-200 group/btn"
+              >
+                <span>Instagram Reel ansehen</span>
+                <ExternalLink className="w-4 h-4 ml-2 group-hover/btn:translate-x-0.5 transition-transform duration-200" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Back Side - Script (only show if not in selection mode) */}
+        {!isSelectionMode && (
+          <Card className="absolute inset-0 w-full h-full backface-hidden rotate-y-180 overflow-hidden border-0 bg-white rounded-2xl">
+            <CardContent className="p-6 h-full flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-900">Script Idee</h3>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleFlip()
+                  }}
+                  className="rounded-full p-2"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              {/* Script Content */}
+              <div className="flex-1 overflow-y-auto mb-4">
+                <div className="prose prose-sm max-w-none">
+                  <div className="whitespace-pre-wrap text-gray-700 leading-relaxed">
+                    {trend.script || 'Kein Script verfügbar für diesen Trend.'}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <Button
+                  onClick={handleInstagramRedirect}
+                  className="flex-1 bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Original ansehen
+                </Button>
+                <Button
+                  variant={isSaved ? "default" : "outline"}
+                  className={`${
+                    isSaved 
+                      ? 'bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-white' 
+                      : 'border-orange-200 text-orange-600 hover:bg-orange-50'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSave()
+                  }}
+                >
+                  <Bookmark className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -149,6 +267,9 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showSaved, setShowSaved] = useState(false)
+  const [showTrendSelection, setShowTrendSelection] = useState(false)
+  const [selectedTrend, setSelectedTrend] = useState<TrendData | null>(null)
+  const [workflowStep, setWorkflowStep] = useState<"overview" | "optimization" | "script">("overview")
 
   // Mock data for demonstration - fallback when database is not available
   const mockTrends: TrendData[] = [
@@ -428,6 +549,29 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
     toast.success('Trend entfernt')
   }
 
+  const handleTrendSelect = (trend: TrendData) => {
+    setSelectedTrend(trend)
+    setWorkflowStep("optimization")
+    toast.success(`Trend "${trend.title}" ausgewählt!`)
+  }
+
+  const handleWorkflowBack = () => {
+    if (workflowStep === "optimization") {
+      setSelectedTrend(null)
+      setWorkflowStep("overview")
+    }
+  }
+
+  // Show trend optimization workflow
+  if (selectedTrend && workflowStep === "optimization") {
+    return (
+      <TrendOptimizationWorkflow 
+        trend={selectedTrend}
+        onBack={handleWorkflowBack}
+      />
+    )
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -442,19 +586,19 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
   if (showSaved) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <div className="border-b border-gray-100 bg-white">
-          <div className="max-w-7xl mx-auto px-6 py-4">
+        {/* Header - Grey Background */}
+        <div className="px-6 py-4">
+          <div className="max-w-7xl mx-auto">
             <div className="flex items-center justify-between">
               <Button 
                 variant="ghost" 
                 onClick={() => setShowSaved(false)}
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 bg-white/90 backdrop-blur-sm rounded-lg"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Zurück zu Trends
               </Button>
-              <h1 className="text-xl font-semibold text-gray-900">
+              <h1 className="text-xl font-semibold text-gray-900 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg">
                 Gespeicherte Trends ({savedTrends.length})
               </h1>
               <div className="w-20"></div>
@@ -471,7 +615,7 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
               <p className="text-sm text-gray-500 mt-2">Klicke auf das Bookmark-Icon um Trends zu speichern</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {savedTrends.map((trend) => (
                 <TrendCard
                   key={trend.id}
@@ -487,23 +631,83 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
     )
   }
 
+  if (showTrendSelection) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header - Grey Background */}
+        <div className="px-6 py-4">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-between">
+              <Button 
+                variant="ghost" 
+                onClick={() => setShowTrendSelection(false)}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 bg-white/90 backdrop-blur-sm rounded-lg"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Zurück zu Inspiration
+              </Button>
+              <h1 className="text-xl font-semibold text-gray-900 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg">
+                Trend auswählen
+              </h1>
+              <div className="w-20"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Trend Selection Grid */}
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          {trends.length === 0 ? (
+            <div className="text-center py-12">
+              <Sparkles className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Keine Trends verfügbar</h3>
+              <p className="text-gray-600 mb-6">Versuche es später noch einmal</p>
+              <Button onClick={refreshTrends} disabled={isRefreshing}>
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                Neu laden
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {trends.map((trend) => (
+                <TrendCard
+                  key={trend.id}
+                  trend={trend}
+                  onSave={() => handleSaveTrend(trend)}
+                  isSaved={savedTrends.some(s => s.id === trend.id)}
+                  isSelectionMode={true}
+                  onSelect={handleTrendSelect}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header - with Content Inspiration button in the center */}
-      <div className="">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+      {/* Header - Grey Background Only */}
+      <div className="px-6 py-4">
+        <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between">
             <Button 
               variant="ghost" 
               onClick={() => setCurrentStep("overview")}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 bg-white/90 backdrop-blur-sm rounded-lg"
             >
               <ArrowLeft className="w-4 h-4" />
               Zurück
             </Button>
             
-            {/* Content Inspiration Title - perfectly centered relative to card area with white text */}
-            <div className="relative inline-flex items-center gap-3 px-8 py-3 rounded-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] font-medium text-xl transition-all duration-300 ease-in-out group" style={{ marginRight: '3rem' }}>
+            {/* Centered Trend Entdecken Button with Red Gradient and Pulse */}
+            <button
+              onClick={() => setShowTrendSelection(true)}
+              className="relative inline-flex items-center gap-3 px-8 py-3 rounded-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] font-medium text-xl transition-all duration-300 ease-in-out group hover:scale-105"
+            >
+              {/* Pulse effect on hover */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] opacity-0 group-hover:opacity-75 group-hover:animate-ping"></div>
+              
               {/* Animated border with flowcore gradient */}
               <div className="absolute inset-0 rounded-full border-2 border-transparent bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] transition-all duration-300 group-hover:opacity-50" 
                    style={{ mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', maskComposite: 'xor' }}></div>
@@ -514,36 +718,9 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
               {/* Content with white text */}
               <TrendingUp className="w-6 h-6 relative z-10 text-white" />
               <span className="relative z-10 text-white">Trend Entdecken</span>
-            </div>
+            </button>
             
-            {/* Action buttons */}
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowSaved(true)}
-                className="flex items-center gap-2"
-              >
-                <Bookmark className="w-4 h-4" />
-                <span className="hidden sm:inline">Gespeichert</span>
-                {savedTrends.length > 0 && (
-                  <Badge variant="secondary" className="ml-1">
-                    {savedTrends.length}
-                  </Badge>
-                )}
-              </Button>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={refreshTrends}
-                disabled={isRefreshing}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh</span>
-              </Button>
-            </div>
+            <div className="w-20"></div>
           </div>
         </div>
       </div>
@@ -561,7 +738,7 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {trends.map((trend) => (
               <TrendCard
                 key={trend.id}
