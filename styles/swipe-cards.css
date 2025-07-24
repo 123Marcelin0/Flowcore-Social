@@ -132,3 +132,76 @@
   background-color: #f3f4f6;
   border-radius: 6px;
 }
+
+/* Strategy Card Fixes */
+.strategy-card {
+  border-radius: 1.5rem !important;
+  overflow: hidden !important;
+  position: relative;
+  z-index: 50;
+}
+
+.strategy-card * {
+  border-radius: inherit;
+}
+
+.strategy-card .card-content {
+  border-radius: 1.5rem !important;
+  overflow: hidden !important;
+}
+
+/* High z-index for swipe cards */
+.swipe-card-container {
+  position: relative;
+  z-index: 999 !important;
+}
+
+.swipe-card-container > * {
+  z-index: 999 !important;
+}
+
+/* Remove ALL focus rings and unwanted hover effects */
+button:focus,
+button:focus-visible,
+button:active,
+.action-button:focus,
+.action-button:focus-visible,
+.action-button:active {
+  outline: none !important;
+  box-shadow: none !important;
+  ring: none !important;
+  background-color: inherit !important;
+  border-color: inherit !important;
+}
+
+/* Ensure no black backgrounds on any buttons */
+button:focus,
+button:focus-visible,
+button:active,
+button:hover:focus,
+button:hover:focus-visible {
+  background-color: inherit !important;
+  outline: none !important;
+  box-shadow: none !important;
+  ring: 0 !important;
+  ring-offset: 0 !important;
+}
+
+/* Override any default focus styles */
+*:focus,
+*:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Remove any unwanted shadows that could create rectangular appearance */
+.strategy-card,
+.strategy-card * {
+  box-shadow: none !important;
+}
+
+/* Custom shadow for strategy cards only */
+.strategy-card.w-full.h-full.bg-white {
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.08), 0 8px 16px -8px rgba(0, 0, 0, 0.06) !important;
+  border-radius: 1.5rem !important;
+}

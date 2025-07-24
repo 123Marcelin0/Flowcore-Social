@@ -18,6 +18,86 @@ body {
   }
 }
 
+/* Strategy Card Overrides */
+@layer components {
+  .strategy-card-override {
+    border-radius: 1.5rem !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.08), 0 8px 16px -8px rgba(0, 0, 0, 0.06) !important;
+    border: none !important;
+  }
+  
+  .strategy-card-override * {
+    border-radius: inherit !important;
+  }
+  
+  /* Remove focus outlines globally for buttons */
+  .no-focus-outline {
+    outline: none !important;
+    box-shadow: none !important;
+    ring: 0 !important;
+    ring-offset: 0 !important;
+  }
+  
+  .no-focus-outline:focus,
+  .no-focus-outline:focus-visible,
+  .no-focus-outline:active {
+    outline: none !important;
+    box-shadow: none !important;
+    ring: 0 !important;
+    ring-offset: 0 !important;
+    background-color: inherit !important;
+  }
+  
+  /* White hover effects for save buttons */
+  .save-button-hover:hover {
+    background: white !important;
+    color: #0D9488 !important;
+    border: 2px solid #0D9488 !important;
+  }
+  
+  .action-button-hover:hover {
+    background: white !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1) !important;
+  }
+  
+  /* Override any conflicting button hover styles */
+  button:hover {
+    background-color: inherit;
+  }
+  
+  button.no-focus-outline:hover {
+    outline: none !important;
+    box-shadow: none !important;
+    ring: 0 !important;
+  }
+  
+  /* Prevent any black hover effects */
+  button:hover,
+  button:focus,
+  button:active,
+  [role="button"]:hover,
+  [role="button"]:focus,
+  [role="button"]:active {
+    background-color: inherit !important;
+    color: inherit !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  
+  /* Force white backgrounds for strategy buttons */
+  .strategy-button-white:hover {
+    background-color: white !important;
+    color: #0D9488 !important;
+    border: 2px solid #0D9488 !important;
+  }
+  
+  /* Disable all default button hover styles */
+  button[class*="rounded-full"]:hover {
+    background-color: unset !important;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

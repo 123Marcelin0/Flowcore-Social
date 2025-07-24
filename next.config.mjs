@@ -12,32 +12,35 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['@/components/ui'],
   },
-  webpack: (config) => {
-    config.optimization.splitChunks = {
-      chunks: 'all',
-      minSize: 20000,
-      maxSize: 70000,
-      cacheGroups: {
-        default: false,
-        vendors: false,
-        framework: {
+  // Simplified webpack config for better Vercel compatibility
+  webpack: (config, { isServer }) => {
+    // Only apply optimizations for client-side bundles
+    if (!isServer) {
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          ...config.optimization.splitChunks,
           chunks: 'all',
-          name: 'framework',
-          test: /(?<!node_modules.*)[\\/]node_modules[\\/](react|react-dom|scheduler|next)[\\/]/,
-          priority: 40,
-          enforce: true,
+          minSize: 20000,
+          maxSize: 244000, // Increased for Vercel compatibility
+          cacheGroups: {
+            ...config.optimization.splitChunks?.cacheGroups,
+            framework: {
+              chunks: 'all',
+              name: 'framework',
+              test: /(?<!node_modules.*)[\\/]node_modules[\\/](react|react-dom|scheduler|next)[\\/]/,
+              priority: 40,
+              enforce: true,
+            },
+          },
         },
-        commons: {
-          name: 'commons',
-          minChunks: 2,
-          priority: 20,
-        },
-      },
-    };
-    return config;
+      }
+    }
+    return config
   },
 }
 
+// Environment variables configuration
 nextConfig.env = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
 }

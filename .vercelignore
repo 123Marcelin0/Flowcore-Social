@@ -1,0 +1,40 @@
+# Development files
+*.log
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+*.test.ts
+*.test.tsx
+__tests__/
+vitest.config.ts
+
+# Documentation
+*.md
+!README.md
+
+# Database files
+database/
+scripts/
+*.sql
+
+# Temporary files
+temp_*
+debug_*
+fix_*
+check-setup.js
+create-*.js
+test-*.js
+update_*.js
+remove_*.js
+quick-fix.js
+final_fix.js
+
+# Build cache
+.next/cache/
+node_modules/.cache/ 

@@ -127,22 +127,22 @@ export function StrategySwipeCard({
     if (!isCurrentCard && !isNextCard) return { display: 'none' }
     
     let transform = ''
-    let zIndex = 1
+    let zIndex = 1000
     let opacity = 1
     
     if (isCurrentCard) {
-      zIndex = 10
+      zIndex = 1010
       if (swipeDirection === 'left') {
-        transform = 'translateX(-100%) rotate(-10deg) scale(0.8)'
+        transform = 'translateX(-100vw) rotate(-10deg) scale(0.8)'
         opacity = 0
       } else if (swipeDirection === 'right') {
-        transform = 'translateX(100%) rotate(10deg) scale(0.8)'
+        transform = 'translateX(100vw) rotate(10deg) scale(0.8)'
         opacity = 0
       } else if (isDragging) {
         transform = `translateX(${dragOffset.x}px) translateY(${dragOffset.y}px) rotate(${rotation}deg)`
       }
     } else if (isNextCard) {
-      zIndex = 5
+      zIndex = 1005
       transform = 'scale(0.95) translateY(10px)'
       opacity = 0.8
     }
@@ -185,8 +185,8 @@ export function StrategySwipeCard({
         >
           {/* Front of Card */}
           <div className="absolute inset-0 backface-hidden">
-            <Card className="w-full h-full bg-white shadow-xl rounded-3xl border-0 overflow-hidden">
-              <CardContent className="p-8 h-full flex flex-col">
+            <Card className="strategy-card strategy-card-override w-full h-full bg-white rounded-3xl border-0 overflow-hidden">
+              <CardContent className="p-8 h-full flex flex-col rounded-3xl overflow-hidden">
                 <div className={`
                   w-16 h-16 rounded-2xl 
                   bg-gradient-to-br ${strategy.color}
@@ -216,8 +216,8 @@ export function StrategySwipeCard({
 
           {/* Back of Card */}
           <div className="absolute inset-0 backface-hidden rotate-y-180">
-            <Card className="w-full h-full bg-white shadow-xl rounded-3xl border-0 overflow-hidden">
-              <CardContent className="p-8 h-full flex flex-col">
+            <Card className="strategy-card strategy-card-override w-full h-full bg-white rounded-3xl border-0 overflow-hidden">
+              <CardContent className="p-8 h-full flex flex-col rounded-3xl overflow-hidden">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl font-semibold text-gray-900">
                     {strategy.title}
@@ -248,14 +248,14 @@ export function StrategySwipeCard({
                     </div>
                   )}
                   
-                  {strategy.details?.tips && (
+                  {strategy.details?.proTips && (
                     <div>
                       <h4 className="font-semibold text-gray-900 mb-2 text-sm">Profi-Tipps:</h4>
-                      <ul className="text-xs text-gray-600 space-y-2">
-                        {strategy.details.tips.map((tip: string, idx: number) => (
-                          <li key={idx} className="flex items-start gap-2 bg-gray-50 p-2 rounded-lg">
-                            <span className="text-teal-500 mt-0.5 font-bold">•</span>
-                            <span className="leading-relaxed">{tip}</span>
+                      <ul className="space-y-1">
+                        {strategy.details.proTips.map((tip: string, index: number) => (
+                          <li key={index} className="text-xs text-gray-600 leading-relaxed flex items-start gap-2">
+                            <div className="w-1 h-1 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full mt-2 flex-shrink-0" />
+                            <span>{tip}</span>
                           </li>
                         ))}
                       </ul>
@@ -266,7 +266,7 @@ export function StrategySwipeCard({
                 <div className="mt-6 text-center">
                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-full">
                     <div className="w-2 h-2 bg-gray-300 rounded-full animate-pulse" />
-                    <span className="text-sm text-gray-500">Tippen zum Umdrehen</span>
+                    <span className="text-sm text-gray-500">Tippen für Vorderseite</span>
                   </div>
                 </div>
               </CardContent>

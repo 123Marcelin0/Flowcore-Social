@@ -166,8 +166,8 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="border-b border-gray-100 bg-white">
+      {/* Header - with Content-Strategien button in the center */}
+      <div className="">
         <div className="max-w-4xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <Button 
@@ -179,44 +179,53 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
               Zurück
             </Button>
             
-            <div className="flex items-center gap-3">
-              <Target className="w-5 h-5 text-teal-600" />
-              <h1 className="text-xl font-semibold text-gray-900">Content-Strategien</h1>
+            {/* Content-Strategien Title - perfectly centered relative to card area */}
+            <div className="relative inline-flex items-center gap-3 px-8 py-3 rounded-full bg-[#ECF8F6] text-[#0D9488] font-medium text-xl transition-all duration-300 ease-in-out group" style={{ marginRight: '3rem' }}>
+              {/* Animated border */}
+              <div className="absolute inset-0 rounded-full border-2 border-[#2DD4BF] transition-all duration-300 group-hover:opacity-50"></div>
+              
+              {/* Hover glow effect */}
+              <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-[#2DD4BF] blur-md"></div>
+              
+              {/* Content */}
+              <Target className="w-6 h-6 relative z-10" />
+              <span className="relative z-10">Content-Strategien</span>
             </div>
             
-            <div className="flex items-center gap-2">
-              {/* Optimized Saved Button - Small, Modern, Just "Saved" */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowSaved(true)}
-                className="h-8 px-3 bg-white border-gray-200 hover:bg-gray-50 rounded-lg"
-              >
-                <Bookmark className="w-3.5 h-3.5 mr-1.5" />
-                <span className="text-sm font-medium">Saved</span>
-                {savedStrategies.length > 0 && (
-                  <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs bg-gray-100 text-gray-700">
-                    {savedStrategies.length}
-                  </Badge>
-                )}
-              </Button>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={resetStrategies}
-                className="h-8 px-3 bg-white border-gray-200 hover:bg-gray-50 rounded-lg"
-              >
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                <span className="text-sm font-medium">Reset</span>
-              </Button>
-            </div>
+            {/* Clean save icon button in application colors */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSaved(true)}
+              className="h-10 w-10 p-0 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-sm hover:shadow-md transition-all duration-200"
+              style={{
+                border: 'none',
+                outline: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.color = '#0D9488'
+                e.currentTarget.style.border = '2px solid #0D9488'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(to right, #14b8a6, #06b6d4)'
+                e.currentTarget.style.color = 'white'
+                e.currentTarget.style.border = 'none'
+              }}
+            >
+              <Bookmark className="w-4 h-4" />
+              {savedStrategies.length > 0 && (
+                <Badge variant="secondary" className="absolute -top-1 -right-1 h-5 w-5 p-0 text-xs bg-red-500 text-white border-2 border-white rounded-full flex items-center justify-center">
+                  {savedStrategies.length}
+                </Badge>
+              )}
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* Main Swipe Interface */}
-      <div className="max-w-md mx-auto px-6 py-8">
+      {/* Main Swipe Interface - moved up with proper z-index */}
+      <div className="max-w-md mx-auto px-6 py-8 relative z-50">
         {!hasMoreStrategies && currentIndex >= strategies.length ? (
           // No more strategies
           <div className="text-center py-12">
@@ -225,21 +234,21 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
             <p className="text-gray-600 mb-6">Du hast alle verfügbaren Content-Strategien gesehen</p>
             <Button 
               onClick={resetStrategies} 
-              className="bg-teal-600 hover:bg-teal-700"
+              className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white rounded-full px-6 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               Von vorne beginnen
             </Button>
           </div>
         ) : (
-          // Card Stack with Improved Animation
-          <div className="relative h-[600px] overflow-hidden">
+          // Card Stack with Improved Animation and proper z-index
+          <div className="relative h-[600px] overflow-visible z-50">
             {strategies.slice(currentIndex, currentIndex + 3).map((strategy, index) => (
               <div
                 key={`${strategy.id}-${currentIndex}`} // Add currentIndex to force re-render
                 className="absolute inset-0"
                 style={{
-                  zIndex: 3 - index,
+                  zIndex: 100 + (3 - index),
                   transform: index === 0 ? 'scale(1)' : `scale(${0.95 - index * 0.02}) translateY(${index * 8}px)`,
                   opacity: index === 0 ? 1 : 0.8 - index * 0.1,
                   transition: swipeDirection ? 'none' : 'all 0.3s ease-out'
@@ -260,24 +269,51 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Modern Clean Action Buttons - Fixed hover effects */}
         {hasMoreStrategies && currentIndex < strategies.length && (
-          <div className="flex justify-center gap-6 mt-8">
+          <div className="flex justify-center gap-8 mt-8 relative z-40">
             <Button
               size="lg"
-              variant="outline"
-              className="rounded-full w-16 h-16 border-red-200 text-red-600 hover:bg-red-50"
+              variant="ghost"
+              className="no-focus-outline rounded-full w-16 h-16 p-0 bg-white border-2 border-red-200 text-red-500 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
               onClick={handleSwipeLeft}
               disabled={!!swipeDirection}
+              style={{
+                outline: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.color = '#EF4444'
+                e.currentTarget.style.borderColor = '#FCA5A5'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.color = '#EF4444'
+                e.currentTarget.style.borderColor = '#FECACA'
+              }}
             >
               <X className="w-6 h-6" />
             </Button>
             
             <Button
               size="lg"
-              className="rounded-full w-16 h-16 bg-teal-600 hover:bg-teal-700 text-white"
+              variant="ghost"
+              className="no-focus-outline rounded-full w-16 h-16 p-0 bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
               onClick={handleSwipeRight}
               disabled={!!swipeDirection}
+              style={{
+                outline: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.color = '#0D9488'
+                e.currentTarget.style.border = '2px solid #0D9488'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(to right, #14b8a6, #06b6d4)'
+                e.currentTarget.style.color = 'white'
+                e.currentTarget.style.border = 'none'
+              }}
             >
               <Heart className="w-6 h-6" />
             </Button>
@@ -286,13 +322,13 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
 
         {/* Progress Indicator */}
         {strategies.length > 0 && (
-          <div className="mt-8 text-center">
+          <div className="mt-8 text-center relative z-30">
             <div className="flex justify-center gap-1 mb-2">
               {strategies.slice(0, Math.min(strategies.length, 10)).map((_, index) => (
                 <div
                   key={index}
                   className={`w-2 h-2 rounded-full transition-colors ${
-                    index <= currentIndex ? 'bg-teal-600' : 'bg-gray-300'
+                    index <= currentIndex ? 'bg-gradient-to-r from-teal-500 to-cyan-500' : 'bg-gray-300'
                   }`}
                 />
               ))}
@@ -302,32 +338,6 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
             </p>
           </div>
         )}
-      </div>
-
-      {/* Instructions */}
-      <div className="max-w-md mx-auto px-6 pb-8">
-        <Card className="bg-white/50 border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3 text-sm text-gray-600">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center">
-                  <X className="w-3 h-3 text-red-600" />
-                </div>
-                <span>Links wischen zum Überspringen</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-teal-100 flex items-center justify-center">
-                  <Heart className="w-3 h-3 text-teal-600" />
-                </div>
-                <span>Rechts wischen zum Speichern</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600 mt-2">
-              <RotateCcw className="w-4 h-4" />
-              <span>Auf Karte tippen für Details</span>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

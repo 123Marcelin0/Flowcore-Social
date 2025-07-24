@@ -6,7 +6,7 @@ import { chatContextAnalyzer, type UserContext } from "@/lib/chat-context-analyz
 import { enhancedContentGenerator } from "@/lib/enhanced-content-generator"
 import { supabase } from "@/lib/supabase"
 
-export type ContentStep = "overview" | "strategies" | "brainstorm" | "inspiration" | "develop" | "script"
+export type ContentStep = "overview" | "strategies" | "brainstorm" | "inspiration" | "develop"
 
 export function useContentIdeas() {
   // Main navigation state
@@ -34,22 +34,6 @@ export function useContentIdeas() {
   const [currentReels, setCurrentReels] = useState<any[]>([])
   const [finalizedScript, setFinalizedScript] = useState<any>(null)
 
-  // Script page state
-  const [uploadedMedia, setUploadedMedia] = useState<Array<{id: string, type: 'image' | 'video', url: string, name: string}>>([])
-  const [scriptTitle, setScriptTitle] = useState("")
-  const [scriptDescription, setScriptDescription] = useState("")
-  const [scriptContent, setScriptContent] = useState("")
-  const [visualGuidance, setVisualGuidance] = useState("")
-  const [contentType, setContentType] = useState<'video' | 'photo'>('video')
-  const [isUploadingMedia, setIsUploadingMedia] = useState(false)
-  const [generatedHashtags, setGeneratedHashtags] = useState<string[]>([
-    '#immobilien', '#makler', '#eigenheim', '#wohnung', '#haus', 
-    '#investment', '#traumhaus', '#neubau', '#renovierung', '#einrichtung'
-  ])
-
-  // Upload ref for file input
-  const uploadInputRef = useRef<HTMLInputElement | null>(null)
-
   // Swipe functionality state
   const [currentStrategyIndex, setCurrentStrategyIndex] = useState(0)
   const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set())
@@ -74,24 +58,17 @@ export function useContentIdeas() {
   const [showComponentRegeneration, setShowComponentRegeneration] = useState(false)
 
   // Copy to clipboard function
-  const copyToClipboard = useCallback(async (text: string, itemId: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedItems(prev => new Set(prev).add(itemId))
-      toast.success('In Zwischenablage kopiert!')
-      
-      // Reset copied state after 2 seconds
-      setTimeout(() => {
-        setCopiedItems(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(itemId)
-          return newSet
-        })
-      }, 2000)
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error)
-      toast.error('Kopieren fehlgeschlagen')
-    }
+  const copyToClipboard = useCallback((text: string, itemId: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedItems(prev => new Set([...prev, itemId]))
+    toast.success('Copied to clipboard!')
+    setTimeout(() => {
+      setCopiedItems(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(itemId)
+        return newSet
+      })
+    }, 2000)
   }, [])
 
   // Load and analyze user context
@@ -128,30 +105,7 @@ export function useContentIdeas() {
     }
   }, [isContextLoading, userContext])
 
-  // File upload handler
-  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length === 0) return
-
-    setIsUploadingMedia(true)
-    
-    setTimeout(() => {
-      const newMedia = files.map((file, index) => ({
-        id: (Date.now() + index).toString(),
-        type: file.type.startsWith('video/') ? 'video' as const : 'image' as const,
-        url: URL.createObjectURL(file),
-        name: file.name
-      }))
-      
-      setUploadedMedia(prev => [...prev, ...newMedia])
-      setIsUploadingMedia(false)
-      toast.success(`${files.length} Datei(en) hochgeladen!`)
-    }, 1000)
-  }, [])
-
-  const handleRemoveMedia = useCallback((mediaId: string) => {
-    setUploadedMedia(prev => prev.filter(media => media.id !== mediaId))
-  }, [])
+  // Copy to clipboard functionality (keeping this as it might be used elsewhere)
 
   const triggerSuccessAnimation = useCallback(() => {
     setShowSuccessAnimation(true)
@@ -184,15 +138,6 @@ export function useContentIdeas() {
     savedReels,
     currentReels,
     finalizedScript,
-    uploadedMedia,
-    scriptTitle,
-    scriptDescription,
-    scriptContent,
-    visualGuidance,
-    contentType,
-    isUploadingMedia,
-    generatedHashtags,
-    uploadInputRef,
     currentStrategyIndex,
     flippedCards,
     savedStrategies,
@@ -227,14 +172,6 @@ export function useContentIdeas() {
     setSavedReels,
     setCurrentReels,
     setFinalizedScript,
-    setUploadedMedia,
-    setScriptTitle,
-    setScriptDescription,
-    setScriptContent,
-    setVisualGuidance,
-    setContentType,
-    setIsUploadingMedia,
-    setGeneratedHashtags,
     setCurrentStrategyIndex,
     setFlippedCards,
     setSavedStrategies,
@@ -254,8 +191,6 @@ export function useContentIdeas() {
     // Functions
     copyToClipboard,
     loadUserContext,
-    handleFileUpload,
-    handleRemoveMedia,
     triggerSuccessAnimation,
     handleCreatePost,
   }

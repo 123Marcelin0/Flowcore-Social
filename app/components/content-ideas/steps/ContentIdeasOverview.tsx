@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Sparkles, Lightbulb, MessageSquare, TrendingUp, Edit } from "lucide-react"
+import { Sparkles, Lightbulb, MessageSquare, TrendingUp } from "lucide-react"
 import type { ContentStep } from "../hooks/useContentIdeas"
 
 interface ContentIdeasOverviewProps {
@@ -53,10 +53,10 @@ export function ContentIdeasOverview({
       </div>
 
       {/* Main Cards */}
-      <div className="max-w-7xl mx-auto px-6 pb-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
+      <div className="max-w-5xl mx-auto px-6 pb-16">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 justify-center">
           
-          {/* Structured Strategies Card */}
+          {/* Content-Strategien Card */}
           <div className="group relative">
             <Card className="relative border-0 bg-white hover:shadow-none transition-all duration-300 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-full flex flex-col transform group-hover:translate-y-2 transition-transform duration-300">
               <CardContent className="p-8 flex flex-col flex-1">
@@ -73,6 +73,29 @@ export function ContentIdeasOverview({
                     className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(45,212,191,0.2)]"
                   >
                     Strategien erkunden
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* KI-Brainstorming Card */}
+          <div className="group relative">
+            <Card className="relative border-0 bg-white hover:shadow-none transition-all duration-300 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-full flex flex-col transform group-hover:translate-y-2 transition-transform duration-300">
+              <CardContent className="p-8 flex flex-col flex-1">
+                <div className="text-center flex flex-col flex-1">
+                  <div className="w-16 h-16 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_4px_20px_rgb(147,51,234,0.1)]">
+                    <MessageSquare className="w-8 h-8 text-purple-600" />
+                  </div>
+                  <h3 className="text-xl font-light text-gray-900 mb-4">KI-Brainstorming</h3>
+                  <p className="text-gray-600 mb-6 leading-relaxed text-sm flex-1">
+                    Lass deiner Kreativität freien Lauf mit unserem intelligenten AI-Assistant.
+                  </p>
+                  <Button 
+                    onClick={() => setCurrentStep("brainstorm")}
+                    className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(147,51,234,0.2)]"
+                  >
+                    Brainstorming starten
                   </Button>
                 </div>
               </CardContent>
@@ -96,52 +119,6 @@ export function ContentIdeasOverview({
                     className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(251,146,60,0.2)]"
                   >
                     Inspiration entdecken
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Freies Brainstorming Card */}
-          <div className="group relative">
-            <Card className="relative border-0 bg-white hover:shadow-none transition-all duration-300 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-full flex flex-col transform group-hover:translate-y-2 transition-transform duration-300">
-              <CardContent className="p-8 flex flex-col flex-1">
-                <div className="text-center flex flex-col flex-1">
-                  <div className="w-16 h-16 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_4px_20px_rgb(147,51,234,0.1)]">
-                    <MessageSquare className="w-8 h-8 text-purple-600" />
-                  </div>
-                  <h3 className="text-xl font-light text-gray-900 mb-4">KI-Brainstorming</h3>
-                  <p className="text-gray-600 mb-6 leading-relaxed text-sm flex-1">
-                    Lass deiner Kreativität freien Lauf mit unserem intelligenten AI-Assistant.
-                  </p>
-                  <Button 
-                    onClick={() => setCurrentStep("brainstorm")}
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(147,51,234,0.2)]"
-                  >
-                    Brainstorming starten
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Script Editor Card */}
-          <div className="group relative">
-            <Card className="relative border-0 bg-white hover:shadow-none transition-all duration-300 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-full flex flex-col transform group-hover:translate-y-2 transition-transform duration-300">
-              <CardContent className="p-8 flex flex-col flex-1">
-                <div className="text-center flex flex-col flex-1">
-                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_4px_20px_rgb(52,211,153,0.1)]">
-                    <Edit className="w-8 h-8 text-emerald-600" />
-                  </div>
-                  <h3 className="text-xl font-light text-gray-900 mb-4">Script Editor</h3>
-                  <p className="text-gray-600 mb-6 leading-relaxed text-sm flex-1">
-                    Erstelle und bearbeite professionelle Content-Skripte mit integrierten visuellen Anleitungen.
-                  </p>
-                  <Button 
-                    onClick={() => setCurrentStep("script")}
-                    className="bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(52,211,153,0.2)]"
-                  >
-                    Script bearbeiten
                   </Button>
                 </div>
               </CardContent>

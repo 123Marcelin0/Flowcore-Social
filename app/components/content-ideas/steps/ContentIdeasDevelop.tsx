@@ -33,10 +33,10 @@ export function ContentIdeasDevelop({ setCurrentStep }: ContentIdeasDevelopProps
         <div className="mt-8 text-center">
           <p className="text-gray-600">Develop component - To be implemented</p>
           <Button 
-            onClick={() => setCurrentStep("script")}
+            onClick={() => setCurrentStep("overview")}
             className="mt-4 bg-gradient-to-r from-teal-500 to-cyan-500 text-white"
           >
-            Zum Script Editor
+            Zurück zur Übersicht
           </Button>
         </div>
       </div>
