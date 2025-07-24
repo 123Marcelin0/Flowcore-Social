@@ -420,31 +420,62 @@ Generiere 10-15 relevante Hashtags (Mix aus populären und nischigen) und eine 2
 
   const savePostToDatabase = async (status: 'draft' | 'scheduled' | 'published', publishDate?: Date) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('User not authenticated')
+      // Get current user
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        throw new Error('User authentication failed')
+      }
 
       const script = customScript || generatedContent?.script || ''
       const finalHashtags = generatedHashtags.length > 0 ? generatedHashtags : (generatedContent?.hashtags || [])
       const finalDescription = generatedDescription || 'Optimierter Content basierend auf Trend-Analyse'
       
-      const postData = {
-        user_id: user.id,
-        content: script,
-        content_text: finalDescription,
-        description: finalDescription,
-        status: status,
-        platforms: ['instagram'], // Default platform
-        media_type: uploadedFile ? 'video' : 'text',
-        scheduled_for: publishDate?.toISOString() || null,
-        hashtags: finalHashtags,
+      // Prepare metadata with additional information
+      const metadata = {
         target_audience: targetAudience,
         content_goal: contentGoal,
         trend_source: trend.reel_url,
         original_trend_title: trend.title,
         script_content: script,
         additional_keywords: additionalKeywords,
-        created_at: new Date().toISOString()
+        generated_description: finalDescription,
+        generated_hashtags: finalHashtags,
+        workflow_type: 'trend_optimization',
+        created_via: 'trend_optimization_workflow'
       }
+
+      // Prepare post data with only fields that exist in the database
+      const postData: any = {
+        user_id: user.id,
+        content: script,
+        status: status,
+        platforms: ['instagram'],
+        media_type: uploadedFile ? 'video' : 'text',
+        tags: finalHashtags,
+        metadata: metadata
+      }
+
+      // Add title from trend if available
+      if (trend.title) {
+        postData.title = `Trend: ${trend.title.substring(0, 200)}`
+      }
+
+      // Add content_text if we have description
+      if (finalDescription) {
+        postData.content_text = finalDescription
+      }
+
+      // Add scheduled_at for scheduled posts
+      if (status === 'scheduled' && publishDate) {
+        postData.scheduled_at = publishDate.toISOString()
+      }
+
+      // Add media_urls if we have uploaded file
+      if (uploadedFile) {
+        postData.media_urls = [`uploaded_${Date.now()}_${uploadedFile.name}`]
+      }
+
+      console.log('Attempting to save post with data:', postData)
 
       const { data, error } = await supabase
         .from('posts')
@@ -452,13 +483,32 @@ Generiere 10-15 relevante Hashtags (Mix aus populären und nischigen) und eine 2
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase insert error:', error)
+        
+        // Provide more specific error messages
+        if (error.code === '23503') {
+          throw new Error('Benutzer-Profil nicht gefunden. Bitte melden Sie sich erneut an.')
+        } else if (error.code === '23514') {
+          throw new Error('Ungültige Daten. Bitte überprüfen Sie Ihre Eingaben.')
+        } else if (error.message.includes('user_id')) {
+          throw new Error('Benutzer-Authentifizierung fehlgeschlagen.')
+        } else {
+          throw new Error(`Fehler beim Speichern: ${error.message}`)
+        }
+      }
 
-      console.log('Post saved successfully:', data)
+      console.log('Post erfolgreich gespeichert:', data)
       return data
     } catch (error) {
-      console.error('Error saving post to database:', error)
-      throw error
+      console.error('Error in savePostToDatabase:', error)
+      
+      // Re-throw with user-friendly message
+      if (error instanceof Error) {
+        throw error
+      } else {
+        throw new Error('Unbekannter Fehler beim Speichern des Posts')
+      }
     }
   }
 
