@@ -230,44 +230,42 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
 
       {/* Progress Bar */}
       <div className="max-w-6xl mx-auto px-6 mb-8">
-        <Card className="bg-white/90 backdrop-blur-sm border-0 rounded-xl shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium text-gray-900">Workflow Fortschritt</h3>
-              <span className="text-sm text-gray-500">{Math.round(progress)}% Abgeschlossen</span>
-            </div>
-            {/* Updated Progress bar with red-orange gradient */}
-            <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
-              <div 
-                className="h-3 rounded-full transition-all duration-300 bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316]"
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-            <div className="flex items-center justify-between">
-              {steps.map((step, index) => {
-                const Icon = step.icon
-                const isActive = step.id === currentStep
-                const isCompleted = getCurrentStepIndex() > index
-                
-                return (
-                  <div key={step.id} className="flex flex-col items-center gap-2">
-                    <div className={`
-                      w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all
-                      ${isActive ? 'border-orange-500 bg-orange-100 text-orange-600' : 
-                        isCompleted ? 'border-green-500 bg-green-100 text-green-600' : 
-                        'border-gray-300 bg-gray-100 text-gray-400'}
-                    `}>
-                      {isCompleted ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
-                    </div>
-                    <span className={`text-xs font-medium ${isActive ? 'text-orange-600' : isCompleted ? 'text-green-600' : 'text-gray-400'}`}>
-                      {step.label}
-                    </span>
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-medium text-gray-900">Workflow Fortschritt</h3>
+            <span className="text-sm text-gray-500">{Math.round(progress)}% Abgeschlossen</span>
+          </div>
+          {/* Updated Progress bar with red-orange gradient */}
+          <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
+            <div 
+              className="h-3 rounded-full transition-all duration-300 bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316]"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+          <div className="flex items-center justify-between">
+            {steps.map((step, index) => {
+              const Icon = step.icon
+              const isActive = step.id === currentStep
+              const isCompleted = getCurrentStepIndex() > index
+              
+              return (
+                <div key={step.id} className="flex flex-col items-center gap-2">
+                  <div className={`
+                    w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all
+                    ${isActive ? 'border-orange-500 text-orange-600' : 
+                      isCompleted ? 'border-green-500 text-green-600' : 
+                      'border-gray-300 text-gray-400'}
+                  `}>
+                    {isCompleted ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
                   </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                  <span className={`text-xs font-medium ${isActive ? 'text-orange-600' : isCompleted ? 'text-green-600' : 'text-gray-400'}`}>
+                    {step.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Main Content */}
