@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 import { 
   ArrowLeft, 
   Sparkles, 
@@ -31,7 +32,11 @@ import {
   ExternalLink,
   Maximize2,
   X,
-  Bot
+  Bot,
+  Save,
+  Calendar,
+  FileText,
+  Settings
 } from "lucide-react"
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
@@ -133,6 +138,12 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
   const [isFullscreenScript, setIsFullscreenScript] = useState(false)
   const [isAiOptimizing, setIsAiOptimizing] = useState(false)
   const [showAiOptimizeDialog, setShowAiOptimizeDialog] = useState(false)
+  const [showSchedulerDialog, setShowSchedulerDialog] = useState(false)
+  const [showAutoEditDialog, setShowAutoEditDialog] = useState(false)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [autoEditEnabled, setAutoEditEnabled] = useState(false)
+  const [scheduledDate, setScheduledDate] = useState<Date | null>(null)
+  const [isSavingPost, setIsSavingPost] = useState(false)
   
   const [analysisData, setAnalysisData] = useState<any>(null)
   const [customScript, setCustomScript] = useState('')
@@ -248,11 +259,95 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
     const file = event.target.files?.[0]
     if (file) {
       setIsUploading(true)
-      // Simulate upload
+      setUploadedFile(file)
+      // Simulate upload processing
       setTimeout(() => {
         setIsUploading(false)
-        toast.success('Video erfolgreich hochgeladen!')
+        toast.success(`Video "${file.name}" erfolgreich hochgeladen!`)
       }, 2000)
+    }
+  }
+
+  const handleSaveToDraft = async () => {
+    setIsSavingPost(true)
+    try {
+      await savePostToDatabase('draft')
+      toast.success('Post als Entwurf gespeichert!')
+    } catch (error) {
+      console.error('Error saving draft:', error)
+      toast.error('Fehler beim Speichern des Entwurfs')
+    } finally {
+      setIsSavingPost(false)
+    }
+  }
+
+  const handleSchedulePost = async () => {
+    if (!scheduledDate) {
+      toast.error('Bitte wählen Sie ein Datum aus')
+      return
+    }
+    
+    setIsSavingPost(true)
+    try {
+      await savePostToDatabase('scheduled', scheduledDate)
+      setShowSchedulerDialog(false)
+      toast.success(`Post für ${scheduledDate.toLocaleDateString('de-DE')} geplant!`)
+    } catch (error) {
+      console.error('Error scheduling post:', error)
+      toast.error('Fehler beim Planen des Posts')
+    } finally {
+      setIsSavingPost(false)
+    }
+  }
+
+  const handlePublishNow = async () => {
+    setIsSavingPost(true)
+    try {
+      await savePostToDatabase('published')
+      toast.success('Post erfolgreich veröffentlicht!')
+    } catch (error) {
+      console.error('Error publishing post:', error)
+      toast.error('Fehler beim Veröffentlichen')
+    } finally {
+      setIsSavingPost(false)
+    }
+  }
+
+  const savePostToDatabase = async (status: 'draft' | 'scheduled' | 'published', publishDate?: Date) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('User not authenticated')
+
+      const script = customScript || generatedContent?.script || ''
+      const postData = {
+        user_id: user.id,
+        content: script,
+        content_text: script,
+        status: status,
+        platforms: ['instagram'], // Default platform
+        media_type: uploadedFile ? 'video' : 'text',
+        scheduled_for: publishDate?.toISOString() || null,
+        hashtags: generatedContent?.hashtags || [],
+        target_audience: targetAudience,
+        content_goal: contentGoal,
+        trend_source: trend.reel_url,
+        original_trend_title: trend.title,
+        created_at: new Date().toISOString()
+      }
+
+      const { data, error } = await supabase
+        .from('posts')
+        .insert([postData])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      console.log('Post saved successfully:', data)
+      return data
+    } catch (error) {
+      console.error('Error saving post to database:', error)
+      throw error
     }
   }
 
@@ -691,58 +786,148 @@ Antworte nur mit dem optimierten Script, ohne zusätzliche Erklärungen.`
                     <Upload className="w-5 h-5 text-orange-600" />
                     Content Upload
                   </h3>
-                  
-                  <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-4">
-                      <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-600 mb-2">Video hier ablegen oder klicken zum Auswählen</p>
-                      <p className="text-sm text-gray-500">Unterstützte Formate: MP4, MOV, AVI</p>
-                      <Button 
-                        onClick={handleFileUpload}
-                        disabled={isUploading}
-                        className="mt-4"
-                        variant="outline"
-                      >
-                        {isUploading ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Lade hoch...
-                          </>
-                        ) : (
-                          'Datei auswählen'
-                        )}
-                      </Button>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="video/*"
-                        onChange={handleFileChange}
-                        className="hidden"
+
+                  {/* Auto-Edit Toggle */}
+                  <div className="mb-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-1">Automatisch bearbeiten</h4>
+                        <p className="text-sm text-gray-600">KI-gestützte Videobearbeitung und -optimierung</p>
+                      </div>
+                      <Switch
+                        checked={autoEditEnabled}
+                        onCheckedChange={(checked) => {
+                          setAutoEditEnabled(checked)
+                          if (checked) {
+                            setShowAutoEditDialog(true)
+                          }
+                        }}
+                        className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-[#dc2626] data-[state=checked]:via-[#ea580c] data-[state=checked]:to-[#f97316]"
                       />
                     </div>
                   </div>
+                  
+                  {/* Video Upload Area */}
+                  <div className="flex-1 flex flex-col justify-center">
+                    {uploadedFile ? (
+                      <div className="border-2 border-green-300 bg-green-50 rounded-lg p-6 mb-4 text-center">
+                        <Video className="w-12 h-12 text-green-600 mx-auto mb-4" />
+                        <p className="text-green-800 font-medium mb-2">Video hochgeladen!</p>
+                        <p className="text-sm text-green-700 mb-4">{uploadedFile.name}</p>
+                        <p className="text-xs text-green-600">
+                          Größe: {(uploadedFile.size / (1024 * 1024)).toFixed(2)} MB
+                        </p>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="mt-3"
+                          onClick={() => {
+                            setUploadedFile(null)
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = ''
+                            }
+                          }}
+                        >
+                          Andere Datei wählen
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-4 text-center">
+                        <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                        <p className="text-gray-600 mb-2">Video hier ablegen oder klicken zum Auswählen</p>
+                        <p className="text-sm text-gray-500 mb-4">Unterstützte Formate: MP4, MOV, AVI</p>
+                        <Button 
+                          onClick={handleFileUpload}
+                          disabled={isUploading}
+                          variant="outline"
+                        >
+                          {isUploading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Lade hoch...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-4 h-4 mr-2" />
+                              Datei auswählen
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="video/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </div>
 
-                  <div className="space-y-4">
-                    <div className="p-4 bg-green-50 rounded-lg">
-                      <h4 className="font-medium text-green-900 mb-2">✅ Content bereit zum Posten!</h4>
-                      <p className="text-sm text-green-800">
-                        Dein optimierter Content ist fertig. Du kannst ihn jetzt auf deinen Social Media Kanälen veröffentlichen.
-                      </p>
-                    </div>
-                    
+                  {/* Success Message */}
+                  <div className="p-4 bg-green-50 rounded-lg mb-6">
+                    <h4 className="font-medium text-green-900 mb-2">✅ Content bereit zum Posten!</h4>
+                    <p className="text-sm text-green-800">
+                      Dein optimierter Content ist fertig. Du kannst ihn jetzt auf deinen Social Media Kanälen veröffentlichen.
+                    </p>
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div className="space-y-3">
+                    {/* Draft and Schedule buttons */}
                     <div className="flex gap-3">
                       <Button 
-                        className="flex-1 bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white"
-                        onClick={() => toast.success('Content erfolgreich geplant!')}
+                        variant="outline"
+                        className="flex-1"
+                        onClick={handleSaveToDraft}
+                        disabled={isSavingPost}
                       >
-                        <Send className="w-4 h-4 mr-2" />
-                        Jetzt posten
+                        {isSavingPost ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4 mr-2" />
+                        )}
+                        Entwürfe speichern
                       </Button>
-                      <Button variant="outline" onClick={() => setCurrentStep('customize')}>
-                        <Edit3 className="w-4 h-4 mr-2" />
-                        Bearbeiten
+                      <Button 
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setShowSchedulerDialog(true)}
+                        disabled={isSavingPost}
+                      >
+                        <Calendar className="w-4 h-4 mr-2" />
+                        Planen
                       </Button>
                     </div>
+                    
+                    {/* Publish button */}
+                    <Button 
+                      className="w-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white"
+                      onClick={handlePublishNow}
+                      disabled={isSavingPost}
+                    >
+                      {isSavingPost ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Verarbeite...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 mr-2" />
+                          Jetzt posten
+                        </>
+                      )}
+                    </Button>
+                    
+                    {/* Edit button */}
+                    <Button 
+                      variant="ghost" 
+                      className="w-full"
+                      onClick={() => setCurrentStep('customize')}
+                    >
+                      <Edit3 className="w-4 h-4 mr-2" />
+                      Bearbeiten
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -875,6 +1060,114 @@ Antworte nur mit dem optimierten Script, ohne zusätzliche Erklärungen.`
                   Optimieren
                 </>
               )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Scheduler Dialog */}
+      <Dialog open={showSchedulerDialog} onOpenChange={setShowSchedulerDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-orange-600" />
+              Post planen
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="schedule-date" className="text-sm font-medium text-gray-700">
+                Wann möchten Sie den Post veröffentlichen?
+              </Label>
+              <Input
+                id="schedule-date"
+                type="datetime-local"
+                value={scheduledDate ? scheduledDate.toISOString().slice(0, 16) : ''}
+                onChange={(e) => setScheduledDate(e.target.value ? new Date(e.target.value) : null)}
+                className="mt-2"
+                min={new Date().toISOString().slice(0, 16)}
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+              <Calendar className="w-4 h-4 flex-shrink-0" />
+              <span>Der Post wird automatisch zum gewählten Zeitpunkt veröffentlicht.</span>
+            </div>
+          </div>
+          
+          <div className="flex gap-3 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSchedulerDialog(false)
+                setScheduledDate(null)
+              }}
+              className="flex-1"
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleSchedulePost}
+              disabled={!scheduledDate || isSavingPost}
+              className="flex-1 bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white"
+            >
+              {isSavingPost ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Plane...
+                </>
+              ) : (
+                <>
+                  <Clock className="w-4 h-4 mr-2" />
+                  Planen
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Auto Edit Coming Soon Dialog */}
+      <Dialog open={showAutoEditDialog} onOpenChange={setShowAutoEditDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5 text-orange-600" />
+              Automatische Bearbeitung
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="text-center py-6">
+            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Settings className="w-8 h-8 text-orange-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Funktion bald verfügbar!
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Die KI-gestützte automatische Videobearbeitung ist derzeit in Entwicklung und wird bald verfügbar sein.
+            </p>
+            <div className="bg-orange-50 p-4 rounded-lg text-left">
+              <h4 className="font-medium text-orange-900 mb-2">Geplante Features:</h4>
+              <ul className="text-sm text-orange-800 space-y-1">
+                <li>• Automatischer Schnitt und Übergänge</li>
+                <li>• Intelligente Texteinblendungen</li>
+                <li>• Optimierte Farbkorrektur</li>
+                <li>• Trend-angepasste Effekte</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="flex justify-center">
+            <Button
+              onClick={() => {
+                setShowAutoEditDialog(false)
+                setAutoEditEnabled(false)
+              }}
+              className="bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white"
+            >
+              Verstanden
             </Button>
           </div>
         </DialogContent>
