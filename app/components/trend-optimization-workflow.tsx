@@ -34,6 +34,7 @@ import {
   Bot
 } from "lucide-react"
 import { toast } from 'sonner'
+import { supabase } from '@/lib/supabase'
 
 interface TrendData {
   id: string
@@ -286,13 +287,21 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
     try {
       const currentScript = customScript || generatedContent?.script || ''
       
+      // Get the user's session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          message: `Bitte optimiere das folgende Content-Script basierend auf den Verbesserungsvorschlägen des Nutzers:
+          query: `Bitte optimiere das folgende Content-Script basierend auf den Verbesserungsvorschlägen des Nutzers:
 
 AKTUELLES SCRIPT:
 ${currentScript}
@@ -306,27 +315,42 @@ Bitte erstelle eine verbesserte Version des Scripts, die:
 3. Für ${targetAudience || 'Immobilienkäufer'} optimiert ist
 4. Das Ziel "${contentGoal || 'Immobilien-Content erstellen'}" unterstützt
 
-Antworte nur mit dem optimierten Script, ohne zusätzliche Erklärungen.`,
-          useContext: false
+Antworte nur mit dem optimierten Script, ohne zusätzliche Erklärungen.`
         })
       })
 
       if (!response.ok) {
-        throw new Error('Failed to optimize script')
+        const errorData = await response.json().catch(() => ({}))
+        console.error('API Error:', errorData)
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
       }
 
       const data = await response.json()
       
-      if (data.response) {
+      if (data.success && data.response) {
         setCustomScript(data.response.trim())
         setUserOptimizationInput('')
         toast.success('Script erfolgreich optimiert!')
       } else {
-        throw new Error('No response received')
+        throw new Error(data.error || 'No response received from API')
       }
     } catch (error) {
       console.error('Error optimizing script:', error)
-      toast.error('Fehler bei der Script-Optimierung')
+      
+      // Show more specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes('authentication')) {
+          toast.error('Authentifizierung fehlgeschlagen. Bitte melden Sie sich erneut an.')
+        } else if (error.message.includes('HTTP 401')) {
+          toast.error('Keine Berechtigung. Bitte melden Sie sich erneut an.')
+        } else if (error.message.includes('HTTP 400')) {
+          toast.error('Ungültige Anfrage. Bitte versuchen Sie es erneut.')
+        } else {
+          toast.error(`Fehler bei der Script-Optimierung: ${error.message}`)
+        }
+      } else {
+        toast.error('Unbekannter Fehler bei der Script-Optimierung')
+      }
     } finally {
       setIsAiOptimizing(false)
     }
