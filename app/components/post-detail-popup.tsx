@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -35,7 +35,9 @@ import {
   Clock,
   Check,
   Settings,
-  CalendarIcon
+  CalendarIcon,
+  Image as ImageIcon,
+  Loader2
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -45,6 +47,132 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
+
+// Enhanced Media Preview Component for Post Detail View
+interface MediaPreviewProps {
+  src: string
+  mediaUrls?: string[]
+  mediaType?: "image" | "video" | "carousel" | "text"
+  alt: string
+  className: string
+}
+
+function MediaPreview({ src, mediaUrls = [src], mediaType = 'image', alt, className }: MediaPreviewProps) {
+  const [currentSrc, setCurrentSrc] = useState(() => {
+    // Use proxy for Instagram URLs
+    if (src && (src.includes('instagram') || src.includes('scontent-') || src.includes('cdninstagram'))) {
+      return `/api/media-proxy?url=${encodeURIComponent(src)}`
+    }
+    return src || '/placeholder.svg'
+  })
+  const [urlIndex, setUrlIndex] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasError, setHasError] = useState(false)
+  const [triedProxy, setTriedProxy] = useState(false)
+
+  const getProxiedUrl = useCallback((url: string) => {
+    if (url && (url.includes('instagram') || url.includes('scontent-') || url.includes('cdninstagram'))) {
+      return `/api/media-proxy?url=${encodeURIComponent(url)}`
+    }
+    return url
+  }, [])
+
+  const handleImageError = useCallback(() => {
+    console.log(`Post detail: Failed to load image: ${currentSrc}`)
+    
+    // If we haven't tried the proxy yet for this URL, try it
+    if (!triedProxy && !currentSrc.includes('/api/media-proxy') && urlIndex < mediaUrls.length) {
+      const originalUrl = mediaUrls[urlIndex] || src
+      if (originalUrl) {
+        setCurrentSrc(getProxiedUrl(originalUrl))
+        setTriedProxy(true)
+        setIsLoading(true)
+        setHasError(false)
+        return
+      }
+    }
+    
+    // Try next URL in mediaUrls array
+    if (urlIndex + 1 < mediaUrls.length) {
+      const nextIndex = urlIndex + 1
+      const nextUrl = mediaUrls[nextIndex]
+      if (nextUrl) {
+        setUrlIndex(nextIndex)
+        setCurrentSrc(getProxiedUrl(nextUrl))
+        setTriedProxy(false)
+        setIsLoading(true)
+        setHasError(false)
+        return
+      }
+    }
+    
+    // Try original URL without proxy
+    if (currentSrc.includes('/api/media-proxy')) {
+      const originalUrl = decodeURIComponent(currentSrc.split('url=')[1] || '')
+      if (originalUrl && originalUrl !== currentSrc && originalUrl !== '/placeholder.svg') {
+        setCurrentSrc(originalUrl)
+        setIsLoading(true)
+        setHasError(false)
+        return
+      }
+    }
+    
+    // Try placeholder as last resort
+    if (currentSrc !== '/placeholder.svg') {
+      setCurrentSrc('/placeholder.svg')
+      setIsLoading(true)
+      setHasError(false)
+      return
+    }
+    
+    // Complete failure
+    setHasError(true)
+    setIsLoading(false)
+  }, [currentSrc, mediaUrls, urlIndex, src, getProxiedUrl, triedProxy])
+
+  const handleImageLoad = useCallback(() => {
+    setIsLoading(false)
+    setHasError(false)
+  }, [])
+
+  if (hasError) {
+    return (
+      <div className={`${className} bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center`}>
+        <div className="text-center text-gray-500">
+          {mediaType === 'video' ? (
+            <Video className="w-12 h-12 mx-auto mb-2" />
+          ) : (
+            <ImageIcon className="w-12 h-12 mx-auto mb-2" />
+          )}
+          <div className="text-sm font-medium mb-1">
+            {mediaType === 'video' ? 'Video Content' : 'Image Content'}
+          </div>
+          <div className="text-xs opacity-75">Instagram Media</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {isLoading && (
+        <div className={`absolute inset-0 bg-gray-200 flex items-center justify-center z-10`}>
+          <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+        </div>
+      )}
+      <img
+        src={currentSrc}
+        alt={alt}
+        className={className}
+        loading="lazy"
+        onLoad={handleImageLoad}
+        onError={handleImageError}
+        crossOrigin="anonymous"
+        referrerPolicy="no-referrer"
+      />
+    </>
+  )
+}
 
 interface Post {
   id: string
@@ -286,14 +414,16 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
             </DropdownMenu>
           </div>
           <div className="h-full flex">
-            {/* Left side - Media */}
+            {/* Left side - Enhanced Media */}
             <div className="flex-1 bg-black rounded-l-2xl relative">
               <div className="absolute inset-0 flex items-center justify-center">
                 {post.mediaType === 'video' ? (
                   <div className="relative w-full h-full">
-                    <img
+                    <MediaPreview
                       src={post.media}
-                      alt="Post preview"
+                      mediaUrls={[post.media]}
+                      mediaType="video"
+                      alt="Video post preview"
                       className="object-contain w-full h-full"
                     />
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -303,8 +433,10 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
                     </div>
                   </div>
                 ) : (
-                  <img
+                  <MediaPreview
                     src={post.media}
+                    mediaUrls={[post.media]}
+                    mediaType={post.mediaType}
                     alt="Post preview"
                     className="object-contain w-full h-full"
                   />

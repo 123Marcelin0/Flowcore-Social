@@ -43,6 +43,8 @@ import {
 } from "lucide-react"
 import { toast } from 'sonner'
 import type { ContentStep } from "../hooks/useContentIdeas"
+import { ContentIdeaService } from "@/lib/content-idea-service"
+import { useAuth } from "@/lib/auth-context"
 
 interface ContentIdeasBrainstormProps {
   setCurrentStep: (step: ContentStep) => void
@@ -91,6 +93,7 @@ interface UserContext {
 }
 
 export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstormProps) {
+  const { user } = useAuth()
   const [activeMode, setActiveMode] = useState<'prompts' | 'chat' | 'saved'>('prompts')
   const [selectedPrompt, setSelectedPrompt] = useState<BrainstormPrompt | null>(null)
   const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'ai', content: string, ideas?: BrainstormIdea[]}>>([])
@@ -432,15 +435,32 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
     await generateAIResponse(selectedPromptText, prompt)
   }
 
-  const handleSaveIdea = (idea: BrainstormIdea) => {
+  const handleSaveIdea = async (idea: BrainstormIdea) => {
+    if (!user?.id) {
+      toast.error('Bitte melde dich an, um Ideen zu speichern')
+      return
+    }
+
     if (!savedIdeas.find(s => s.id === idea.id)) {
-      const savedIdea = { ...idea, saved: true, used: true }
-      setSavedIdeas(prev => [...prev, savedIdea])
-      setUserContext(prev => ({
-        ...prev,
-        usedIdeas: [...prev.usedIdeas, idea.id]
-      }))
-      toast.success('Idee gespeichert!')
+      try {
+        // Save to database with embedding
+        const savedIdeaData = await ContentIdeaService.saveBrainstormIdea(idea, user.id)
+        
+        if (savedIdeaData) {
+          const savedIdea = { ...idea, saved: true, used: true }
+          setSavedIdeas(prev => [...prev, savedIdea])
+          setUserContext(prev => ({
+            ...prev,
+            usedIdeas: [...prev.usedIdeas, idea.id]
+          }))
+          toast.success('💾 Idee in Datenbank gespeichert!')
+        } else {
+          toast.error('Fehler beim Speichern der Idee')
+        }
+      } catch (error) {
+        console.error('Error saving brainstorm idea:', error)
+        toast.error('Fehler beim Speichern der Idee')
+      }
     }
   }
 
@@ -529,7 +549,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
             <Button
               variant="ghost"
               size="sm"
-              className="text-white hover:bg-white/20"
+              className="h-8 px-3 rounded-full bg-white/20 text-white hover:bg-white hover:text-purple-600 transition-all duration-200"
               onClick={() => setActiveMode('prompts')}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -731,7 +751,21 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
             <Button 
               variant="ghost" 
               onClick={() => setCurrentStep("overview")}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 rounded-lg bg-transparent hover:bg-gray-100"
+              className="flex items-center gap-2 h-10 px-4 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
+              style={{
+                border: 'none',
+                outline: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.color = '#7C3AED'
+                e.currentTarget.style.border = '2px solid #7C3AED'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(to right, #9333ea, #6366f1, #7c3aed)'
+                e.currentTarget.style.color = 'white'
+                e.currentTarget.style.border = 'none'
+              }}
             >
               <ArrowLeft className="w-4 h-4" />
               Zurück
@@ -753,52 +787,40 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
               <span className="relative z-10 text-white">KI-Brainstorming</span>
             </button>
             
-            <div className="w-20"></div>
-          </div>
-        </div>
-      </div>
-
-      {/* Mode Navigation */}
-      <div className="max-w-7xl mx-auto px-6 mb-6">
-        <div className="flex justify-center">
-          <div className="bg-white rounded-full p-1 shadow-sm border border-gray-200">
-            <div className="flex gap-1">
-              <Button
-                variant={activeMode === 'prompts' ? 'default' : 'ghost'}
-                size="sm"
-                className={`rounded-full ${activeMode === 'prompts' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white' : 'text-gray-600'}`}
-                onClick={() => setActiveMode('prompts')}
-              >
-                <Lightbulb className="w-4 h-4 mr-2" />
-                Kategorien
-              </Button>
-              <Button
-                variant={activeMode === 'chat' ? 'default' : 'ghost'}
-                size="sm"
-                className={`rounded-full ${activeMode === 'chat' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white' : 'text-gray-600'}`}
-                onClick={() => setActiveMode('chat')}
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Chat
-              </Button>
-              <Button
-                variant={activeMode === 'saved' ? 'default' : 'ghost'}
-                size="sm"
-                className={`rounded-full ${activeMode === 'saved' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white' : 'text-gray-600'}`}
-                onClick={() => setActiveMode('saved')}
-              >
-                <Bookmark className="w-4 h-4 mr-2" />
-                Gespeichert ({savedIdeas.length})
-              </Button>
-            </div>
+            {/* Clean save icon button in page colors */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveMode('saved')}
+              className="h-10 w-10 p-0 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
+              style={{
+                border: 'none',
+                outline: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.color = '#7C3AED'
+                e.currentTarget.style.border = '2px solid #7C3AED'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(to right, #9333ea, #6366f1, #7c3aed)'
+                e.currentTarget.style.color = 'white'
+                e.currentTarget.style.border = 'none'
+              }}
+            >
+              <Bookmark className="w-4 h-4" />
+              {savedIdeas.length > 0 && (
+                <Badge variant="secondary" className="absolute -top-1 -right-1 h-5 w-5 p-0 text-xs bg-red-500 text-white border-2 border-white rounded-full flex items-center justify-center">
+                  {savedIdeas.length}
+                </Badge>
+              )}
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Content */}
-      {activeMode === 'prompts' && renderPromptMode()}
-      {activeMode === 'chat' && renderChatMode()}
-      {activeMode === 'saved' && renderSavedMode()}
+      {activeMode === 'saved' ? renderSavedMode() : activeMode === 'chat' ? renderChatMode() : renderPromptMode()}
     </div>
   )
 } 

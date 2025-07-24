@@ -1,0 +1,65 @@
+{
+  "requestsFinished": 164,
+  "requestsFailed": 0,
+  "requestsRetries": 21,
+  "requestsFailedPerMinute": 0,
+  "requestsFinishedPerMinute": 114,
+  "requestMinDurationMillis": 896,
+  "requestMaxDurationMillis": 19774,
+  "requestTotalFailedDurationMillis": 0,
+  "requestTotalFinishedDurationMillis": 470296,
+  "crawlerStartedAt": "2025-07-24T15:00:30.419Z",
+  "crawlerFinishedAt": null,
+  "statsPersistedAt": "2025-07-24T15:01:56.393Z",
+  "crawlerRuntimeMillis": 86218,
+  "crawlerLastStartTimestamp": 1753369230175,
+  "requestRetryHistogram": [
+    143,
+    21
+  ],
+  "statsId": 0,
+  "requestAvgFailedDurationMillis": null,
+  "requestAvgFinishedDurationMillis": 2868,
+  "requestTotalDurationMillis": 470296,
+  "requestsTotal": 164,
+  "requestsWithStatusCode": {},
+  "errors": {},
+  "retryErrors": {
+    "missing stack trace": {
+      "missing error code": {
+        "undefined": {
+          "Request blocked, retrying it again with different session": {
+            "count": 18
+          }
+        }
+      }
+    },
+    "/usr/src/app/node_modules/@apify/timeout/cjs/index.cjs:64:68": {
+      "missing error code": {
+        "Error": {
+          "request timed out after 30 seconds.": {
+            "count": 2
+          }
+        }
+      }
+    },
+    "file:///usr/src/app/node_modules/got/dist/source/core/index.js:667:107": {
+      "ERR_GOT_REQUEST_ERROR": {
+        "RequestError": {
+          "The HTTP/2 stream has been early terminated": {
+            "count": 1
+          }
+        }
+      }
+    },
+    "/usr/src/app/node_modules/http2-wrapper/source/client-request.js:412:19": {
+      "missing error code": {
+        "Error": {
+          "The HTTP/2 stream has been early terminated": {
+            "count": 1
+          }
+        }
+      }
+    }
+  }
+}

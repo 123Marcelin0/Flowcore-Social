@@ -162,37 +162,48 @@ export function TrendSwipeInterface({ onBack }: TrendSwipeInterfaceProps) {
   const loadTrends = async () => {
     setIsLoading(true)
     try {
+      // Use real Instagram posts from the posts table
       const { data, error } = await supabase
-        .from('instagramreelsscraper')
+        .from('posts')
         .select(`
           id,
-          thumbnail_url,
-          profile_picture,
-          reel_url,
-          script,
-          title,
-          creator_display_name,
-          description,
-          engagement_count
+          content,
+          media_urls,
+          media_type,
+          platforms,
+          likes,
+          comments,
+          impressions,
+          shares,
+          metadata,
+          created_at
         `)
-        .order('scraped_at', { ascending: false })
+        .eq('status', 'published')
+        .contains('platforms', ['instagram'])
+        .order('created_at', { ascending: false })
         .limit(20)
       
       if (error) throw error
       
-      // Transform data to match our interface
-      const transformedTrends = data?.map(item => ({
-        id: item.id,
-        thumbnail_url: item.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
-        profile_picture: item.profile_picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
-        reel_url: item.reel_url,
-        script: item.script || 'No script available for this trend.',
-        title: item.title,
-        creator: item.creator_display_name,
-        description: item.description,
-        engagement_count: item.engagement_count || 0
-      })) || []
+      // Transform Instagram posts to match our interface
+      const transformedTrends = data?.map(item => {
+        const firstMediaUrl = item.media_urls?.[0] || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop'
+        const instagramUrl = item.metadata?.post_url || `https://instagram.com/p/${item.metadata?.instagram_id || 'example'}`
+        
+        return {
+          id: item.id,
+          thumbnail_url: firstMediaUrl,
+          profile_picture: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face', // Default profile picture
+          reel_url: instagramUrl,
+          script: item.content || 'No script available for this trend.',
+          title: item.content?.substring(0, 60) + '...' || 'Instagram Post',
+          creator: item.metadata?.username || '@vonpollemsland',
+          description: item.content || 'Instagram post content',
+          engagement_count: (item.likes || 0) + (item.comments || 0) + (item.shares || 0)
+        }
+      }) || []
       
+      console.log(`Loaded ${transformedTrends.length} Instagram posts for trend swipe`)
       setTrends(transformedTrends.length > 0 ? transformedTrends : mockTrends)
     } catch (error) {
       console.error('Error loading trends:', error)
@@ -206,44 +217,53 @@ export function TrendSwipeInterface({ onBack }: TrendSwipeInterfaceProps) {
   const refreshTrends = async () => {
     setIsRefreshing(true)
     try {
-      // Fetch fresh trends from Supabase
+      // Get fresh Instagram posts with randomization
       const { data, error } = await supabase
-        .from('instagramreelsscraper')
+        .from('posts')
         .select(`
           id,
-          thumbnail_url,
-          profile_picture,
-          reel_url,
-          script,
-          title,
-          creator_display_name,
-          description,
-          engagement_count
+          content,
+          media_urls,
+          media_type,
+          platforms,
+          likes,
+          comments,
+          impressions,
+          shares,
+          metadata,
+          created_at
         `)
-        .order('scraped_at', { ascending: false })
-        .limit(20)
+        .eq('status', 'published')
+        .contains('platforms', ['instagram'])
+        .order('created_at', { ascending: false })
+        .limit(30) // Get more for better variety
       
       if (error) throw error
       
-      // Transform and shuffle the data
-      const transformedTrends = data?.map(item => ({
-        id: item.id,
-        thumbnail_url: item.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
-        profile_picture: item.profile_picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
-        reel_url: item.reel_url,
-        script: item.script || 'No script available for this trend.',
-        title: item.title,
-        creator: item.creator_display_name,
-        description: item.description,
-        engagement_count: item.engagement_count || 0
-      })) || []
+      // Transform and shuffle the Instagram posts
+      const transformedTrends = data?.map(item => {
+        const firstMediaUrl = item.media_urls?.[0] || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop'
+        const instagramUrl = item.metadata?.post_url || `https://instagram.com/p/${item.metadata?.instagram_id || 'example'}`
+        
+        return {
+          id: item.id,
+          thumbnail_url: firstMediaUrl,
+          profile_picture: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
+          reel_url: instagramUrl,
+          script: item.content || 'No script available for this trend.',
+          title: item.content?.substring(0, 60) + '...' || 'Instagram Post',
+          creator: item.metadata?.username || '@vonpollemsland',
+          description: item.content || 'Instagram post content',
+          engagement_count: (item.likes || 0) + (item.comments || 0) + (item.shares || 0)
+        }
+      }) || []
       
-      // Shuffle the trends for variety
-      const shuffledTrends = transformedTrends.sort(() => Math.random() - 0.5)
+      // Shuffle the trends for variety and take 20
+      const shuffledTrends = transformedTrends.sort(() => Math.random() - 0.5).slice(0, 20)
       setTrends(shuffledTrends.length > 0 ? shuffledTrends : mockTrends)
       setCurrentIndex(0)
       
-      toast.success('Fresh trends loaded!')
+      toast.success(`Fresh ${shuffledTrends.length} Instagram trends loaded!`)
     } catch (error) {
       console.error('Error refreshing trends:', error)
       toast.error('Failed to refresh trends')

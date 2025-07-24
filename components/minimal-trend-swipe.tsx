@@ -145,25 +145,28 @@ export function MinimalTrendSwipe({ onBack }: MinimalTrendSwipeProps) {
     setIsLoading(true)
     try {
       const { data, error } = await supabase
-        .from('instagramreelsscraper')
+        .from('instagramreelscraper')
         .select(`
           id,
-          thumbnail_url,
+          displayUrl,
           caption,
-          reel_url,
-          script
+          url,
+          script,
+          likesCount,
+          commentsCount,
+          videoViewCount
         `)
-        .order('scraped_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(20)
       
       if (error) throw error
       
       // Transform data to match our interface
       const transformedTrends = data?.map(item => ({
-        id: item.id,
-        thumbnail_url: item.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
-        caption: item.caption,
-        reel_url: item.reel_url,
+        id: item.id.toString(),
+        thumbnail_url: item.displayUrl || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
+        caption: item.caption || 'Instagram Reel',
+        reel_url: item.url,
         script: item.script || 'No script available for this trend.'
       })) || []
       
@@ -181,24 +184,27 @@ export function MinimalTrendSwipe({ onBack }: MinimalTrendSwipeProps) {
     setIsRefreshing(true)
     try {
       const { data, error } = await supabase
-        .from('instagramreelsscraper')
+        .from('instagramreelscraper')
         .select(`
           id,
-          thumbnail_url,
+          displayUrl,
           caption,
-          reel_url,
-          script
+          url,
+          script,
+          likesCount,
+          commentsCount,
+          videoViewCount
         `)
-        .order('scraped_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(20)
       
       if (error) throw error
       
       const transformedTrends = data?.map(item => ({
-        id: item.id,
-        thumbnail_url: item.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
-        caption: item.caption,
-        reel_url: item.reel_url,
+        id: item.id.toString(),
+        thumbnail_url: item.displayUrl || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
+        caption: item.caption || 'Instagram Reel',
+        reel_url: item.url,
         script: item.script || 'No script available for this trend.'
       })) || []
       

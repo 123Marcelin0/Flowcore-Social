@@ -1,0 +1,62 @@
+[
+  {
+    "caption": "Just finished an amazing workout session! 💪 #fitness #motivation #healthy",
+    "image_url": "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=500",
+    "likes": 156,
+    "comments": 23,
+    "shares": 8,
+    "views": 1245,
+    "platform": "instagram",
+    "hashtags": ["fitness", "motivation", "healthy", "workout"],
+    "created_at": "2024-01-15T10:30:00Z"
+  },
+  {
+    "content": "Excited to announce our new product launch! This has been months in the making and we can't wait to share it with you all. What do you think?",
+    "media_url": "https://images.unsplash.com/photo-1560472355-536de3962603?w=500",
+    "likes_count": 89,
+    "comments_count": 12,
+    "shares_count": 15,
+    "reach": 890,
+    "impressions": 2340,
+    "platforms": ["linkedin", "twitter"],
+    "tags": ["product", "launch", "announcement"],
+    "published_at": "2024-01-14T14:20:00Z"
+  },
+  {
+    "text": "Beautiful sunset from my balcony tonight 🌅",
+    "video_url": "https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4",
+    "likes": 67,
+    "comments": 8,
+    "views_count": 456,
+    "platform": "instagram",
+    "hashtags": ["sunset", "nature", "beautiful", "evening"],
+    "created_at": "2024-01-13T19:45:00Z"
+  },
+  {
+    "description": "Tips for better productivity: 1. Start your day early 2. Make a to-do list 3. Take regular breaks 4. Stay hydrated 5. Get enough sleep",
+    "image": "https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?w=500",
+    "likes": 234,
+    "comments": 45,
+    "shares": 67,
+    "reach": 1200,
+    "impressions": 3400,
+    "platform": "linkedin",
+    "tags": ["productivity", "tips", "work", "efficiency"],
+    "published_at": "2024-01-12T09:00:00Z"
+  },
+  {
+    "caption": "Weekend vibes! Time to relax and recharge 😎",
+    "media_urls": [
+      "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=500",
+      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500"
+    ],
+    "likes": 178,
+    "comments": 34,
+    "shares": 12,
+    "views": 890,
+    "platforms": ["instagram", "facebook"],
+    "hashtags": ["weekend", "relax", "vibes", "peaceful"],
+    "created_at": "2024-01-11T16:30:00Z",
+    "title": "Weekend Relaxation Post"
+  }
+] 

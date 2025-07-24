@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { 
   ArrowLeft, 
   Sparkles, 
@@ -27,7 +28,10 @@ import {
   Heart,
   Eye,
   TrendingUp,
-  ExternalLink
+  ExternalLink,
+  Maximize2,
+  X,
+  Bot
 } from "lucide-react"
 import { toast } from 'sonner'
 
@@ -48,11 +52,86 @@ interface TrendOptimizationWorkflowProps {
 
 type WorkflowStep = 'analyze' | 'optimize' | 'customize' | 'generate' | 'upload'
 
+// Utility function to extract trend information from URLs and trend data
+const extractTrendInformation = (trend: TrendData) => {
+  const url = trend.reel_url || ''
+  const title = trend.title || ''
+  const description = trend.description || ''
+  const script = trend.script || ''
+  
+  // Extract information from various sources
+  let trendScore = 75 // Default
+  let keyElements: string[] = []
+  let targetAudience = ''
+  let contentGoal = ''
+  
+  // Analyze URL and content for patterns
+  const combinedText = `${url} ${title} ${description} ${script}`.toLowerCase()
+  
+  // Extract trend score based on engagement indicators
+  if (combinedText.includes('viral') || combinedText.includes('trending')) trendScore += 10
+  if (combinedText.includes('luxury') || combinedText.includes('premium')) trendScore += 5
+  if (combinedText.includes('quick') || combinedText.includes('fast')) trendScore += 8
+  
+  // Extract key elements
+  if (combinedText.includes('modern') || combinedText.includes('contemporary')) keyElements.push('Moderne Architektur')
+  if (combinedText.includes('drone') || combinedText.includes('aerial')) keyElements.push('Drohnenaufnahmen')
+  if (combinedText.includes('tour') || combinedText.includes('walkthrough')) keyElements.push('Hausführung')
+  if (combinedText.includes('luxury') || combinedText.includes('premium')) keyElements.push('Luxus-Features')
+  if (combinedText.includes('kitchen') || combinedText.includes('küche')) keyElements.push('Küchen-Highlight')
+  if (combinedText.includes('garden') || combinedText.includes('outdoor')) keyElements.push('Außenbereich')
+  if (combinedText.includes('secret') || combinedText.includes('hidden')) keyElements.push('Versteckte Features')
+  if (combinedText.includes('hook') || combinedText.includes('attention')) keyElements.push('Starker Hook')
+  
+  // Extract target audience
+  if (combinedText.includes('first') || combinedText.includes('erste') || combinedText.includes('buyer')) {
+    targetAudience = 'Erstkäufer und junge Familien'
+  } else if (combinedText.includes('family') || combinedText.includes('familien')) {
+    targetAudience = 'Familien mit Kindern'
+  } else if (combinedText.includes('luxury') || combinedText.includes('premium') || combinedText.includes('high-end')) {
+    targetAudience = 'Luxus-Immobilienkäufer'
+  } else if (combinedText.includes('investment') || combinedText.includes('investor')) {
+    targetAudience = 'Immobilieninvestoren'
+  } else if (combinedText.includes('downsizing') || combinedText.includes('senior')) {
+    targetAudience = 'Senioren und Downsizer'
+  } else {
+    targetAudience = 'Immobilienkäufer und -interessierte'
+  }
+  
+  // Extract content goal
+  if (combinedText.includes('sale') || combinedText.includes('verkauf') || combinedText.includes('selling')) {
+    contentGoal = 'Immobilienverkauf fördern'
+  } else if (combinedText.includes('brand') || combinedText.includes('makler') || combinedText.includes('agent')) {
+    contentGoal = 'Makler-Branding stärken'
+  } else if (combinedText.includes('tips') || combinedText.includes('advice') || combinedText.includes('tipps')) {
+    contentGoal = 'Immobilien-Expertise zeigen'
+  } else if (combinedText.includes('market') || combinedText.includes('trend') || combinedText.includes('update')) {
+    contentGoal = 'Markttrends aufzeigen'
+  } else {
+    contentGoal = 'Immobilien-Content erstellen'
+  }
+  
+  // Ensure we have at least some key elements
+  if (keyElements.length === 0) {
+    keyElements = ['Professionelle Präsentation', 'Hochwertige Aufnahmen', 'Klare Botschaft']
+  }
+  
+  return {
+    trendScore: Math.min(100, trendScore),
+    keyElements,
+    targetAudience,
+    contentGoal
+  }
+}
+
 export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWorkflowProps) {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('analyze')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isFullscreenScript, setIsFullscreenScript] = useState(false)
+  const [isAiOptimizing, setIsAiOptimizing] = useState(false)
+  const [showAiOptimizeDialog, setShowAiOptimizeDialog] = useState(false)
   
   const [analysisData, setAnalysisData] = useState<any>(null)
   const [customScript, setCustomScript] = useState('')
@@ -60,6 +139,7 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
   const [targetAudience, setTargetAudience] = useState('')
   const [contentGoal, setContentGoal] = useState('')
   const [generatedContent, setGeneratedContent] = useState<any>(null)
+  const [userOptimizationInput, setUserOptimizationInput] = useState('')
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -80,25 +160,27 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
       // Simulate AI analysis
       await new Promise(resolve => setTimeout(resolve, 2000))
       
+      // Extract information from trend data and auto-fill
+      const extractedInfo = extractTrendInformation(trend)
+      
       setAnalysisData({
-        keyElements: [
-          'Moderne Architektur',
-          'Drone Shots',
-          'Quick Transitions',
-          'Emotional Hook'
-        ],
+        keyElements: extractedInfo.keyElements,
         successFactors: [
           'Strong opening hook (0-3s)',
           'Visual variety and movement',
           'Clear value proposition',
           'Call-to-action at end'
         ],
-        trendScore: 85,
-        viralPotential: 'Hoch'
+        trendScore: extractedInfo.trendScore,
+        viralPotential: extractedInfo.trendScore > 85 ? 'Sehr Hoch' : extractedInfo.trendScore > 70 ? 'Hoch' : 'Mittel'
       })
       
+      // Auto-fill form fields
+      setTargetAudience(extractedInfo.targetAudience)
+      setContentGoal(extractedInfo.contentGoal)
+      
       setCurrentStep('optimize')
-      toast.success('Trend erfolgreich analysiert!')
+      toast.success('Trend erfolgreich analysiert und Felder automatisch ausgefüllt!')
     } catch (error) {
       toast.error('Fehler bei der Analyse')
     } finally {
@@ -132,18 +214,7 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
 
       setGeneratedContent({
         script: optimizedScript,
-        hashtags: ['#immobilien', '#luxusimmobilien', '#hausbesichtigung', '#traumhaus', '#immobilienmakler'],
-        timingTips: [
-          'Beste Posting-Zeit: 18:00-20:00 Uhr',
-          'Optimal: Dienstag oder Donnerstag',
-          'Story-Teasers 2h vorher posten'
-        ],
-        technicalTips: [
-          'Vertikales 9:16 Format verwenden',
-          'Gute Beleuchtung essentiell',
-          'Stabilisierung für smooth shots',
-          'Audio-Qualität beachten'
-        ]
+        hashtags: ['#immobilien', '#luxusimmobilien', '#hausbesichtigung', '#traumhaus', '#immobilienmakler']
       })
       
       setCurrentStep('customize')
@@ -187,6 +258,78 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     toast.success('In Zwischenablage kopiert!')
+  }
+
+  const downloadScript = () => {
+    const script = customScript || generatedContent?.script || ''
+    const blob = new Blob([script], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `trend-script-${trend.title?.replace(/[^a-zA-Z0-9]/g, '-') || 'script'}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success('Script heruntergeladen!')
+  }
+
+  const handleAiOptimize = async () => {
+    if (!userOptimizationInput.trim()) {
+      toast.error('Bitte geben Sie Ihre Verbesserungsvorschläge ein')
+      return
+    }
+
+    setIsAiOptimizing(true)
+    setShowAiOptimizeDialog(false)
+
+    try {
+      const currentScript = customScript || generatedContent?.script || ''
+      
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: `Bitte optimiere das folgende Content-Script basierend auf den Verbesserungsvorschlägen des Nutzers:
+
+AKTUELLES SCRIPT:
+${currentScript}
+
+VERBESSERUNGSVORSCHLÄGE/KRITIK:
+${userOptimizationInput}
+
+Bitte erstelle eine verbesserte Version des Scripts, die:
+1. Die Kritikpunkte berücksichtigt
+2. Die gleiche Struktur beibehält (Hook, Hauptinhalt, CTA)
+3. Für ${targetAudience || 'Immobilienkäufer'} optimiert ist
+4. Das Ziel "${contentGoal || 'Immobilien-Content erstellen'}" unterstützt
+
+Antworte nur mit dem optimierten Script, ohne zusätzliche Erklärungen.`,
+          useContext: false
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to optimize script')
+      }
+
+      const data = await response.json()
+      
+      if (data.response) {
+        setCustomScript(data.response.trim())
+        setUserOptimizationInput('')
+        toast.success('Script erfolgreich optimiert!')
+      } else {
+        throw new Error('No response received')
+      }
+    } catch (error) {
+      console.error('Error optimizing script:', error)
+      toast.error('Fehler bei der Script-Optimierung')
+    } finally {
+      setIsAiOptimizing(false)
+    }
   }
 
   return (
@@ -437,55 +580,61 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
                 <CardContent className="p-6 flex-1 flex flex-col">
                   <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                     <Edit3 className="w-5 h-5 text-orange-600" />
-                    Content Anpassung
+                    Content Script
                   </h3>
                   
-                  <div className="space-y-6 flex-1 flex flex-col">
-                    {/* Generated Script */}
+                  <div className="flex-1 flex flex-col">
+                    {/* Large Clickable Script Area */}
                     <div className="flex-1 flex flex-col">
-                      <div className="flex items-center justify-between mb-2">
-                        <Label>Optimiertes Script</Label>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => copyToClipboard(generatedContent.script)}
-                        >
-                          <Copy className="w-4 h-4 mr-1" />
-                          Kopieren
-                        </Button>
-                      </div>
-                      <Textarea
-                        value={customScript || generatedContent.script}
-                        onChange={(e) => setCustomScript(e.target.value)}
-                        rows={10}
-                        className="font-mono text-sm flex-1"
-                      />
-                    </div>
-
-                    {/* Additional Tips */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="p-4 bg-blue-50 rounded-lg">
-                        <h4 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
-                          <Clock className="w-4 h-4" />
-                          Timing Tipps
-                        </h4>
-                        <ul className="text-sm text-blue-800 space-y-1">
-                          {generatedContent.timingTips.map((tip: string, index: number) => (
-                            <li key={index}>• {tip}</li>
-                          ))}
-                        </ul>
+                      <div className="flex items-center justify-between mb-4">
+                        <Label className="text-lg font-medium">Dein optimierter Content-Script</Label>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => setShowAiOptimizeDialog(true)}
+                            disabled={isAiOptimizing}
+                            className="relative bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white border-0 transition-all duration-300 group overflow-hidden"
+                            size="sm"
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
+                            {isAiOptimizing ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-1 animate-spin relative z-10" />
+                                <span className="relative z-10">Optimiere...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Bot className="w-4 h-4 mr-1 relative z-10" />
+                                <span className="relative z-10">Ändern</span>
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={downloadScript}
+                          >
+                            <Download className="w-4 h-4 mr-1" />
+                            Download
+                          </Button>
+                        </div>
                       </div>
                       
-                      <div className="p-4 bg-purple-50 rounded-lg">
-                        <h4 className="font-medium text-purple-900 mb-2 flex items-center gap-2">
-                          <Video className="w-4 h-4" />
-                          Technische Tipps
-                        </h4>
-                        <ul className="text-sm text-purple-800 space-y-1">
-                          {generatedContent.technicalTips.map((tip: string, index: number) => (
-                            <li key={index}>• {tip}</li>
-                          ))}
-                        </ul>
+                      {/* Big Content Script Box */}
+                      <div 
+                        className="flex-1 min-h-[400px] p-6 bg-gradient-to-br from-gray-50 to-white border-2 border-gray-200 rounded-xl cursor-pointer hover:border-orange-300 hover:shadow-lg transition-all duration-300 group relative overflow-hidden"
+                        onClick={() => setIsFullscreenScript(true)}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-orange-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        <div className="relative z-10">
+                          <div className="flex items-center justify-center mb-4 opacity-60 group-hover:opacity-100 transition-opacity">
+                            <Maximize2 className="w-6 h-6 text-orange-600 mr-2" />
+                            <span className="text-gray-600 font-medium">Klicken für Vollbild-Ansicht</span>
+                          </div>
+                          <div className="font-mono text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                            {(customScript || generatedContent.script).substring(0, 500)}
+                            {(customScript || generatedContent.script).length > 500 && '...'}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -577,6 +726,135 @@ export function TrendOptimizationWorkflow({ trend, onBack }: TrendOptimizationWo
           </div>
         </div>
       </div>
+
+      {/* Fullscreen Script Dialog */}
+      <Dialog open={isFullscreenScript} onOpenChange={setIsFullscreenScript}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 bg-white">
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <DialogHeader className="flex-shrink-0 px-6 py-4 border-b">
+              <div className="flex items-center justify-between">
+                <DialogTitle className="text-2xl font-bold text-gray-900">
+                  Content Script - Vollbild-Ansicht
+                </DialogTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => copyToClipboard(customScript || generatedContent?.script || '')}
+                  >
+                    <Copy className="w-4 h-4 mr-1" />
+                    Kopieren
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadScript}
+                  >
+                    <Download className="w-4 h-4 mr-1" />
+                    Download
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsFullscreenScript(false)}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </DialogHeader>
+            
+            {/* Content */}
+            <div className="flex-1 overflow-hidden">
+              <Textarea
+                value={customScript || generatedContent?.script || ''}
+                onChange={(e) => setCustomScript(e.target.value)}
+                className="w-full h-full border-0 focus:ring-0 font-mono text-base leading-relaxed resize-none rounded-none"
+                placeholder="Dein optimierter Content-Script..."
+              />
+            </div>
+            
+            {/* Footer */}
+            <div className="flex-shrink-0 px-6 py-4 border-t bg-gray-50">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                  Du kannst den Script hier bearbeiten, kopieren oder herunterladen.
+                </p>
+                <Button
+                  onClick={() => setIsFullscreenScript(false)}
+                  className="bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white"
+                >
+                  Schließen
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Optimization Dialog */}
+      <Dialog open={showAiOptimizeDialog} onOpenChange={setShowAiOptimizeDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="w-5 h-5 text-orange-600" />
+              Script mit KI optimieren
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="optimization-input" className="text-sm font-medium text-gray-700">
+                Was möchten Sie am Script verbessern?
+              </Label>
+              <Textarea
+                id="optimization-input"
+                placeholder="z.B. 'Mache den Hook emotionaler', 'Füge mehr Call-to-Actions hinzu', 'Verkürze den Text'..."
+                value={userOptimizationInput}
+                onChange={(e) => setUserOptimizationInput(e.target.value)}
+                rows={4}
+                className="mt-2"
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Bot className="w-4 h-4 flex-shrink-0" />
+              <span>Unsere KI wird Ihr Feedback nutzen, um das Script zu verbessern.</span>
+            </div>
+          </div>
+          
+          <div className="flex gap-3 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAiOptimizeDialog(false)
+                setUserOptimizationInput('')
+              }}
+              className="flex-1"
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleAiOptimize}
+              disabled={!userOptimizationInput.trim() || isAiOptimizing}
+              className="flex-1 bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] hover:from-red-700 hover:via-orange-700 hover:to-yellow-700 text-white"
+            >
+              {isAiOptimizing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Optimiere...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Optimieren
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 } 

@@ -103,13 +103,28 @@ export function FixedMobileTrendExplorer({ onBack }: FixedMobileTrendExplorerPro
 
   const loadTrends = async () => {
     setIsLoading(true)
-    console.log('Loading trends from database...')
+    console.log('Loading Instagram posts from database...')
     
     try {
-      // Simple query to get all trends
+      // Query real Instagram posts from the posts table
       const { data, error } = await supabase
-        .from('instagramreelscraper')
-        .select('*')
+        .from('posts')
+        .select(`
+          id,
+          content,
+          media_urls,
+          media_type,
+          platforms,
+          likes,
+          comments,
+          impressions,
+          shares,
+          metadata,
+          created_at
+        `)
+        .eq('status', 'published')
+        .contains('platforms', ['instagram'])
+        .order('created_at', { ascending: false })
         .limit(20)
       
       if (error) {
@@ -117,30 +132,33 @@ export function FixedMobileTrendExplorer({ onBack }: FixedMobileTrendExplorerPro
         throw error
       }
       
-      console.log(`Found ${data?.length || 0} records in database`)
+      console.log(`Found ${data?.length || 0} Instagram posts in database`)
       
       if (data && data.length > 0) {
         console.log('Available columns in first record:', Object.keys(data[0]))
         console.log('First record data:', data[0])
         
         const transformedTrends = data.map(item => {
+          const firstMediaUrl = item.media_urls?.[0] || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=600&h=800&fit=crop'
+          const instagramUrl = item.metadata?.post_url || `https://instagram.com/p/${item.metadata?.instagram_id || 'example'}`
+          
           const transformed = {
-            id: item.id || `mock-${Math.random().toString(36).substring(2, 9)}`,
-            thumbnail_url: item.displayUrl || item.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=600&h=800&fit=crop',
-            profile_picture_url: item.profile_picture_url || item.profile_picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
-            reel_url: item.reel_url || item.url || 'https://instagram.com',
-            script: item.script || item.description || 'No script available for this trend.',
-            title: item.title || item.caption || 'Trending Content',
-            description: item.description || item.caption || item.title || 'Trending content'
+            id: item.id,
+            thumbnail_url: firstMediaUrl,
+            profile_picture_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
+            reel_url: instagramUrl,
+            script: item.content || 'No script available for this trend.',
+            title: item.content?.substring(0, 60) + '...' || 'Instagram Post',
+            description: item.content || 'Instagram post content'
           }
-          console.log('Transformed trend:', transformed)
+          console.log('Transformed Instagram post:', transformed)
           return transformed
         })
         
         setTrends(transformedTrends)
         setDataSource('database')
-        console.log(`Successfully loaded ${transformedTrends.length} trends from database`)
-        toast.success(`Loaded ${transformedTrends.length} trends from database`)
+        console.log(`Successfully loaded ${transformedTrends.length} Instagram posts from database`)
+        toast.success(`Loaded ${transformedTrends.length} Instagram posts from database`)
       } else {
         console.log('No data found in database, using mock data')
         setTrends(mockTrends)
@@ -154,34 +172,54 @@ export function FixedMobileTrendExplorer({ onBack }: FixedMobileTrendExplorerPro
 
   const refreshTrends = async () => {
     setIsRefreshing(true)
-    console.log('Refreshing trends...')
+    console.log('Refreshing Instagram posts...')
     
     try {
-      // Simple query to get all trends
+      // Get fresh Instagram posts with more variety
       const { data, error } = await supabase
-        .from('instagramreelscraper')
-        .select('*')
-        .limit(20)
+        .from('posts')
+        .select(`
+          id,
+          content,
+          media_urls,
+          media_type,
+          platforms,
+          likes,
+          comments,
+          impressions,
+          shares,
+          metadata,
+          created_at
+        `)
+        .eq('status', 'published')
+        .contains('platforms', ['instagram'])
+        .order('created_at', { ascending: false })
+        .limit(30) // Get more for variety
       
       if (error) throw error
       
       if (data && data.length > 0) {
-        const transformedTrends = data.map(item => ({
-          id: item.id || `mock-${Math.random().toString(36).substring(2, 9)}`,
-          thumbnail_url: item.displayUrl || item.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=600&h=800&fit=crop',
-          profile_picture_url: item.profile_picture_url || item.profile_picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
-          reel_url: item.reel_url || item.url || 'https://instagram.com',
-          script: item.script || item.description || 'No script available for this trend.',
-          title: item.title || item.caption || 'Trending Content',
-          description: item.description || item.caption || item.title || 'Trending content'
-        }))
+        const transformedTrends = data.map(item => {
+          const firstMediaUrl = item.media_urls?.[0] || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=600&h=800&fit=crop'
+          const instagramUrl = item.metadata?.post_url || `https://instagram.com/p/${item.metadata?.instagram_id || 'example'}`
+          
+          return {
+            id: item.id,
+            thumbnail_url: firstMediaUrl,
+            profile_picture_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
+            reel_url: instagramUrl,
+            script: item.content || 'No script available for this trend.',
+            title: item.content?.substring(0, 60) + '...' || 'Instagram Post',
+            description: item.content || 'Instagram post content'
+          }
+        })
         
-        const shuffledTrends = transformedTrends.sort(() => Math.random() - 0.5)
+        const shuffledTrends = transformedTrends.sort(() => Math.random() - 0.5).slice(0, 20)
         setTrends(shuffledTrends)
         setCurrentIndex(0)
         setDataSource('database')
-        toast.success(`Refreshed with ${shuffledTrends.length} trends from database`)
-        console.log(`Refreshed with ${shuffledTrends.length} database trends`)
+        toast.success(`Refreshed with ${shuffledTrends.length} Instagram posts from database`)
+        console.log(`Refreshed with ${shuffledTrends.length} Instagram posts`)
       } else {
         // Create additional mock trends for variety
         const additionalMockTrends = [

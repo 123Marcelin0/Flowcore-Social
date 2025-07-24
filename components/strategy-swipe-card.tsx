@@ -216,22 +216,22 @@ export function StrategySwipeCard({
 
           {/* Back of Card */}
           <div className="absolute inset-0 backface-hidden rotate-y-180">
-            <Card className="strategy-card strategy-card-override w-full h-full bg-white rounded-3xl border-0 overflow-hidden">
-              <CardContent className="p-8 h-full flex flex-col rounded-3xl overflow-hidden">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-semibold text-gray-900">
+            <Card className="strategy-card strategy-card-override w-full h-full bg-white border-0 overflow-hidden" style={{ borderRadius: '0' }}>
+              <CardContent className="p-6 h-full flex flex-col overflow-hidden" style={{ borderRadius: '0' }}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">
                     {strategy.title}
                   </h3>
                   <div className={`
-                    w-12 h-12 rounded-xl 
+                    w-10 h-10 rounded-xl 
                     bg-gradient-to-br ${strategy.color}
                     flex items-center justify-center shadow-sm
                   `}>
-                    <IconComponent className={`w-6 h-6 ${strategy.iconColor}`} />
+                    <IconComponent className={`w-5 h-5 ${strategy.iconColor}`} />
                   </div>
                 </div>
                 
-                <div className="space-y-4 flex-1 overflow-y-auto">
+                <div className="space-y-3 flex-1 overflow-y-auto">
                   {strategy.details?.why && (
                     <div>
                       <h4 className="font-semibold text-gray-900 mb-2 text-sm">Warum es wirkt:</h4>
@@ -248,11 +248,11 @@ export function StrategySwipeCard({
                     </div>
                   )}
                   
-                  {strategy.details?.proTips && (
+                  {strategy.details?.tips && (
                     <div>
                       <h4 className="font-semibold text-gray-900 mb-2 text-sm">Profi-Tipps:</h4>
                       <ul className="space-y-1">
-                        {strategy.details.proTips.map((tip: string, index: number) => (
+                        {strategy.details.tips.map((tip: string, index: number) => (
                           <li key={index} className="text-xs text-gray-600 leading-relaxed flex items-start gap-2">
                             <div className="w-1 h-1 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full mt-2 flex-shrink-0" />
                             <span>{tip}</span>
@@ -263,7 +263,7 @@ export function StrategySwipeCard({
                   )}
                 </div>
                 
-                <div className="mt-6 text-center">
+                <div className="mt-4 text-center">
                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-full">
                     <div className="w-2 h-2 bg-gray-300 rounded-full animate-pulse" />
                     <span className="text-sm text-gray-500">Tippen für Vorderseite</span>

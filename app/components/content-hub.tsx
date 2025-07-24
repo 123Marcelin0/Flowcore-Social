@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Edit, Instagram, Facebook, Twitter, Linkedin, Video, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Eye, Heart, MessageCircle, Share2, Move, Loader2 } from "lucide-react"
+import { Plus, Edit, Instagram, Facebook, Twitter, Linkedin, Video, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Eye, Heart, MessageCircle, Share2, Move, Loader2, Brain, Sparkles, Zap } from "lucide-react"
 import { MonthlyCalendar } from "@/components/calendar/monthly-calendar"
 import type { CalendarEvent } from "@/components/calendar/event-card"
 import { AIPostWorkflow } from "./ai-post-workflow"
@@ -20,6 +20,7 @@ import { CalendarEventsService } from "@/lib/data-service"
 import type { CalendarEvent as DatabaseCalendarEvent } from "@/lib/supabase"
 import { sampleIdeas } from "@/lib/sample-ideas"
 import { toast } from "sonner"
+import { ContentIdeaService } from "@/lib/content-idea-service"
 
 interface Draft {
   id: string
@@ -55,9 +56,12 @@ export function ContentHub() {
   const { user } = useAuth()
   const { state, actions } = usePost()
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
-  const [selectedView, setSelectedView] = useState("drafts")
+  const [selectedView, setSelectedView] = useState("ideas")
   const [currentDate, setCurrentDate] = useState(new Date())
   const [loadingMore, setLoadingMore] = useState(false)
+  const [isAIPlanningMode, setIsAIPlanningMode] = useState(false)
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false)
+  const [aiPlanData, setAiPlanData] = useState<any>(null)
   const [selectedPost, setSelectedPost] = useState<any>(null)
   const [isPostDetailOpen, setIsPostDetailOpen] = useState(false)
   const [hoveredPost, setHoveredPost] = useState<string | null>(null)
@@ -66,7 +70,8 @@ export function ContentHub() {
     draggedId: string | null
     dragOverDate: string | null
   }>({ draggedId: null, dragOverDate: null })
-  const [ideas, setIdeas] = useState<IdeaCardData[]>(sampleIdeas)
+  const [ideas, setIdeas] = useState<IdeaCardData[]>([])
+  const [isLoadingIdeas, setIsLoadingIdeas] = useState(false)
 
   // Fetch calendar events
   useEffect(() => {
@@ -80,6 +85,26 @@ export function ContentHub() {
         }
       }
       fetchCalendarEvents()
+    }
+  }, [user])
+
+  // Load content ideas from database
+  useEffect(() => {
+    if (user?.id) {
+      const loadIdeas = async () => {
+        setIsLoadingIdeas(true)
+        try {
+          const userIdeas = await ContentIdeaService.syncWithContentHub(user.id)
+          setIdeas(userIdeas)
+        } catch (error) {
+          console.error('Error loading ideas:', error)
+          // Fallback to sample ideas if database loading fails
+          setIdeas(sampleIdeas)
+        } finally {
+          setIsLoadingIdeas(false)
+        }
+      }
+      loadIdeas()
     }
   }, [user])
 
@@ -446,6 +471,76 @@ export function ContentHub() {
         : i
     )
     setIdeas(updatedIdeas)
+  }
+
+  const handleAIPlanningToggle = async () => {
+    if (!user?.id) {
+      toast.error('Bitte melde dich an, um AI-Planung zu nutzen')
+      return
+    }
+
+    if (isAIPlanningMode) {
+      // Turn off AI mode
+      setIsAIPlanningMode(false)
+      setAiPlanData(null)
+      // Go back to current month
+      setCurrentDate(new Date())
+      return
+    }
+
+    // Turn on AI mode
+    setIsAIPlanningMode(true)
+    setIsGeneratingPlan(true)
+    
+    // Switch to next month with animation
+    const nextMonth = new Date()
+    nextMonth.setMonth(nextMonth.getMonth() + 1)
+    setCurrentDate(nextMonth)
+    
+    // Switch to calendar view automatically
+    setSelectedView("calendar")
+
+    try {
+      const targetMonth = nextMonth.toISOString().substring(0, 7) // YYYY-MM format
+      
+      toast.info('🤖 AI analysiert deine Inhalte...', {
+        duration: 2000,
+      })
+
+      const response = await fetch('/api/ai-planning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          targetMonth
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Fehler beim Erstellen des AI-Plans')
+      }
+
+      setAiPlanData(result.data)
+      
+      toast.success('🎉 AI-Posting-Plan erfolgreich erstellt!', {
+        description: `${result.data.postsGenerated} Posts für ${targetMonth} generiert`,
+        duration: 4000,
+      })
+
+      // Refresh the posts to show the new AI-generated content
+      await actions.fetchPosts()
+
+    } catch (error) {
+      console.error('AI Planning Error:', error)
+      toast.error('Fehler beim Erstellen des AI-Plans', {
+        description: error instanceof Error ? error.message : 'Unbekannter Fehler'
+      })
+      setIsAIPlanningMode(false)
+    } finally {
+      setIsGeneratingPlan(false)
+    }
   }
 
   const navigateMonth = (direction: 'prev' | 'next') => {
@@ -854,13 +949,12 @@ export function ContentHub() {
           </div>
 
           {/* View Filter - Matching Dashboard Style */}
-          <div className="flex items-center justify-center mb-6">
+          <div className="flex items-center justify-center mb-6 relative">
             <div className="flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-0.5">
               {[
-                { key: "drafts", label: "Drafts" },
                 { key: "ideas", label: "Ideas" },
-                { key: "calendar", label: "Calendar" },
-                { key: "scheduled", label: "Scheduled List" }
+                { key: "drafts", label: "Entwürfe" },
+                { key: "calendar", label: "Calendar" }
               ].map((view) => (
                 <button
                   key={view.key}
@@ -875,21 +969,84 @@ export function ContentHub() {
                 </button>
               ))}
             </div>
+
+            {/* AI Planning Toggle Button */}
+            <div className="absolute right-0">
+              <button
+                onClick={handleAIPlanningToggle}
+                disabled={isGeneratingPlan}
+                className={`relative inline-flex items-center gap-2 px-4 py-2.5 rounded-full font-medium text-sm transition-all duration-300 ease-in-out group ${
+                  isAIPlanningMode
+                    ? 'bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white shadow-lg'
+                    : 'bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white hover:shadow-lg'
+                } ${isGeneratingPlan ? 'animate-pulse' : 'hover:scale-105'}`}
+                style={{
+                  minWidth: '140px',
+                  height: '42px'
+                }}
+              >
+                {/* Animated background pulse */}
+                {isAIPlanningMode && (
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 opacity-0 group-hover:opacity-75 group-hover:animate-ping"></div>
+                )}
+                
+                {/* Sparkle effect for active mode */}
+                {isAIPlanningMode && (
+                  <div className="absolute inset-0 overflow-hidden rounded-full">
+                    <div className="absolute top-1 right-1 w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDelay: '0s' }}></div>
+                    <div className="absolute top-2 left-3 w-0.5 h-0.5 bg-white rounded-full animate-ping" style={{ animationDelay: '0.5s' }}></div>
+                    <div className="absolute bottom-2 right-3 w-0.5 h-0.5 bg-white rounded-full animate-ping" style={{ animationDelay: '1s' }}></div>
+                  </div>
+                )}
+
+                {/* Icon and text */}
+                <div className="relative z-10 flex items-center gap-2">
+                  {isGeneratingPlan ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Brain className="w-4 h-4" />
+                  )}
+                  <span className="font-medium">
+                    {isGeneratingPlan 
+                      ? 'Erstelle...' 
+                      : isAIPlanningMode 
+                      ? 'AI Aktiv' 
+                      : 'AI Planer'
+                    }
+                  </span>
+                  {isAIPlanningMode && !isGeneratingPlan && (
+                    <Sparkles className="w-3 h-3 animate-pulse" />
+                  )}
+                </div>
+
+                {/* Glow effect */}
+                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 opacity-0 group-hover:opacity-30 blur-md transition-opacity duration-300"></div>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Content Area */}
         <div className="space-y-6">
           {selectedView === "ideas" && (
-            <IdeaGrid
-              ideas={ideas}
-              onAddIdea={handleAddIdea}
-              onEditIdea={handleEditIdea}
-              onDeleteIdea={handleDeleteIdea}
-              onDuplicateIdea={handleDuplicateIdea}
-              onConvertToPost={handleConvertIdeaToPost}
-              onSaveIdea={handleSaveIdea}
-            />
+            isLoadingIdeas ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-4">
+                  <Loader2 className="w-8 h-8 animate-spin text-teal-500" />
+                  <p className="text-gray-600">Lade deine gespeicherten Ideen...</p>
+                </div>
+              </div>
+            ) : (
+              <IdeaGrid
+                ideas={ideas}
+                onAddIdea={handleAddIdea}
+                onEditIdea={handleEditIdea}
+                onDeleteIdea={handleDeleteIdea}
+                onDuplicateIdea={handleDuplicateIdea}
+                onConvertToPost={handleConvertIdeaToPost}
+                onSaveIdea={handleSaveIdea}
+              />
+            )
           )}
 
           {selectedView === "drafts" && (
@@ -1033,115 +1190,6 @@ export function ContentHub() {
           )}
 
           {selectedView === "calendar" && renderCalendar()}
-
-          {selectedView === "scheduled" && (
-            <div className="space-y-4">
-              {posts.length > 0 ? (
-                posts
-                  .sort((a, b) => new Date(a.scheduledDate + " " + a.scheduledTime).getTime() - new Date(b.scheduledDate + " " + b.scheduledTime).getTime())
-                  .map((post) => (
-                  <Card
-                    key={post.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, post)}
-                    onDragEnd={handleDragEnd}
-                    className="overflow-hidden border-0 shadow-sm bg-white hover:shadow-md transition-all duration-200 rounded-2xl cursor-move"
-                  >
-                    <CardContent className="p-6">
-                      <div className="flex items-start gap-4">
-                        <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0">
-                          <img
-                            src={post.image}
-                            alt="Post preview"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h3 className="font-semibold text-gray-900">{post.title}</h3>
-                            <Badge 
-                              className={`text-xs px-2 py-1 rounded-full ${
-                                post.status === 'scheduled' 
-                                  ? 'bg-blue-50 text-blue-600 border-blue-200' 
-                                  : 'bg-green-50 text-green-600 border-green-200'
-                              }`}
-                            >
-                              {post.status === 'scheduled' ? 'Scheduled' : 'Published'}
-                            </Badge>
-                          </div>
-                          <p className="text-gray-600 text-sm mb-3 line-clamp-2">{post.content}</p>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4 text-sm text-gray-500">
-                              <span className="flex items-center gap-1">
-                                <CalendarIcon className="w-4 h-4" />
-                                {new Date(post.scheduledDate).toLocaleDateString()}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-4 h-4" />
-                                {post.scheduledTime}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <div className="flex gap-2">
-                                {post.platforms.slice(0, 4).map(platform => {
-                                  const Icon = {
-                                    instagram: Instagram,
-                                    facebook: Facebook,
-                                    twitter: Twitter,
-                                    linkedin: Linkedin,
-                                    tiktok: Video
-                                  }[platform]
-                                  return Icon ? (
-                                    <div
-                                      key={platform}
-                                      className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center"
-                                    >
-                                      <Icon className="w-3 h-3 text-gray-600" />
-                                    </div>
-                                  ) : null
-                                })}
-                              </div>
-                              {post.status === 'published' && (
-                                <div className="flex items-center gap-4 text-xs text-gray-500">
-                                  <span className="flex items-center gap-1">
-                                    <Heart className="w-3 h-3" />
-                                    {post.likes}
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    <MessageCircle className="w-3 h-3" />
-                                    {post.comments}
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    <Share2 className="w-3 h-3" />
-                                    {post.shares}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  ))
-              ) : (
-                <div className="text-center py-12">
-                  <div className="w-16 h-16 bg-gradient-to-r from-teal-500/10 to-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CalendarIcon className="w-8 h-8 text-teal-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No scheduled posts</h3>
-                  <p className="text-gray-600 mb-6">Schedule your first post to see it here. You can schedule drafts by dragging them to the calendar.</p>
-                  <Button 
-                    onClick={() => setIsCreatePostOpen(true)}
-                    className="bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white rounded-full px-6"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Schedule Post
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 

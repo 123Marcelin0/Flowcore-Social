@@ -21,6 +21,7 @@ import {
   Play,
   Heart,
   MessageCircle,
+  Share,
   Search,
   Sparkles,
   Send,
@@ -39,13 +40,166 @@ import { CalendarPopup } from "@/components/ui/calendar-popup"
 import { AIPostWorkflow } from "./ai-post-workflow"
 import { PostDetailPopup } from "./post-detail-popup"
 import { DynamicText } from "./dynamic-text"
+import { BulkPostUploader } from "@/components/bulk-post-uploader"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { usePost } from "@/lib/post-context"
 import { useAuth } from "@/lib/auth-context"
 import { useDate } from "@/lib/date-context"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
-// Local Post interface that matches the PostDetailPopup component
+// Enhanced Media Preview Component with comprehensive error handling
+interface MediaPreviewProps {
+  src: string
+  mediaUrls: string[]
+  mediaType: "image" | "video" | "carousel" | "text"
+  alt: string
+  className: string
+}
+
+function MediaPreview({ src, mediaUrls, mediaType, alt, className }: MediaPreviewProps) {
+  const [currentSrc, setCurrentSrc] = useState(() => {
+    // Use proxy for Instagram URLs
+    if (src && (src.includes('instagram') || src.includes('scontent-') || src.includes('cdninstagram'))) {
+      return `/api/media-proxy?url=${encodeURIComponent(src)}`
+    }
+    return src || '/placeholder.svg'
+  })
+  const [urlIndex, setUrlIndex] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasError, setHasError] = useState(false)
+  const [triedProxy, setTriedProxy] = useState(false)
+
+  const getProxiedUrl = useCallback((url: string) => {
+    if (url && (url.includes('instagram') || url.includes('scontent-') || url.includes('cdninstagram'))) {
+      return `/api/media-proxy?url=${encodeURIComponent(url)}`
+    }
+    return url
+  }, [])
+
+  const handleImageError = useCallback(() => {
+    console.log(`Dashboard: Failed to load image: ${currentSrc}`)
+    console.log(`Dashboard: Available URLs:`, mediaUrls)
+    console.log(`Dashboard: Current URL index: ${urlIndex}`)
+    console.log(`Dashboard: Tried proxy: ${triedProxy}`)
+    
+    // If we haven't tried the proxy yet for this URL, try it
+    if (!triedProxy && !currentSrc.includes('/api/media-proxy') && urlIndex < mediaUrls.length) {
+      const originalUrl = mediaUrls[urlIndex] || src
+      if (originalUrl) {
+        console.log(`Dashboard: Trying proxy for: ${originalUrl}`)
+        setCurrentSrc(getProxiedUrl(originalUrl))
+        setTriedProxy(true)
+        setIsLoading(true)
+        setHasError(false)
+        return
+      }
+    }
+    
+    // Try next URL in mediaUrls array
+    if (urlIndex + 1 < mediaUrls.length) {
+      const nextIndex = urlIndex + 1
+      const nextUrl = mediaUrls[nextIndex]
+      if (nextUrl) {
+        setUrlIndex(nextIndex)
+        setCurrentSrc(getProxiedUrl(nextUrl))
+        setTriedProxy(false)
+        setIsLoading(true)
+        setHasError(false)
+        return
+      }
+    }
+    
+    // Try original URL without proxy
+    if (currentSrc.includes('/api/media-proxy')) {
+      const originalUrl = decodeURIComponent(currentSrc.split('url=')[1] || '')
+      if (originalUrl && originalUrl !== currentSrc && originalUrl !== '/placeholder.svg') {
+        setCurrentSrc(originalUrl)
+        setIsLoading(true)
+        setHasError(false)
+        return
+      }
+    }
+    
+    // Try placeholder as last resort
+    if (currentSrc !== '/placeholder.svg') {
+      setCurrentSrc('/placeholder.svg')
+      setIsLoading(true)
+      setHasError(false)
+      return
+    }
+    
+    // Complete failure
+    setHasError(true)
+    setIsLoading(false)
+  }, [currentSrc, mediaUrls, urlIndex, src, getProxiedUrl, triedProxy])
+
+  const handleImageLoad = useCallback(() => {
+    setIsLoading(false)
+    setHasError(false)
+  }, [])
+
+  if (hasError) {
+    return (
+      <div className={`${className} bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center`}>
+        <div className="text-center text-gray-500 p-2">
+          {mediaType === 'video' ? (
+            <Video className="w-6 h-6 mx-auto mb-1" />
+          ) : mediaType === 'carousel' ? (
+            <ImageIcon className="w-6 h-6 mx-auto mb-1" />
+          ) : (
+            <ImageIcon className="w-6 h-6 mx-auto mb-1" />
+          )}
+          <div className="text-xs font-medium mb-1">
+            {mediaType === 'video' ? 'Video' : 
+             mediaType === 'carousel' ? `${mediaUrls.length} Photos` : 
+             'Image'}
+          </div>
+          <div className="text-xs opacity-75">Instagram Content</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {isLoading && (
+        <div className={`absolute inset-0 bg-gray-200 flex items-center justify-center z-5`}>
+          <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+        </div>
+      )}
+      <img
+        src={currentSrc}
+        alt={alt}
+        className={className}
+        loading="lazy"
+        onLoad={handleImageLoad}
+        onError={handleImageError}
+        crossOrigin="anonymous"
+        referrerPolicy="no-referrer"
+      />
+    </>
+  )
+}
+
+// Enhanced Post interface that matches the uploaded Instagram data
+interface DashboardPost {
+  id: string
+  media: string
+  mediaUrls: string[]
+  mediaType: "image" | "video" | "carousel" | "text"
+  text: string
+  platforms: ("instagram" | "facebook" | "twitter" | "linkedin" | "tiktok")[]
+  status: "scheduled" | "published" | "draft" | "failed"
+  date: string
+  likes?: number
+  comments?: number
+  views?: number
+  shares?: number
+  reach?: number
+}
+
+// Original Post interface for PostDetailPopup compatibility
 interface Post {
   id: string
   media: string
@@ -68,37 +222,71 @@ interface TimeInterval {
 type Platform = 'instagram' | 'facebook' | 'twitter' | 'linkedin' | 'tiktok'
 type PostStatus = 'draft' | 'scheduled' | 'published' | 'failed'
 
-// Convert PostContext Post to component Post format
-const convertPostContextToComponentPost = (post: any): Post => {
-  // Use scheduled date and time if available, otherwise fall back to created date
-  let displayDate = post.createdAt;
+// Convert PostContext Post to component DashboardPost format with enhanced Instagram data
+const convertPostContextToComponentPost = (post: any): DashboardPost => {
+      // Debug: Log post data to understand media URLs structure
+    if (post.media_urls && post.media_urls.length > 0) {
+      console.log(`Dashboard: Converting post ${post.id} with ${post.media_urls.length} media URLs:`, post.media_urls.map((url: string) => url?.substring(0, 60) + '...'));
+    }
+    
+    // Use scheduled date and time if available, otherwise fall back to created/published date
+    let displayDate = post.createdAt;
   
   if (post.scheduledDate && post.scheduledTime) {
     // Create date object with careful timezone handling to maintain precision
-    // Parse the date string (YYYY-MM-DD) and time string (HH:MM) separately
     const [year, month, day] = post.scheduledDate.split('-').map(Number);
     const [hours, minutes] = post.scheduledTime.split(':').map(Number);
-    
-    // Create date in local timezone to avoid timezone shifts
     const scheduledDateTime = new Date(year, month - 1, day, hours, minutes, 0, 0);
     displayDate = scheduledDateTime.toISOString();
   } else if (post.scheduledDate) {
-    // If only date is available, use it carefully to avoid timezone shifts
     const [year, month, day] = post.scheduledDate.split('-').map(Number);
-    const dateOnly = new Date(year, month - 1, day, 12, 0, 0, 0); // Use noon to avoid timezone issues
+    const dateOnly = new Date(year, month - 1, day, 12, 0, 0, 0);
     displayDate = dateOnly.toISOString();
+  } else if (post.published_at) {
+    displayDate = post.published_at;
+  } else if (post.created_at) {
+    displayDate = post.created_at;
   }
+
+  // Extract media URLs - handle both old format (image field) and new format (media_urls array)
+  let mediaUrls: string[] = [];
+  let primaryMedia = '/placeholder.jpg';
+  
+  if (post.media_urls && Array.isArray(post.media_urls) && post.media_urls.length > 0) {
+    mediaUrls = post.media_urls.filter(Boolean);
+    primaryMedia = mediaUrls[0];
+  } else if (post.image) {
+    mediaUrls = [post.image];
+    primaryMedia = post.image;
+  }
+
+  // Extract media type - use database field if available, otherwise infer
+  let mediaType: "image" | "video" | "carousel" | "text" = "image";
+  if (post.media_type) {
+    mediaType = post.media_type as "image" | "video" | "carousel" | "text";
+  } else if (mediaUrls.length > 1) {
+    mediaType = "carousel";
+  } else if (mediaUrls.some(url => url.toLowerCase().includes('.mp4') || url.toLowerCase().includes('video'))) {
+    mediaType = "video";
+  }
+
+  // Final debug log
+  console.log(`Dashboard: Post ${post.id} converted - Primary: ${primaryMedia?.substring(0, 60)}..., URLs: ${mediaUrls.length}, Type: ${mediaType}`);
 
   return {
     id: post.id,
-    media: post.image || '/placeholder.jpg',
-    mediaType: 'image',
-    text: post.content,
+    media: primaryMedia,
+    mediaUrls: mediaUrls,
+    mediaType: mediaType,
+    text: post.content || post.title || '',
     platforms: post.platforms as Platform[],
     status: post.status as PostStatus,
     date: displayDate,
-    likes: post.likes,
-    comments: post.comments
+    likes: post.likes || 0,
+    comments: post.comments || post.comments_count || 0,
+    views: post.impressions || 0, // Use impressions as views for videos
+    shares: post.shares || 0,
+    reach: post.reach || 0
   }
 }
 
@@ -133,6 +321,7 @@ export const DashboardOverview = memo(function DashboardOverview() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [isPostDetailOpen, setIsPostDetailOpen] = useState(false)
   const [showTimeoutMessage, setShowTimeoutMessage] = useState(false)
+  const [isBulkUploaderOpen, setIsBulkUploaderOpen] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
   // Show timeout message after 10 seconds of loading
@@ -198,9 +387,27 @@ export const DashboardOverview = memo(function DashboardOverview() {
     return Object.values(state.posts).map(convertPostContextToComponentPost)
   }, [state.posts])
 
-  // Memoized filtered posts
+  // Convert DashboardPost to PostDetailPopup Post format
+  const convertToPopupPost = (dashboardPost: DashboardPost): Post => ({
+    id: dashboardPost.id,
+    media: dashboardPost.media,
+    mediaType: dashboardPost.mediaType === 'carousel' ? 'image' : 
+               dashboardPost.mediaType === 'text' ? 'image' : 
+               dashboardPost.mediaType as "image" | "video",
+    text: dashboardPost.text,
+    platforms: dashboardPost.platforms,
+    status: dashboardPost.status,
+    date: dashboardPost.date,
+    likes: dashboardPost.likes,
+    comments: dashboardPost.comments
+  })
+
+  // Memoized filtered posts  
   const filteredPosts = useMemo(() => {
-    return posts.filter((post: Post) => {
+    // Sort posts by date (newest first)
+    const sortedPosts = [...posts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    return sortedPosts.filter((post: DashboardPost) => {
       const platformMatch = selectedPlatforms.length === 0 || 
         post.platforms.some(p => selectedPlatforms.includes(p))
       const statusMatch = selectedStatus === "Alle" || 
@@ -683,8 +890,13 @@ export const DashboardOverview = memo(function DashboardOverview() {
     setIsAiWorkflowOpen(true)
   }, [])
 
-  const handlePostClick = useCallback((post: Post) => {
-    setSelectedPost(post)
+  const handleBulkUploadComplete = useCallback(() => {
+    actions.fetchPosts() // Refresh posts after upload
+    setIsBulkUploaderOpen(false)
+  }, [actions])
+
+  const handlePostClick = useCallback((post: DashboardPost) => {
+    setSelectedPost(convertToPopupPost(post))
     setIsPostDetailOpen(true)
   }, [])
 
@@ -745,7 +957,7 @@ export const DashboardOverview = memo(function DashboardOverview() {
     
     try {
       await actions.addPost({
-        title: `${post.id} (Copy)`,
+        title: `${post.text.substring(0, 20)}... (Copy)`,
         content: post.text,
         platforms: post.platforms,
         image: post.media,
@@ -893,6 +1105,14 @@ export const DashboardOverview = memo(function DashboardOverview() {
               >
                 <Plus className="w-4 h-4" />
                 Neuer Post
+              </Button>
+              <Button 
+                onClick={() => setIsBulkUploaderOpen(true)}
+                size="default" 
+                variant="outline"
+                className="h-10 text-sm gap-2 px-4 rounded-full border-gray-300 hover:bg-gray-50"
+              >
+                📁 Bulk Upload
               </Button>
             </div>
           </div>
@@ -1137,23 +1357,68 @@ export const DashboardOverview = memo(function DashboardOverview() {
               >
                 {/* Media Preview */}
                 <div className="aspect-video relative bg-gray-50 rounded-t-2xl overflow-hidden">
+                  {/* Media Type Indicator */}
+                  <div className="absolute top-2 left-2 z-10">
+                    {post.mediaType === 'video' && (
+                      <div className="bg-black/80 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1.5">
+                        <Play className="w-3 h-3" />
+                        VIDEO
+                      </div>
+                    )}
+                    {post.mediaType === 'carousel' && (
+                      <div className="bg-black/80 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1.5">
+                        <ImageIcon className="w-3 h-3" />
+                        {post.mediaUrls.length} PHOTOS
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Video Views Count - Always visible for videos */}
                   {post.mediaType === 'video' && (
                     <div className="absolute top-2 right-2 z-10">
-                      <div className="w-6 h-6 bg-black/70 rounded-full flex items-center justify-center">
-                        <Play className="w-3 h-3 text-white ml-0.5" />
+                      <div className="bg-black/80 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                        <Play className="w-3 h-3" />
+                        {post.views && post.views > 0 ? post.views.toLocaleString() : '0'} views
                       </div>
                     </div>
                   )}
-                  <img
+
+                  {/* Enhanced Media Display with Loading States */}
+                  <MediaPreview 
                     src={post.media}
-                    alt="Post preview"
-                    className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
-                    loading="lazy"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement
-                      target.src = '/placeholder.svg'
-                    }}
+                    mediaUrls={post.mediaUrls}
+                    mediaType={post.mediaType}
+                    alt={`${post.mediaType} preview`}
+                    className={`object-cover w-full h-full transition-transform duration-300 ${
+                      post.mediaType === 'video' 
+                        ? 'group-hover:scale-105 filter brightness-95' 
+                        : 'group-hover:scale-105'
+                    }`}
                   />
+
+                  {/* Video Play Overlay */}
+                  {post.mediaType === 'video' && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center opacity-80 group-hover:opacity-100 transition-opacity duration-300">
+                        <Play className="w-6 h-6 text-white ml-1" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Carousel Indicators */}
+                  {post.mediaType === 'carousel' && post.mediaUrls.length > 1 && (
+                    <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex gap-1">
+                      {post.mediaUrls.slice(0, 5).map((_, index) => (
+                        <div
+                          key={index}
+                          className="w-1.5 h-1.5 bg-white/60 rounded-full"
+                        />
+                      ))}
+                      {post.mediaUrls.length > 5 && (
+                        <div className="w-1.5 h-1.5 bg-white/60 rounded-full ml-1" />
+                      )}
+                    </div>
+                  )}
                   
                   {/* Status Badge */}
                   <div className="absolute top-3 right-3">
@@ -1174,19 +1439,31 @@ export const DashboardOverview = memo(function DashboardOverview() {
                     </Badge>
                   </div>
 
-                  {/* Hover Overlay */}
+                  {/* Enhanced Hover Overlay with All Metrics */}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-4 text-white">
-                      {post.likes !== undefined && (
-                        <div className="flex items-center gap-1">
-                          <Heart className="w-4 h-4" />
-                          <span className="text-sm font-medium">{post.likes}</span>
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-wrap items-center justify-center gap-3 text-white text-xs">
+                      {post.likes !== undefined && post.likes > 0 && (
+                        <div className="flex items-center gap-1 bg-black/50 px-2 py-1 rounded-full">
+                          <Heart className="w-3 h-3" />
+                          <span className="font-medium">{post.likes.toLocaleString()}</span>
                         </div>
                       )}
-                      {post.comments !== undefined && (
-                        <div className="flex items-center gap-1">
-                          <MessageCircle className="w-4 h-4" />
-                          <span className="text-sm font-medium">{post.comments}</span>
+                      {post.comments !== undefined && post.comments > 0 && (
+                        <div className="flex items-center gap-1 bg-black/50 px-2 py-1 rounded-full">
+                          <MessageCircle className="w-3 h-3" />
+                          <span className="font-medium">{post.comments.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {post.views !== undefined && post.views > 0 && post.mediaType === 'video' && (
+                        <div className="flex items-center gap-1 bg-black/50 px-2 py-1 rounded-full">
+                          <Play className="w-3 h-3" />
+                          <span className="font-medium">{post.views.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {post.shares !== undefined && post.shares > 0 && (
+                        <div className="flex items-center gap-1 bg-black/50 px-2 py-1 rounded-full">
+                          <Share className="w-3 h-3" />
+                          <span className="font-medium">{post.shares.toLocaleString()}</span>
                         </div>
                       )}
                     </div>
@@ -1379,6 +1656,16 @@ export const DashboardOverview = memo(function DashboardOverview() {
         onDelete={handlePostDelete}
         onDuplicate={handlePostDuplicate}
       />
+
+      {/* Bulk Post Uploader Dialog */}
+      <Dialog open={isBulkUploaderOpen} onOpenChange={setIsBulkUploaderOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <BulkPostUploader 
+            onUploadComplete={handleBulkUploadComplete}
+            onClose={() => setIsBulkUploaderOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }) 

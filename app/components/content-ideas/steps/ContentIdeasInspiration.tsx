@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,12 +16,165 @@ import {
   MessageCircle,
   Eye,
   Share2,
-  RotateCcw
+  RotateCcw,
+  Play,
+  Image as ImageIcon,
+  Video,
+  Loader2
 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from 'sonner'
 import { TrendOptimizationWorkflow } from "@/app/components/trend-optimization-workflow"
 import type { ContentStep } from "../hooks/useContentIdeas"
+import { ContentIdeaService } from "@/lib/content-idea-service"
+import { useAuth } from "@/lib/auth-context"
+
+// Media Preview Component with enhanced error handling for Instagram URLs
+interface MediaPreviewProps {
+  src: string
+  mediaUrls: string[]
+  mediaType: string
+  alt: string
+  className: string
+}
+
+function MediaPreview({ src, mediaUrls, mediaType, alt, className }: MediaPreviewProps) {
+  const [currentSrc, setCurrentSrc] = useState(() => {
+    // Use proxy for Instagram URLs
+    if (src.includes('instagram') || src.includes('scontent-') || src.includes('cdninstagram')) {
+      return `/api/media-proxy?url=${encodeURIComponent(src)}`
+    }
+    return src
+  })
+  const [urlIndex, setUrlIndex] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasError, setHasError] = useState(false)
+  const [triedProxy, setTriedProxy] = useState(false)
+
+  const getProxiedUrl = useCallback((url: string) => {
+    if (url.includes('instagram') || url.includes('scontent-') || url.includes('cdninstagram')) {
+      return `/api/media-proxy?url=${encodeURIComponent(url)}`
+    }
+    return url
+  }, [])
+
+  const handleImageError = useCallback(() => {
+    console.log(`Failed to load image: ${currentSrc}`)
+    
+    // If we haven't tried the proxy yet for this URL, try it
+    if (!triedProxy && !currentSrc.includes('/api/media-proxy') && urlIndex < mediaUrls.length) {
+      const originalUrl = mediaUrls[urlIndex] || src
+      setCurrentSrc(getProxiedUrl(originalUrl))
+      setTriedProxy(true)
+      setIsLoading(true)
+      setHasError(false)
+      return
+    }
+    
+    // Try next URL in mediaUrls array
+    if (urlIndex + 1 < mediaUrls.length) {
+      const nextIndex = urlIndex + 1
+      setUrlIndex(nextIndex)
+      setCurrentSrc(getProxiedUrl(mediaUrls[nextIndex]))
+      setTriedProxy(false)
+      setIsLoading(true)
+      setHasError(false)
+      return
+    }
+    
+    // Try original URL without proxy
+    if (currentSrc.includes('/api/media-proxy')) {
+      const originalUrl = decodeURIComponent(currentSrc.split('url=')[1] || '')
+      if (originalUrl && originalUrl !== currentSrc) {
+        setCurrentSrc(originalUrl)
+        setIsLoading(true)
+        setHasError(false)
+        return
+      }
+    }
+    
+    // Try placeholder as last resort
+    if (currentSrc !== '/placeholder.svg') {
+      setCurrentSrc('/placeholder.svg')
+      setIsLoading(true)
+      setHasError(false)
+      return
+    }
+    
+    // Complete failure
+    setHasError(true)
+    setIsLoading(false)
+  }, [currentSrc, mediaUrls, urlIndex, src, getProxiedUrl, triedProxy])
+
+  const handleImageLoad = useCallback(() => {
+    setIsLoading(false)
+    setHasError(false)
+  }, [])
+
+  if (hasError) {
+    return (
+      <div className={`${className} bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center`}>
+        <div className="text-center text-gray-500 p-4">
+          {mediaType === 'video' ? (
+            <Video className="w-8 h-8 mx-auto mb-2" />
+          ) : mediaType === 'carousel' ? (
+            <ImageIcon className="w-8 h-8 mx-auto mb-2" />
+          ) : (
+            <ImageIcon className="w-8 h-8 mx-auto mb-2" />
+          )}
+          <div className="text-xs font-medium mb-1">
+            {mediaType === 'video' ? 'Video Preview' : 
+             mediaType === 'carousel' ? `${mediaUrls.length} Photos` : 
+             'Image Preview'}
+          </div>
+          <div className="text-xs opacity-75">Content from Instagram</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {isLoading && (
+        <div className={`absolute inset-0 bg-gray-200 flex items-center justify-center z-5`}>
+          <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
+        </div>
+      )}
+      <img
+        src={currentSrc}
+        alt={alt}
+        className={className}
+        loading="lazy"
+        onLoad={handleImageLoad}
+        onError={handleImageError}
+        crossOrigin="anonymous"
+        referrerPolicy="no-referrer"
+      />
+      
+      {/* Video/Carousel indicators */}
+      {!isLoading && !hasError && (
+        <>
+          {mediaType === 'video' && (
+            <div className="absolute top-3 left-3 z-10">
+              <div className="bg-black/80 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                <Play className="w-3 h-3" />
+                VIDEO
+              </div>
+            </div>
+          )}
+          {mediaType === 'carousel' && mediaUrls.length > 1 && (
+            <div className="absolute top-3 left-3 z-10">
+              <div className="bg-black/80 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                <ImageIcon className="w-3 h-3" />
+                {mediaUrls.length} PHOTOS
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  )
+}
 
 interface TrendData {
   id: string
@@ -36,6 +189,8 @@ interface TrendData {
   engagement_count?: number
   script?: string
   description?: string
+  media_urls?: string[]
+  media_type?: string
 }
 
 interface TrendCardProps {
@@ -52,7 +207,10 @@ const TrendCard: React.FC<TrendCardProps> = ({ trend, onSave, isSaved, onSelect,
   const handleInstagramRedirect = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (trend.reel_url) {
-      window.open(trend.reel_url, '_blank', 'noopener,noreferrer')
+      // Ensure the URL is valid
+      const url = trend.reel_url.startsWith('http') ? trend.reel_url : `https://${trend.reel_url}`
+      window.open(url, '_blank', 'noopener,noreferrer')
+      toast.success('Instagram post öffnet sich in neuem Tab')
     } else {
       toast.error('Instagram Link nicht verfügbar')
     }
@@ -98,7 +256,9 @@ const TrendCard: React.FC<TrendCardProps> = ({ trend, onSave, isSaved, onSelect,
             {isSelectionMode && (
               <div className="absolute top-4 left-4 z-10">
                 <Badge className="bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-white">
-                  Zum Optimieren klicken
+                  <span className="transform rotate-90 origin-center inline-block whitespace-nowrap">
+                    Zum Optimieren klicken
+                  </span>
                 </Badge>
               </div>
             )}
@@ -111,40 +271,44 @@ const TrendCard: React.FC<TrendCardProps> = ({ trend, onSave, isSaved, onSelect,
               <p className="text-sm text-gray-500">{trend.creator || 'Unknown Creator'}</p>
             </div>
 
-            {/* Insight Data */}
+            {/* Enhanced Engagement Metrics */}
             <div className="px-4 pb-3">
-              <div className="flex items-center gap-4 text-sm text-gray-600">
-                {trend.likes_count !== undefined && (
+              <div className="flex items-center gap-4 text-sm text-gray-600 flex-wrap">
+                {trend.likes_count !== undefined && trend.likes_count > 0 && (
                   <div className="flex items-center gap-1">
                     <Heart className="w-4 h-4 text-red-500" />
                     <span className="font-medium">{formatCount(trend.likes_count)}</span>
                   </div>
                 )}
-                {trend.comments_count !== undefined && (
+                {trend.comments_count !== undefined && trend.comments_count > 0 && (
                   <div className="flex items-center gap-1">
                     <MessageCircle className="w-4 h-4 text-blue-500" />
                     <span className="font-medium">{formatCount(trend.comments_count)}</span>
                   </div>
                 )}
-                {trend.views_count !== undefined && (
+                {trend.views_count !== undefined && trend.views_count > 0 && (
                   <div className="flex items-center gap-1">
                     <Eye className="w-4 h-4 text-green-500" />
                     <span className="font-medium">{formatCount(trend.views_count)}</span>
                   </div>
                 )}
+                {trend.shares_count !== undefined && trend.shares_count > 0 && (
+                  <div className="flex items-center gap-1">
+                    <Share2 className="w-4 h-4 text-purple-500" />
+                    <span className="font-medium">{formatCount(trend.shares_count)}</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Preview Image */}
+            {/* Enhanced Preview Image */}
             <div className="aspect-[4/5] relative overflow-hidden mx-4 rounded-xl mb-4 flex-1">
-              <img
+              <MediaPreview
                 src={trend.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop'}
-                alt={trend.title || 'Trend preview'}
+                mediaUrls={trend.media_urls || [trend.thumbnail_url || '']}
+                mediaType={trend.media_type || 'image'}
+                alt={trend.title || 'Instagram content preview'}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement
-                  target.src = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop'
-                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               
@@ -262,6 +426,7 @@ interface ContentIdeasInspirationProps {
 }
 
 export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirationProps) {
+  const { user } = useAuth()
   const [trends, setTrends] = useState<TrendData[]>([])
   const [savedTrends, setSavedTrends] = useState<TrendData[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -270,6 +435,7 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
   const [showTrendSelection, setShowTrendSelection] = useState(false)
   const [selectedTrend, setSelectedTrend] = useState<TrendData | null>(null)
   const [workflowStep, setWorkflowStep] = useState<"overview" | "optimization" | "script">("overview")
+  const [realtimeChannel, setRealtimeChannel] = useState<any>(null)
 
   // Mock data for demonstration - fallback when database is not available
   const mockTrends: TrendData[] = [
@@ -396,6 +562,38 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
 
   useEffect(() => {
     loadTrends()
+    
+    // Set up real-time subscription for new Instagram reels
+    if (supabase) {
+      const channel = supabase
+        .channel('instagramreelscraper-changes')
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: 'instagramreelscraper' },
+          (payload) => {
+            console.log('Real-time update received:', payload)
+            if (payload.eventType === 'INSERT') {
+              toast.success('New Instagram reel added!')
+              // Refresh trends to include new data
+              loadTrends()
+            } else if (payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+              // Refresh trends on any changes
+              loadTrends()
+            }
+          }
+        )
+        .subscribe()
+      
+      setRealtimeChannel(channel)
+      console.log('Real-time subscription set up for Instagram reels')
+    }
+    
+    // Cleanup function
+    return () => {
+      if (realtimeChannel) {
+        supabase?.removeChannel(realtimeChannel)
+        console.log('Real-time subscription cleaned up')
+      }
+    }
   }, [])
 
   const loadTrends = async () => {
@@ -408,23 +606,24 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
         return
       }
 
+      // Query Instagram reels from the instagramreelscraper table (correct table name)
       const { data, error } = await supabase
-        .from('instagramreelsscraper')
+        .from('instagramreelscraper')
         .select(`
           id,
-          thumbnail_url,
-          reel_url,
-          title,
-          creator_display_name,
-          likes_count,
-          comments_count,
-          views_count,
-          shares_count,
-          engagement_count,
+          url,
+          displayUrl,
+          videoUrl,
+          caption,
+          firstComment,
           script,
-          description
+          likesCount,
+          commentsCount,
+          videoViewCount,
+          videoPlayCount,
+          key
         `)
-        .order('scraped_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(12)
       
       if (error) {
@@ -432,21 +631,31 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
         throw error
       }
       
-      // Transform data to match our interface
-      const transformedTrends = data?.map(item => ({
-        id: item.id,
-        thumbnail_url: item.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
-        reel_url: item.reel_url,
-        title: item.title,
-        creator: item.creator_display_name,
-        likes_count: item.likes_count || 0,
-        comments_count: item.comments_count || 0,
-        views_count: item.views_count || 0,
-        shares_count: item.shares_count || 0,
-        engagement_count: item.engagement_count || 0,
-        script: item.script,
-        description: item.description
-      })) || []
+      // Transform Instagram reels data to match TrendData interface
+      const transformedTrends = data?.map(item => {
+        // Extract username from URL if possible
+        const urlMatch = item.url?.match(/instagram\.com\/(?:p|reel)\/[^\/]+/)
+        const creatorFromUrl = urlMatch ? '@instagram_user' : '@unknown'
+        
+        return {
+          id: item.id.toString(),
+          thumbnail_url: item.displayUrl || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
+          reel_url: item.url,
+          title: item.caption ? (item.caption.substring(0, 50) + '...') : 'Instagram Reel',
+          creator: creatorFromUrl,
+          likes_count: item.likesCount || 0,
+          comments_count: item.commentsCount || 0,
+          views_count: item.videoViewCount || 0,
+          shares_count: 0, // Not available in current schema
+          engagement_count: (item.likesCount || 0) + (item.commentsCount || 0) + (item.videoViewCount || 0),
+          script: item.script || (item.firstComment ? `First comment: ${item.firstComment}` : 'No script available for this trend.'),
+          description: item.caption || 'Instagram reel content',
+          media_urls: [item.displayUrl || ''],
+          media_type: 'video' // Instagram reels are videos
+        }
+      }) || []
+      
+      console.log(`Loaded ${transformedTrends.length} Instagram reels as trends`)
       
       // Use transformed data if available, otherwise fallback to mock data
       setTrends(transformedTrends.length > 0 ? transformedTrends : mockTrends)
@@ -478,51 +687,60 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
         return
       }
 
+      // Query different Instagram reels for variety
       const { data, error } = await supabase
-        .from('instagramreelsscraper')
+        .from('instagramreelscraper')
         .select(`
           id,
-          thumbnail_url,
-          reel_url,
-          title,
-          creator_display_name,
-          likes_count,
-          comments_count,
-          views_count,
-          shares_count,
-          engagement_count,
+          url,
+          displayUrl,
+          videoUrl,
+          caption,
+          firstComment,
           script,
-          description
+          likesCount,
+          commentsCount,
+          videoViewCount,
+          videoPlayCount,
+          key
         `)
-        .order('scraped_at', { ascending: false })
-        .limit(12)
+        .order('id', { ascending: false })
+        .limit(20) // Get more reels to shuffle
       
       if (error) {
         console.warn('Database refresh failed:', error.message)
         throw error
       }
       
-      // Transform and shuffle the data
-      const transformedTrends = data?.map(item => ({
-        id: item.id,
-        thumbnail_url: item.thumbnail_url || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
-        reel_url: item.reel_url,
-        title: item.title,
-        creator: item.creator_display_name,
-        likes_count: item.likes_count || 0,
-        comments_count: item.comments_count || 0,
-        views_count: item.views_count || 0,
-        shares_count: item.shares_count || 0,
-        engagement_count: item.engagement_count || 0,
-        script: item.script,
-        description: item.description
-      })) || []
+      // Transform and shuffle the Instagram reels
+      const transformedTrends = data?.map(item => {
+        // Extract username from URL if possible
+        const urlMatch = item.url?.match(/instagram\.com\/(?:p|reel)\/[^\/]+/)
+        const creatorFromUrl = urlMatch ? '@instagram_user' : '@unknown'
+        
+        return {
+          id: item.id.toString(),
+          thumbnail_url: item.displayUrl || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=600&fit=crop',
+          reel_url: item.url,
+          title: item.caption ? (item.caption.substring(0, 50) + '...') : 'Instagram Reel',
+          creator: creatorFromUrl,
+          likes_count: item.likesCount || 0,
+          comments_count: item.commentsCount || 0,
+          views_count: item.videoViewCount || 0,
+          shares_count: 0, // Not available in current schema
+          engagement_count: (item.likesCount || 0) + (item.commentsCount || 0) + (item.videoViewCount || 0),
+          script: item.script || (item.firstComment ? `First comment: ${item.firstComment}` : 'No script available for this trend.'),
+          description: item.caption || 'Instagram reel content',
+          media_urls: [item.displayUrl || ''],
+          media_type: 'video' // Instagram reels are videos
+        }
+      }) || []
       
-      // Shuffle the trends for variety
-      const shuffledTrends = transformedTrends.sort(() => Math.random() - 0.5)
+      // Shuffle the trends for variety and take 12
+      const shuffledTrends = transformedTrends.sort(() => Math.random() - 0.5).slice(0, 12)
       setTrends(shuffledTrends.length > 0 ? shuffledTrends : mockTrends)
       
-      toast.success('Fresh trends loaded!')
+      toast.success(`Fresh ${shuffledTrends.length} Instagram reels loaded!`)
     } catch (error) {
       console.error('Error refreshing trends:', error)
       // Fallback to shuffled mock data
@@ -534,10 +752,27 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
     }
   }
 
-  const handleSaveTrend = (trend: TrendData) => {
+  const handleSaveTrend = async (trend: TrendData) => {
+    if (!user?.id) {
+      toast.error('Bitte melde dich an, um Trends zu speichern')
+      return
+    }
+
     if (!savedTrends.find(s => s.id === trend.id)) {
-      setSavedTrends(prev => [...prev, trend])
-      toast.success('Trend gespeichert!')
+      try {
+        // Save to database with embedding
+        const savedTrendData = await ContentIdeaService.saveTrendIdea(trend, user.id)
+        
+        if (savedTrendData) {
+          setSavedTrends(prev => [...prev, trend])
+          toast.success('💾 Trend in Datenbank gespeichert!')
+        } else {
+          toast.error('Fehler beim Speichern des Trends')
+        }
+      } catch (error) {
+        console.error('Error saving trend:', error)
+        toast.error('Fehler beim Speichern des Trends')
+      }
     } else {
       setSavedTrends(prev => prev.filter(s => s.id !== trend.id))
       toast.success('Trend entfernt!')
@@ -641,7 +876,21 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
               <Button 
                 variant="ghost" 
                 onClick={() => setShowTrendSelection(false)}
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 bg-white/90 backdrop-blur-sm rounded-lg"
+                className="flex items-center gap-2 h-10 px-4 rounded-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-white shadow-sm hover:shadow-md transition-all duration-200"
+                style={{
+                  border: 'none',
+                  outline: 'none'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'white'
+                  e.currentTarget.style.color = '#dc2626'
+                  e.currentTarget.style.border = '2px solid #dc2626'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'linear-gradient(to right, #dc2626, #ea580c, #f97316)'
+                  e.currentTarget.style.color = 'white'
+                  e.currentTarget.style.border = 'none'
+                }}
               >
                 <ArrowLeft className="w-4 h-4" />
                 Zurück zu Inspiration
@@ -667,15 +916,15 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {trends.map((trend) => (
-                <TrendCard
-                  key={trend.id}
-                  trend={trend}
-                  onSave={() => handleSaveTrend(trend)}
-                  isSaved={savedTrends.some(s => s.id === trend.id)}
-                  isSelectionMode={true}
-                  onSelect={handleTrendSelect}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {trends.map((trend) => (
+              <TrendCard
+                key={trend.id}
+                trend={trend}
+                onSave={() => handleSaveTrend(trend)}
+                                isSaved={savedTrends.some(s => s.id === trend.id)}
+                isSelectionMode={showTrendSelection}
+                onSelect={handleTrendSelect}
                 />
               ))}
             </div>
@@ -694,30 +943,48 @@ export function ContentIdeasInspiration({ setCurrentStep }: ContentIdeasInspirat
             <Button 
               variant="ghost" 
               onClick={() => setCurrentStep("overview")}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 bg-white/90 backdrop-blur-sm rounded-lg"
+              className="flex items-center gap-2 h-10 px-4 rounded-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-white shadow-sm hover:shadow-md transition-all duration-200"
+              style={{
+                border: 'none',
+                outline: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.color = '#dc2626'
+                e.currentTarget.style.border = '2px solid #dc2626'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(to right, #dc2626, #ea580c, #f97316)'
+                e.currentTarget.style.color = 'white'
+                e.currentTarget.style.border = 'none'
+              }}
             >
               <ArrowLeft className="w-4 h-4" />
               Zurück
             </Button>
             
-            {/* Centered Trend Entdecken Button with Red Gradient and Pulse */}
+            {/* Centered Trend Entdecken Button - Always Same Style */}
             <button
-              onClick={() => setShowTrendSelection(true)}
+              onClick={() => setShowTrendSelection(!showTrendSelection)}
               className="relative inline-flex items-center gap-3 px-8 py-3 rounded-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] font-medium text-xl transition-all duration-300 ease-in-out group hover:scale-105"
+              style={{
+                minWidth: '200px',
+                height: '56px'
+              }}
             >
               {/* Pulse effect on hover */}
               <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] opacity-0 group-hover:opacity-75 group-hover:animate-ping"></div>
               
-              {/* Animated border with flowcore gradient */}
+              {/* Animated border with gradient */}
               <div className="absolute inset-0 rounded-full border-2 border-transparent bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] transition-all duration-300 group-hover:opacity-50" 
                    style={{ mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', maskComposite: 'xor' }}></div>
               
-              {/* Hover glow effect with flowcore gradient */}
+              {/* Hover glow effect with gradient */}
               <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] blur-md"></div>
               
-              {/* Content with white text */}
+              {/* Content with white text - Always same */}
               <TrendingUp className="w-6 h-6 relative z-10 text-white" />
-              <span className="relative z-10 text-white">Trend Entdecken</span>
+              <span className="relative z-10 text-white font-medium">Trend Entdecken</span>
             </button>
             
             <div className="w-20"></div>

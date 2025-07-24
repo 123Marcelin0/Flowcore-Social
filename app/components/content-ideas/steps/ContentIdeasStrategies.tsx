@@ -20,12 +20,15 @@ import { StrategySwipeCard } from "@/components/strategy-swipe-card"
 import { getSwipeStrategies, type StrategyData } from "@/lib/sample-ideas"
 import type { ContentStep } from "../hooks/useContentIdeas"
 import { toast } from 'sonner'
+import { ContentIdeaService } from "@/lib/content-idea-service"
+import { useAuth } from "@/lib/auth-context"
 
 interface ContentIdeasStrategiesProps {
   setCurrentStep: (step: ContentStep) => void
 }
 
 export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategiesProps) {
+  const { user } = useAuth()
   const [strategies] = useState<StrategyData[]>(getSwipeStrategies())
   const [currentIndex, setCurrentIndex] = useState(0)
   const [savedStrategies, setSavedStrategies] = useState<StrategyData[]>([])
@@ -47,12 +50,30 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
     }, 250) // Reduced from 300ms
   }
 
-  const handleSwipeRight = () => {
+  const handleSwipeRight = async () => {
     if (swipeDirection) return // Prevent multiple swipes
+    
+    if (!user?.id) {
+      toast.error('Bitte melde dich an, um Strategien zu speichern')
+      return
+    }
+
     const strategy = strategies[currentIndex]
     if (strategy && !savedStrategies.find(s => s.id === strategy.id)) {
-      setSavedStrategies(prev => [...prev, strategy])
-      toast.success('Strategie gespeichert!')
+      try {
+        // Save to database with embedding
+        const savedStrategyData = await ContentIdeaService.saveStrategyIdea(strategy, user.id)
+        
+        if (savedStrategyData) {
+          setSavedStrategies(prev => [...prev, strategy])
+          toast.success('💾 Strategie in Datenbank gespeichert!')
+        } else {
+          toast.error('Fehler beim Speichern der Strategie')
+        }
+      } catch (error) {
+        console.error('Error saving strategy:', error)
+        toast.error('Fehler beim Speichern der Strategie')
+      }
     }
     
     setSwipeDirection('right')
@@ -100,7 +121,21 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
               <Button 
                 variant="ghost" 
                 onClick={() => setShowSaved(false)}
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                className="flex items-center gap-2 h-10 px-4 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-sm hover:shadow-md transition-all duration-200"
+                style={{
+                  border: 'none',
+                  outline: 'none'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'white'
+                  e.currentTarget.style.color = '#0D9488'
+                  e.currentTarget.style.border = '2px solid #0D9488'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'linear-gradient(to right, #14b8a6, #06b6d4)'
+                  e.currentTarget.style.color = 'white'
+                  e.currentTarget.style.border = 'none'
+                }}
               >
                 <ArrowLeft className="w-4 h-4" />
                 Zurück zu Strategien
@@ -173,24 +208,42 @@ export function ContentIdeasStrategies({ setCurrentStep }: ContentIdeasStrategie
             <Button 
               variant="ghost" 
               onClick={() => setCurrentStep("overview")}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              className="flex items-center gap-2 h-10 px-4 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-sm hover:shadow-md transition-all duration-200"
+              style={{
+                border: 'none',
+                outline: 'none'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.color = '#0D9488'
+                e.currentTarget.style.border = '2px solid #0D9488'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(to right, #14b8a6, #06b6d4)'
+                e.currentTarget.style.color = 'white'
+                e.currentTarget.style.border = 'none'
+              }}
             >
               <ArrowLeft className="w-4 h-4" />
               Zurück
             </Button>
             
-            {/* Content-Strategien Title - perfectly centered relative to card area */}
-            <div className="relative inline-flex items-center gap-3 px-8 py-3 rounded-full bg-[#ECF8F6] text-[#0D9488] font-medium text-xl transition-all duration-300 ease-in-out group" style={{ marginRight: '3rem' }}>
-              {/* Animated border */}
-              <div className="absolute inset-0 rounded-full border-2 border-[#2DD4BF] transition-all duration-300 group-hover:opacity-50"></div>
+            {/* Content-Strategien Title - filled gradient style like other buttons */}
+            <button className="relative inline-flex items-center gap-3 px-8 py-3 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-medium text-xl transition-all duration-300 ease-in-out group hover:scale-105" style={{ marginRight: '3rem' }}>
+              {/* Pulse effect on hover */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 opacity-0 group-hover:opacity-75 group-hover:animate-ping"></div>
               
-              {/* Hover glow effect */}
-              <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-[#2DD4BF] blur-md"></div>
+              {/* Animated border with gradient */}
+              <div className="absolute inset-0 rounded-full border-2 border-transparent bg-gradient-to-r from-teal-500 to-cyan-500 transition-all duration-300 group-hover:opacity-50" 
+                   style={{ mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', maskComposite: 'xor' }}></div>
               
-              {/* Content */}
-              <Target className="w-6 h-6 relative z-10" />
-              <span className="relative z-10">Content-Strategien</span>
-            </div>
+              {/* Hover glow effect with gradient */}
+              <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-gradient-to-r from-teal-500 to-cyan-500 blur-md"></div>
+              
+              {/* Content with white text */}
+              <Target className="w-6 h-6 relative z-10 text-white" />
+              <span className="relative z-10 text-white">Content-Strategien</span>
+            </button>
             
             {/* Clean save icon button in application colors */}
             <Button
