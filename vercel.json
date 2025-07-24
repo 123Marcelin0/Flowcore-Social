@@ -1,16 +1,10 @@
 {
   "framework": "nextjs",
-  "buildCommand": "next build",
-  "devCommand": "next dev",
-  "installCommand": "npm install",
   "regions": ["fra1"],
   "functions": {
     "app/api/**/*.ts": {
-      "maxDuration": 10
+      "maxDuration": 30
     }
-  },
-  "env": {
-    "NODE_ENV": "production"
   },
   "build": {
     "env": {
