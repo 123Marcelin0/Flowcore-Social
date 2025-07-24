@@ -53,24 +53,24 @@ export function ContentIdeasOverview({
       </div>
 
       {/* Main Cards */}
-      <div className="max-w-5xl mx-auto px-6 pb-16">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 justify-center">
+      <div className="max-w-7xl mx-auto px-6 pb-16">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-12 justify-center">
           
           {/* Content-Strategien Card */}
           <div className="group relative">
             <Card className="relative border-0 bg-white hover:shadow-none transition-all duration-300 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-full flex flex-col transform group-hover:translate-y-2 transition-transform duration-300">
-              <CardContent className="p-8 flex flex-col flex-1">
+              <CardContent className="p-12 flex flex-col flex-1">
                 <div className="text-center flex flex-col flex-1">
-                  <div className="w-16 h-16 bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_4px_20px_rgb(45,212,191,0.1)]">
-                    <Lightbulb className="w-8 h-8 text-teal-600" />
+                  <div className="w-24 h-24 bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-[0_4px_20px_rgb(45,212,191,0.1)]">
+                    <Lightbulb className="w-12 h-12 text-teal-600" />
                   </div>
-                  <h3 className="text-xl font-light text-gray-900 mb-4">Content-Strategien</h3>
-                  <p className="text-gray-600 mb-6 leading-relaxed text-sm flex-1">
+                  <h3 className="text-2xl font-light text-gray-900 mb-6">Content-Strategien</h3>
+                  <p className="text-gray-600 mb-8 leading-relaxed text-base flex-1">
                     Wähle aus KI-optimierten Content-Strategien, die auf deine Zielgruppe abgestimmt sind.
                   </p>
                   <Button 
                     onClick={() => setCurrentStep("strategies")}
-                    className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(45,212,191,0.2)]"
+                    className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-8 py-4 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(45,212,191,0.2)] text-lg"
                   >
                     Strategien erkunden
                   </Button>
@@ -82,18 +82,18 @@ export function ContentIdeasOverview({
           {/* KI-Brainstorming Card */}
           <div className="group relative">
             <Card className="relative border-0 bg-white hover:shadow-none transition-all duration-300 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-full flex flex-col transform group-hover:translate-y-2 transition-transform duration-300">
-              <CardContent className="p-8 flex flex-col flex-1">
+              <CardContent className="p-12 flex flex-col flex-1">
                 <div className="text-center flex flex-col flex-1">
-                  <div className="w-16 h-16 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_4px_20px_rgb(147,51,234,0.1)]">
-                    <MessageSquare className="w-8 h-8 text-purple-600" />
+                  <div className="w-24 h-24 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-[0_4px_20px_rgb(147,51,234,0.1)]">
+                    <MessageSquare className="w-12 h-12 text-purple-600" />
                   </div>
-                  <h3 className="text-xl font-light text-gray-900 mb-4">KI-Brainstorming</h3>
-                  <p className="text-gray-600 mb-6 leading-relaxed text-sm flex-1">
+                  <h3 className="text-2xl font-light text-gray-900 mb-6">KI-Brainstorming</h3>
+                  <p className="text-gray-600 mb-8 leading-relaxed text-base flex-1">
                     Lass deiner Kreativität freien Lauf mit unserem intelligenten AI-Assistant.
                   </p>
                   <Button 
                     onClick={() => setCurrentStep("brainstorm")}
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(147,51,234,0.2)]"
+                    className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-8 py-4 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(147,51,234,0.2)] text-lg"
                   >
                     Brainstorming starten
                   </Button>
@@ -105,18 +105,18 @@ export function ContentIdeasOverview({
           {/* Content Inspiration Card */}
           <div className="group relative">
             <Card className="relative border-0 bg-white hover:shadow-none transition-all duration-300 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-full flex flex-col transform group-hover:translate-y-2 transition-transform duration-300">
-              <CardContent className="p-8 flex flex-col flex-1">
+              <CardContent className="p-12 flex flex-col flex-1">
                 <div className="text-center flex flex-col flex-1">
-                  <div className="w-16 h-16 bg-gradient-to-br from-orange-50 to-red-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_4px_20px_rgb(251,146,60,0.1)]">
-                    <TrendingUp className="w-8 h-8 text-orange-600" />
+                  <div className="w-24 h-24 bg-gradient-to-br from-orange-50 to-red-50 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-[0_4px_20px_rgb(251,146,60,0.1)]">
+                    <TrendingUp className="w-12 h-12 text-orange-600" />
                   </div>
-                  <h3 className="text-xl font-light text-gray-900 mb-4">Content Inspiration</h3>
-                  <p className="text-gray-600 mb-6 leading-relaxed text-sm flex-1">
+                  <h3 className="text-2xl font-light text-gray-900 mb-6">Content Inspiration</h3>
+                  <p className="text-gray-600 mb-8 leading-relaxed text-base flex-1">
                     Entdecke virale Immobilien-Content und lass dich von erfolgreichen Beispielen inspirieren.
                   </p>
                   <Button 
                     onClick={() => setCurrentStep("inspiration")}
-                    className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(251,146,60,0.2)]"
+                    className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-8 py-4 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-[0_4px_20px_rgb(251,146,60,0.2)] text-lg"
                   >
                     Inspiration entdecken
                   </Button>
