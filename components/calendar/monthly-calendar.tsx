@@ -339,6 +339,10 @@ export function MonthlyCalendar({ events, onEventCreate, onEventUpdate, onEventD
                             onDragStart={(e) => handleDragStart(e, event)}
                             onDragEnd={handleDragEnd}
                             className="relative z-20"
+                            onClickCapture={(e) => {
+                              // Allow EventCard click to work by preventing drag wrapper interference
+                              e.stopPropagation()
+                            }}
                           >
                             <EventCard
                               event={event}

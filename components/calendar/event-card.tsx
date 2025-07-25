@@ -73,20 +73,29 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
 
   // Determine if this is a trend or content strategy based on category and metadata
   const getIdeaType = () => {
-    // Check metadata first
+    // Check category first (most reliable)
+    if (event.category === 'trend' || event.category === 'trends') {
+      return 'trend'
+    }
+    if (event.category === 'content-strategies') {
+      return 'content-strategy'
+    }
+    
+    // Check description for explicit prefixes added by synchronizePostsAsEvents
     if (event.description && typeof event.description === 'string') {
-      // Check for trend keywords in description
       const description = event.description.toLowerCase()
+      if (description.startsWith('trend:')) {
+        return 'trend'
+      }
+      if (description.startsWith('content strategy:')) {
+        return 'content-strategy'
+      }
+      // Check for trend keywords in description
       if (description.includes('trend') || description.includes('trending') || 
           description.includes('viral') || description.includes('tiktok') || 
           description.includes('instagram trend')) {
         return 'trend'
       }
-    }
-    
-    // Check category
-    if (event.category === 'trend' || event.category === 'trends') {
-      return 'trend'
     }
     
     // Default to content strategy
@@ -95,6 +104,15 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
 
   const handleEventClick = () => {
     const ideaType = getIdeaType()
+    
+    // Debug logging
+    console.log('🗓️ Calendar Event Clicked:', {
+      eventId: event.id,
+      title: event.title,
+      category: event.category,
+      description: event.description?.substring(0, 100),
+      ideaType: ideaType
+    })
     
     if (ideaType === 'trend') {
       // Navigate to trend optimization page

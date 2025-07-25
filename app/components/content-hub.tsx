@@ -334,20 +334,45 @@ export function ContentHub() {
 
   // Synchronize posts as calendar events
   const synchronizePostsAsEvents = () => {
-    return posts.map(post => ({
-      id: `post-${post.id}`,
-      title: post.title || 'Untitled Post',
-      description: post.content,
-      startDate: post.scheduledDate,
-      endDate: post.scheduledDate,
-      startTime: post.scheduledTime,
-      endTime: post.scheduledTime,
-      category: 'social-media',
-      color: post.status === 'published' ? '#10b981' : post.status === 'scheduled' ? '#3b82f6' : '#9ca3af',
-      allDay: false,
-      isRecurring: false,
-      postData: post // Additional post data for interactions
-    }))
+    return posts.map(post => {
+      // Determine if this is a trend or content strategy based on post properties
+      let eventCategory = 'social-media'
+      let eventDescription = post.content
+      
+             // Check for trend indicators
+       if (post.category === 'trend-reels' || 
+           post.source === 'trend-explorer' ||
+           post.tags?.some(tag => tag.toLowerCase().includes('trend')) ||
+           post.content?.toLowerCase().includes('trend') ||
+           post.content?.toLowerCase().includes('viral') ||
+           post.content?.toLowerCase().includes('tiktok')) {
+         eventCategory = 'trend'
+         eventDescription = `TREND: ${post.content}`
+       }
+       // Check for content strategy indicators  
+       else if (post.category === 'content-strategies' || 
+                post.category === 'ai-strategies' ||
+                post.source === 'content-strategy' ||
+                post.tags?.some(tag => tag.toLowerCase().includes('strateg'))) {
+         eventCategory = 'content-strategies'
+         eventDescription = `CONTENT STRATEGY: ${post.content}`
+       }
+      
+      return {
+        id: `post-${post.id}`,
+        title: post.title || 'Untitled Post',
+        description: eventDescription,
+        startDate: post.scheduledDate,
+        endDate: post.scheduledDate,
+        startTime: post.scheduledTime,
+        endTime: post.scheduledTime,
+        category: eventCategory,
+        color: post.status === 'published' ? '#10b981' : post.status === 'scheduled' ? '#3b82f6' : '#9ca3af',
+        allDay: false,
+        isRecurring: false,
+        postData: post // Additional post data for interactions
+      }
+    })
   }
 
   const allEvents = [...calendarEvents, ...synchronizePostsAsEvents()]
