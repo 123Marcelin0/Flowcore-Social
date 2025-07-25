@@ -1379,7 +1379,7 @@ export function AIPostWorkflow({ open, onOpenChange, onPostCreated }: AIPostWork
           }}
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>Create New Post</DialogTitle>
+            <DialogTitle>Neuen Beitrag erstellen</DialogTitle>
           </DialogHeader>
           
           {/* Header with Progress */}

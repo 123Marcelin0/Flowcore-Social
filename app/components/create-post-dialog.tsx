@@ -40,6 +40,9 @@ interface CreatePostDialogProps {
     title: string
     description: string
     hashtags: string[]
+    category?: 'trend-reels' | 'content-strategies' | 'ai-strategies'
+    source?: 'ai-generated' | 'trend-explorer' | 'manual' | 'content-strategy'
+    tags?: string[]
   }
 }
 
@@ -347,7 +350,11 @@ export function CreatePostDialog({ open, onOpenChange, onPostCreated, initialCon
         comments: 0,
         shares: 0,
         createdAt: new Date().toLocaleDateString(),
-        updatedAt: new Date().toLocaleDateString()
+        updatedAt: new Date().toLocaleDateString(),
+        // Preserve idea properties if available
+        category: initialContent?.category,
+        source: initialContent?.source,
+        tags: initialContent?.tags
       })
 
       // Enhanced success feedback
@@ -396,7 +403,7 @@ export function CreatePostDialog({ open, onOpenChange, onPostCreated, initialCon
       }, 1000) // Allow time for success animation to show
     } catch (error) {
       console.error('Error creating post:', error)
-      toast.error('Beitrag konnte nicht erstellt werden. Bitte versuche es erneut.')
+      toast.error('Beitrag konnte nicht erstellt werden. Bitte versuchen Sie es erneut.')
     } finally {
       setIsCreating(false)
     }

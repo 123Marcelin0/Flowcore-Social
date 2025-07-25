@@ -180,17 +180,27 @@ export class AIPlanner {
 
   static async savePostingPlan(userId: string, plan: PostingPlan[], targetMonth: string) {
     try {
+      // IMPORTANT: Create posts as DRAFTS, not scheduled posts
+      // Users must manually review and approve each post before scheduling
       const planData = plan.map(post => ({
         user_id: userId,
         title: post.title,
         content: post.content,
         platforms: post.platforms,
         hashtags: post.hashtags,
-        scheduled_for: new Date(`${targetMonth}-${String(post.day).padStart(2, '0')}T${post.bestTime}:00`),
-        status: 'scheduled',
+        // Store the suggested date/time but keep as draft
+        suggested_date: new Date(`${targetMonth}-${String(post.day).padStart(2, '0')}T${post.bestTime}:00`),
+        status: 'draft', // Changed from 'scheduled' to 'draft'
         ai_generated: true,
         category: post.category,
-        reasoning: post.reasoning
+        reasoning: post.reasoning,
+        // Add metadata to indicate this is an AI suggestion
+        metadata: {
+          ai_suggestion: true,
+          suggested_day: post.day,
+          suggested_time: post.bestTime,
+          target_month: targetMonth
+        }
       }))
 
       const { error } = await supabase

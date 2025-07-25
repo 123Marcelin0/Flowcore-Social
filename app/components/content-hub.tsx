@@ -5,13 +5,16 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Edit, Instagram, Facebook, Twitter, Linkedin, Video, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Eye, Heart, MessageCircle, Share2, Move, Loader2, Brain, Sparkles, Zap } from "lucide-react"
+import { Plus, Edit, Instagram, Facebook, Twitter, Linkedin, Video, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Eye, Heart, MessageCircle, Share2, Move, Loader2, Brain, Sparkles, Zap, ArrowLeft, Calendar, List, Lightbulb } from "lucide-react"
 import { MonthlyCalendar } from "@/components/calendar/monthly-calendar"
 import type { CalendarEvent } from "@/components/calendar/event-card"
 import { AIPostWorkflow } from "./ai-post-workflow"
 import { CreatePostDialog } from "./create-post-dialog"
 import { PostDetailPopup } from "./post-detail-popup"
+import { TrendOptimizationWorkflow } from "./trend-optimization-workflow"
+import { ContentStrategyWorkflow } from "./content-strategy-workflow"
 import { IdeaGrid } from "@/components/idea-cards/idea-grid"
 import type { IdeaCardData } from "@/components/idea-cards/idea-card"
 import { usePost } from "@/lib/post-context"
@@ -34,6 +37,36 @@ interface Draft {
   shares: number
 }
 
+// TrendData interface to match TrendOptimizationWorkflow
+interface TrendData {
+  id: string
+  thumbnail_url: string
+  reel_url: string
+  title?: string
+  creator?: string
+  script?: string
+  description?: string
+}
+
+// ContentStrategyData interface to match ContentStrategyWorkflow
+interface ContentStrategyData {
+  id: string
+  title: string
+  description: string
+  category: 'content-strategies'
+  content: {
+    hook?: string
+    script?: string
+    hashtags?: string[]
+    visualTips?: string[]
+    platforms?: string[]
+    targetAudience?: string
+    estimatedReach?: number
+  }
+  priority: 'low' | 'medium' | 'high'
+  estimatedEffort: 'quick' | 'medium' | 'complex'
+}
+
 // Convert database CalendarEvent to component format
 const convertDatabaseEventToEvent = (dbEvent: DatabaseCalendarEvent): CalendarEvent => {
   return {
@@ -52,6 +85,40 @@ const convertDatabaseEventToEvent = (dbEvent: DatabaseCalendarEvent): CalendarEv
   }
 }
 
+// Convert IdeaCardData to TrendData format for the workflow
+const convertIdeaToTrendData = (idea: IdeaCardData): TrendData => {
+  return {
+    id: idea.id,
+    thumbnail_url: '/placeholder.svg', // Default thumbnail
+    reel_url: `#idea-${idea.id}`, // Placeholder URL
+    title: idea.title,
+    creator: 'Content Idea',
+    script: idea.content.script || idea.description,
+    description: idea.description
+  }
+}
+
+// Convert IdeaCardData to ContentStrategyData format for the workflow
+const convertIdeaToContentStrategyData = (idea: IdeaCardData): ContentStrategyData => {
+  return {
+    id: idea.id,
+    title: idea.title,
+    description: idea.description,
+    category: 'content-strategies',
+    content: {
+      hook: idea.content.hook,
+      script: idea.content.script,
+      hashtags: idea.content.hashtags,
+      visualTips: idea.content.visualTips,
+      platforms: idea.content.platforms,
+      targetAudience: idea.content.targetAudience,
+      estimatedReach: idea.content.estimatedReach
+    },
+    priority: idea.priority,
+    estimatedEffort: idea.estimatedEffort
+  }
+}
+
 export function ContentHub() {
   const { user } = useAuth()
   const { state, actions } = usePost()
@@ -66,12 +133,34 @@ export function ContentHub() {
   const [isPostDetailOpen, setIsPostDetailOpen] = useState(false)
   const [hoveredPost, setHoveredPost] = useState<string | null>(null)
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  
+  // Add new approval popup state
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false)
+  const [pendingApprovalPost, setPendingApprovalPost] = useState<any>(null)
+  
   const [dragVisuals, setDragVisuals] = useState<{
     draggedId: string | null
     dragOverDate: string | null
   }>({ draggedId: null, dragOverDate: null })
   const [ideas, setIdeas] = useState<IdeaCardData[]>([])
   const [isLoadingIdeas, setIsLoadingIdeas] = useState(false)
+  const [convertingIdeaContent, setConvertingIdeaContent] = useState<{
+    title: string
+    description: string
+    hashtags: string[]
+    category?: 'trend-reels' | 'content-strategies' | 'ai-strategies'
+    source?: 'ai-generated' | 'trend-explorer' | 'manual' | 'content-strategy'
+    tags?: string[]
+  } | null>(null)
+  const [editingPostId, setEditingPostId] = useState<string | null>(null)
+
+  // Trend Optimization Workflow State
+  const [showTrendWorkflow, setShowTrendWorkflow] = useState(false)
+  const [selectedTrendData, setSelectedTrendData] = useState<TrendData | null>(null)
+
+  // Content Strategy Workflow State
+  const [showContentStrategyWorkflow, setShowContentStrategyWorkflow] = useState(false)
+  const [selectedContentStrategyData, setSelectedContentStrategyData] = useState<ContentStrategyData | null>(null)
 
   // Fetch calendar events
   useEffect(() => {
@@ -147,6 +236,36 @@ export function ContentHub() {
     return () => clearInterval(interval)
   }, [user])
 
+  // Show trend workflow instead of content hub when active
+  if (showTrendWorkflow && selectedTrendData) {
+    return (
+      <div className="h-full w-full">
+        <TrendOptimizationWorkflow
+          trend={selectedTrendData}
+          onBack={() => {
+            setShowTrendWorkflow(false)
+            setSelectedTrendData(null)
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Show content strategy workflow instead of content hub when active
+  if (showContentStrategyWorkflow && selectedContentStrategyData) {
+    return (
+      <div className="h-full w-full">
+        <ContentStrategyWorkflow
+          strategy={selectedContentStrategyData}
+          onBack={() => {
+            setShowContentStrategyWorkflow(false)
+            setSelectedContentStrategyData(null)
+          }}
+        />
+      </div>
+    )
+  }
+
   // Initial loading state
   if (state.loading && Object.keys(state.posts).length === 0) {
     return (
@@ -187,7 +306,8 @@ export function ContentHub() {
     status: 'draft' as const,
     likes: post.likes,
     comments: post.comments,
-    shares: post.shares
+    shares: post.shares,
+    approved: post.approved // Add approved status
   }))
   const scheduled = state.scheduled
   const published = state.published
@@ -317,8 +437,150 @@ export function ContentHub() {
   }
 
   const handlePostClick = (post: any) => {
+    // Debug: Log post properties to understand what we're working with
+    console.log('🔍 Post clicked:', {
+      id: post.id,
+      title: post.title,
+      category: post.category,
+      source: post.source,
+      tags: post.tags,
+      status: post.status,
+      content: post.content?.substring(0, 50) + '...',
+      platforms: post.platforms
+    })
+    
+    // Check if this is an idea that should open trend workflows
+    const isIdea = post.category && ['trend-reels', 'content-strategies', 'ai-strategies'].includes(post.category)
+    
+    if (isIdea) {
+      // For reel trend ideas, redirect to trend optimization page
+      if (post.category === 'trend-reels') {
+        const trendData = convertIdeaToTrendData(post)
+        setSelectedTrendData(trendData)
+        setShowTrendWorkflow(true)
+        return
+      } 
+      // For content strategies and AI strategies, redirect to content strategy page
+      else if (post.category === 'content-strategies' || post.category === 'ai-strategies') {
+        const contentStrategyData = convertIdeaToContentStrategyData(post)
+        setSelectedContentStrategyData(contentStrategyData)
+        setShowContentStrategyWorkflow(true)
+        return
+      }
+    }
+
+    // For ideas converted from IdeaCardData that might not have category but have specific properties
+    // Check if it's a trend-based idea by looking at content or properties
+    if (!post.category && (post.source === 'trend-explorer' || 
+                           (post.content?.platforms && post.content.platforms.includes('tiktok')) ||
+                           post.tags?.includes('trend') ||
+                           post.tags?.includes('reel') ||
+                           post.title?.toLowerCase().includes('reel') ||
+                           post.title?.toLowerCase().includes('trend') ||
+                           post.title?.toLowerCase().includes('besichtigung') ||
+                           post.title?.toLowerCase().includes('renovierung') ||
+                           post.title?.toLowerCase().includes('transformation'))) {
+      console.log('🎬 Redirecting to Trend Optimization workflow for post:', post.title)
+      const trendData = convertIdeaToTrendData(post)
+      setSelectedTrendData(trendData)
+      setShowTrendWorkflow(true)
+      return
+    }
+
+    // For strategy-based ideas without explicit category
+    if (!post.category && (post.source === 'content-strategy' ||
+                           post.tags?.includes('strategy') ||
+                           post.tags?.includes('ai-generated') ||
+                           post.title?.toLowerCase().includes('strategy') ||
+                           post.title?.toLowerCase().includes('planung') ||
+                           post.title?.toLowerCase().includes('authentizität') ||
+                           post.title?.toLowerCase().includes('vertrauen') ||
+                           post.title?.toLowerCase().includes('tipps'))) {
+      console.log('🎯 Redirecting to Content Strategy workflow for post:', post.title)
+      const contentStrategyData = convertIdeaToContentStrategyData(post)
+      setSelectedContentStrategyData(contentStrategyData)
+      setShowContentStrategyWorkflow(true)
+      return
+    }
+
+    // For incomplete drafts ONLY - very specific check
+    const isIncompletePost = post.status === 'draft' && 
+                            (!post.content?.trim() || 
+                             !post.platforms?.length || 
+                             post.title === 'Untitled Post' ||
+                             post.title === '' ||
+                             post.content === '')
+
+    if (isIncompletePost) {
+      // Only open CreatePostDialog for truly incomplete posts
+      const prefilledContent = {
+        title: post.title && post.title !== 'Untitled Post' ? post.title : '',
+        description: post.content || '',
+        hashtags: [],
+        category: post.category,
+        source: post.source,
+        tags: post.tags
+      }
+      
+      setConvertingIdeaContent(prefilledContent)
+      setEditingPostId(post.id)
+      setIsCreatePostOpen(true)
+      
+      toast.info("Unvollständiger Entwurf wird zur Bearbeitung geöffnet.")
+      return
+    }
+
+    // For complete drafts that need approval
+    const needsApproval = post.status === 'draft' && 
+                         post.content?.trim() && 
+                         post.platforms?.length && 
+                         !post.approved
+
+    if (needsApproval) {
+      setPendingApprovalPost(post)
+      setShowApprovalDialog(true)
+      return
+    }
+
+    // For all other posts (published, scheduled, approved drafts, or any complete post)
+    // Always show the Post Detail View - NO MORE CreatePostDialog!
     setSelectedPost(post)
     setIsPostDetailOpen(true)
+  }
+
+  const handleApprovePost = async (approve: boolean) => {
+    if (!pendingApprovalPost || !user) {
+      setShowApprovalDialog(false)
+      setPendingApprovalPost(null)
+      return
+    }
+
+    try {
+      if (approve) {
+        // Approve the post and set it to scheduled status
+        await actions.updatePost(pendingApprovalPost.id, { 
+          approved: true,
+          status: 'scheduled'
+        })
+        toast.success('Post wurde genehmigt und geplant!')
+      } else {
+        // Keep as draft but mark as reviewed
+        await actions.updatePost(pendingApprovalPost.id, { 
+          approved: false,
+          status: 'draft'
+        })
+        toast.info('Post bleibt als Entwurf gespeichert.')
+      }
+      
+      // Refresh posts
+      await actions.fetchPosts()
+    } catch (error) {
+      console.error('Error approving post:', error)
+      toast.error('Fehler beim Genehmigen des Posts')
+    } finally {
+      setShowApprovalDialog(false)
+      setPendingApprovalPost(null)
+    }
   }
 
   const handlePostSave = async (updatedPost: any) => {
@@ -432,36 +694,48 @@ export function ContentHub() {
   const handleConvertIdeaToPost = async (idea: IdeaCardData) => {
     if (!user) return
     
-    try {
-      // Convert idea to post
-      await actions.addPost({
-        title: idea.title,
-        content: idea.description + (idea.content.hook ? `\n\nHook: ${idea.content.hook}` : ''),
-        platforms: idea.content.platforms || ['instagram'],
-        image: '/placeholder.svg',
-        scheduledDate: new Date().toISOString().split('T')[0],
-        scheduledTime: '12:00',
-        status: 'draft',
-        likes: 0,
-        comments: 0,
-        shares: 0,
-        createdAt: new Date().toLocaleDateString(),
-        updatedAt: new Date().toLocaleDateString()
-      })
-      
-      // Mark idea as implemented
-      const updatedIdeas = ideas.map(i => 
-        i.id === idea.id 
-          ? { ...i, isImplemented: true, implementedPostId: `post-${Date.now()}` }
-          : i
-      )
-      setIdeas(updatedIdeas)
-      
-      toast.success("Idea converted to draft post!")
-    } catch (error) {
-      console.error('Error converting idea to post:', error)
-      toast.error("Failed to convert idea to post")
+    // Check if this idea has already been converted to a post
+    if (idea.isImplemented) {
+      toast.info("Diese Idee wurde bereits zu einem Beitrag konvertiert")
+      return
     }
+    
+    // Check if this is a reel idea - if so, open the trend optimization workflow
+    if (idea.category === 'trend-reels') {
+      const trendData = convertIdeaToTrendData(idea)
+      setSelectedTrendData(trendData)
+      setShowTrendWorkflow(true)
+      return
+    }
+    
+    // Check if this is a content strategy - if so, open the content strategy workflow
+    if (idea.category === 'content-strategies' || idea.category === 'ai-strategies') {
+      const contentStrategyData = convertIdeaToContentStrategyData(idea)
+      setSelectedContentStrategyData(contentStrategyData)
+      setShowContentStrategyWorkflow(true)
+      return
+    }
+    
+    // For other idea types, prepare content for the create post dialog
+    // IMPORTANT: We no longer create posts immediately. Instead, we open the
+    // CreatePostDialog with pre-filled content to let the user complete the creation process.
+    // This prevents unwanted post creation and ensures proper user confirmation.
+    const prefilledContent = {
+      title: idea.title,
+      description: idea.description + (idea.content.hook ? `\n\nHook: ${idea.content.hook}` : ''),
+      hashtags: idea.content.hashtags || [],
+      category: idea.category,
+      source: idea.source,
+      tags: idea.tags
+    }
+    
+    // Set the content to be used in the create post dialog
+    setConvertingIdeaContent(prefilledContent)
+    
+    // Open create post dialog with the idea content
+    setIsCreatePostOpen(true)
+    
+    toast.info("Idee in Post-Editor geöffnet. Vervollständigen Sie die Erstellung.")
   }
 
   const handleSaveIdea = (idea: IdeaCardData) => {
@@ -524,8 +798,8 @@ export function ContentHub() {
 
       setAiPlanData(result.data)
       
-      toast.success('🎉 AI-Posting-Plan erfolgreich erstellt!', {
-        description: `${result.data.postsGenerated} Posts für ${targetMonth} generiert`,
+      toast.success('🎉 AI-Entwürfe erfolgreich erstellt!', {
+        description: `${result.data.postsGenerated} Entwürfe für ${targetMonth} erstellt. Überprüfen Sie diese in der Entwürfe-Ansicht.`,
         duration: 4000,
       })
 
@@ -804,9 +1078,19 @@ export function ContentHub() {
                             {postsForDate.filter(p => p.status === 'scheduled').length}
                           </Badge>
                         )}
-                        {postsForDate.some(p => p.status === 'draft') && (
+                        {postsForDate.some(p => p.status === 'draft' && p.approved) && (
+                          <Badge className="bg-cyan-500 text-white text-xs px-2 py-0.5 rounded-full shadow-sm">
+                            {postsForDate.filter(p => p.status === 'draft' && p.approved).length}
+                          </Badge>
+                        )}
+                        {postsForDate.some(p => p.status === 'draft' && !p.approved && p.content?.trim() && p.platforms?.length) && (
+                          <Badge className="bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                            {postsForDate.filter(p => p.status === 'draft' && !p.approved && p.content?.trim() && p.platforms?.length).length}
+                          </Badge>
+                        )}
+                        {postsForDate.some(p => p.status === 'draft' && (!p.content?.trim() || !p.platforms?.length)) && (
                           <Badge className="bg-gray-500 text-white text-xs px-2 py-0.5 rounded-full shadow-sm">
-                            {postsForDate.filter(p => p.status === 'draft').length}
+                            {postsForDate.filter(p => p.status === 'draft' && (!p.content?.trim() || !p.platforms?.length)).length}
                           </Badge>
                         )}
                       </div>
@@ -832,6 +1116,10 @@ export function ContentHub() {
                                   ? 'bg-blue-50/80 border-blue-200/60 hover:bg-blue-100/80 hover:border-blue-300/60' 
                                   : post.status === 'published'
                                   ? 'bg-green-50/80 border-green-200/60 hover:bg-green-100/80 hover:border-green-300/60'
+                                  : post.status === 'draft' && post.approved
+                                  ? 'bg-cyan-50/80 border-cyan-200/60 hover:bg-cyan-100/80 hover:border-cyan-300/60'
+                                  : post.status === 'draft' && !post.approved && post.content?.trim() && post.platforms?.length
+                                  ? 'bg-orange-50/80 border-orange-200/60 hover:bg-orange-100/80 hover:border-orange-300/60 animate-pulse'
                                   : 'bg-gray-50/80 border-gray-200/60 hover:bg-gray-100/80 hover:border-gray-300/60'
                               } ${
                                 hoveredPost === post.id ? 'shadow-sm ring-1 ring-teal-200/60' : ''
@@ -846,23 +1134,67 @@ export function ContentHub() {
 
                             <div className="flex items-start gap-1.5">
                               <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${
-                                post.status === 'scheduled' ? 'bg-blue-500' : post.status === 'published' ? 'bg-green-500' : 'bg-gray-500'
+                                post.status === 'scheduled' 
+                                  ? 'bg-blue-500' 
+                                  : post.status === 'published' 
+                                  ? 'bg-green-500' 
+                                  : post.status === 'draft' && post.approved
+                                  ? 'bg-cyan-500'
+                                  : post.status === 'draft' && !post.approved && post.content?.trim() && post.platforms?.length
+                                  ? 'bg-orange-500 animate-pulse'
+                                  : 'bg-gray-500'
                               }`}></div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1">
-                                  {post.status === 'scheduled' && <Clock className="w-3 h-3 text-blue-600" />}
-                                  {post.status === 'published' && <Eye className="w-3 h-3 text-green-600" />}
-                                  {post.status === 'draft' && <Edit className="w-3 h-3 text-gray-600" />}
-                                  <span className={`text-xs font-medium truncate ${
-                                    post.status === 'scheduled' ? 'text-blue-700' : post.status === 'published' ? 'text-green-700' : 'text-gray-700'
-                                  }`}>
-                                    {post.title || 'Untitled Post'}
+                                                                  <div className="flex items-center gap-1">
+                                    {post.status === 'scheduled' && <Clock className="w-3 h-3 text-blue-600" />}
+                                    {post.status === 'published' && <Eye className="w-3 h-3 text-green-600" />}
+                                    {post.status === 'draft' && post.approved && <Calendar className="w-3 h-3 text-cyan-600" />}
+                                    {post.status === 'draft' && !post.approved && post.content?.trim() && post.platforms?.length && (
+                                      <div className="w-3 h-3 rounded-full bg-orange-500 flex items-center justify-center">
+                                        <span className="text-white text-xs font-bold">!</span>
+                                      </div>
+                                    )}
+                                    {post.status === 'draft' && (!post.content?.trim() || !post.platforms?.length) && <Edit className="w-3 h-3 text-gray-600" />}
+                                                                      <span className={`text-xs font-medium truncate ${
+                                      post.status === 'scheduled' 
+                                        ? 'text-blue-700' 
+                                        : post.status === 'published' 
+                                        ? 'text-green-700' 
+                                        : post.status === 'draft' && post.approved
+                                        ? 'text-cyan-700'
+                                        : post.status === 'draft' && !post.approved && post.content?.trim() && post.platforms?.length
+                                        ? 'text-orange-700'
+                                        : 'text-gray-700'
+                                    }`}>
+                                    {/* Enhanced title display with better fallbacks */}
+                                    {post.title && post.title !== 'Untitled Post' 
+                                      ? post.title 
+                                      : post.content 
+                                        ? post.content.substring(0, 30) + '...' 
+                                        : 'Entwurf bearbeiten'
+                                    }
                                   </span>
+                                  {/* Add indicator for incomplete posts */}
+                                  {(post.status === 'draft' || !post.content?.trim() || !post.platforms?.length || post.title === 'Untitled Post') && (
+                                    <span className="text-xs text-orange-500 font-medium">●</span>
+                                  )}
                                 </div>
                                 <div className={`text-xs opacity-80 truncate ${
-                                  post.status === 'scheduled' ? 'text-blue-600' : post.status === 'published' ? 'text-green-600' : 'text-gray-600'
+                                  post.status === 'scheduled' 
+                                    ? 'text-blue-600' 
+                                    : post.status === 'published' 
+                                    ? 'text-green-600' 
+                                    : post.status === 'draft' && post.approved
+                                    ? 'text-cyan-600'
+                                    : post.status === 'draft' && !post.approved && post.content?.trim() && post.platforms?.length
+                                    ? 'text-orange-600'
+                                    : 'text-gray-600'
                                 }`}>
                                   {post.scheduledTime}
+                                  {/* Show status hint for incomplete posts */}
+                                  {(post.status === 'draft' || !post.content?.trim() || !post.platforms?.length || post.title === 'Untitled Post') && (
+                                    <span className="ml-1 text-orange-500">• Vervollständigen</span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1 mt-1">
                                   {post.platforms.slice(0, 3).map(platform => {
@@ -891,11 +1223,33 @@ export function ContentHub() {
                               </div>
                             </div>
 
-                            {/* Hover Tooltip */}
+                            {/* Enhanced Hover Tooltip */}
                             {hoveredPost === post.id && (
                               <div className="absolute z-50 bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs">
-                                <div className="font-medium mb-1">{post.title || 'Untitled Post'}</div>
-                                <div className="text-gray-300 line-clamp-2">{post.content}</div>
+                                <div className="font-medium mb-1">
+                                  {post.title && post.title !== 'Untitled Post' ? post.title : 'Entwurf'}
+                                </div>
+                                <div className="text-gray-300 line-clamp-2 mb-1">
+                                  {post.content || 'Kein Inhalt verfügbar'}
+                                </div>
+                                {/* Action hint based on post status */}
+                                {post.status === 'draft' && (!post.content?.trim() || !post.platforms?.length || post.title === 'Untitled Post') ? (
+                                  <div className="text-orange-300 text-xs mt-1 border-t border-gray-700 pt-1">
+                                    Klicken zum Vervollständigen
+                                  </div>
+                                ) : post.status === 'draft' && !post.approved && post.content?.trim() && post.platforms?.length ? (
+                                  <div className="text-orange-300 text-xs mt-1 border-t border-gray-700 pt-1">
+                                    Klicken zum Genehmigen
+                                  </div>
+                                ) : post.status === 'draft' && post.approved ? (
+                                  <div className="text-cyan-300 text-xs mt-1 border-t border-gray-700 pt-1">
+                                    Genehmigt - Klicken für Details
+                                  </div>
+                                ) : (
+                                  <div className="text-blue-300 text-xs mt-1 border-t border-gray-700 pt-1">
+                                    Klicken für Details
+                                  </div>
+                                )}
                                 <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
                               </div>
                             )}
@@ -934,8 +1288,8 @@ export function ContentHub() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Content Hub</h1>
-              <p className="text-gray-600">Manage your drafts and scheduled content</p>
+              <h1 className="text-3xl font-bold text-gray-900">Content Hub</h1>
+              <p className="text-gray-600">Verwalten Sie Ihre Entwürfe und geplanten Inhalte</p>
             </div>
             {/* Restored Clean New Post Button */}
             <Button 
@@ -944,34 +1298,56 @@ export function ContentHub() {
               className="h-10 text-sm gap-2 px-4 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white rounded-full shadow-sm hover:shadow-md transition-all duration-200"
             >
               <Plus className="w-4 h-4" />
-              New Post
+              Neuer Beitrag
             </Button>
           </div>
 
           {/* View Filter - Matching Dashboard Style */}
-          <div className="flex items-center justify-center mb-6 relative">
-            <div className="flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-0.5">
-              {[
-                { key: "ideas", label: "Ideas" },
-                { key: "drafts", label: "Entwürfe" },
-                { key: "calendar", label: "Calendar" }
-              ].map((view) => (
-                <button
-                  key={view.key}
-                  onClick={() => setSelectedView(view.key)}
-                  className={`px-6 py-2.5 text-sm font-medium transition-all relative
-                    ${selectedView === view.key
-                      ? 'rounded-full bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200'
-                      : 'text-gray-600 hover:bg-gray-50 rounded-full'
-                    }`}
-                >
-                  {view.label}
-                </button>
-              ))}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex bg-white rounded-full border border-gray-200 p-1 shadow-sm">
+              <Button
+                variant={selectedView === 'calendar' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setSelectedView('calendar')}
+                className={`rounded-full px-4 py-2 text-sm transition-all ${
+                  selectedView === 'calendar' 
+                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <CalendarIcon className="w-4 h-4 mr-2" />
+                Kalender
+              </Button>
+              <Button
+                variant={selectedView === 'ideas' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setSelectedView('ideas')}
+                className={`rounded-full px-4 py-2 text-sm transition-all ${
+                  selectedView === 'ideas' 
+                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <Lightbulb className="w-4 h-4 mr-2" />
+                Ideen
+              </Button>
+              <Button
+                variant={selectedView === 'drafts' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setSelectedView('drafts')}
+                className={`rounded-full px-4 py-2 text-sm transition-all ${
+                  selectedView === 'drafts' 
+                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                Entwürfe
+              </Button>
             </div>
 
             {/* AI Planning Toggle Button */}
-            <div className="absolute right-0">
+            <div>
               <button
                 onClick={handleAIPlanningToggle}
                 disabled={isGeneratingPlan}
@@ -1074,7 +1450,8 @@ export function ContentHub() {
                         likes: draft.likes,
                         comments: draft.comments,
                         shares: draft.shares,
-                        createdAt: draft.createdAt
+                        createdAt: draft.createdAt,
+                        approved: draft.approved // Include approved status
                       }
                       handleDragStart(e, draftAsPost)
                     }}
@@ -1148,7 +1525,7 @@ export function ContentHub() {
                               </DialogHeader>
                               <div className="space-y-4">
                                 <Textarea
-                                  placeholder="Write your caption..."
+                                  placeholder="Schreiben Sie Ihre Bildunterschrift..."
                                   defaultValue={draft.content}
                                   className="min-h-[100px] border-gray-200 rounded-xl resize-none"
                                 />
@@ -1195,8 +1572,48 @@ export function ContentHub() {
 
       <CreatePostDialog
         open={isCreatePostOpen} 
-        onOpenChange={setIsCreatePostOpen} 
-        onPostCreated={actions.fetchPosts}
+        onOpenChange={(open) => {
+          setIsCreatePostOpen(open)
+          // Clear converting idea content and editing post ID when dialog closes
+          if (!open) {
+            setConvertingIdeaContent(null)
+            setEditingPostId(null)
+          }
+        }} 
+        onPostCreated={async () => {
+          try {
+            // Refresh posts to show updates
+            await actions.fetchPosts()
+            
+            // Handle different scenarios
+            if (editingPostId) {
+              // We were editing an existing post
+              toast.success("Beitrag erfolgreich aktualisiert!")
+            } else if (convertingIdeaContent) {
+              // We were converting an idea to post
+              const ideaToMark = ideas.find(i => i.title === convertingIdeaContent.title)
+              if (ideaToMark) {
+                const updatedIdeas = ideas.map(i => 
+                  i.id === ideaToMark.id 
+                    ? { ...i, isImplemented: true, implementedPostId: `post-${Date.now()}` }
+                    : i
+                )
+                setIdeas(updatedIdeas)
+                toast.success("Idee erfolgreich zu Post konvertiert!")
+              }
+            } else {
+              // New post created
+              toast.success("Neuer Beitrag erfolgreich erstellt!")
+            }
+            
+            // Clear states
+            setConvertingIdeaContent(null)
+            setEditingPostId(null)
+          } catch (error) {
+            console.error('Error in post creation callback:', error)
+          }
+        }}
+        initialContent={convertingIdeaContent || undefined}
       />
 
       {/* Post Detail Popup */}
@@ -1250,6 +1667,39 @@ export function ContentHub() {
           handlePostDuplicate(convertedPost)
         }}
       />
+
+              {/* Approval Dialog */}
+        <AlertDialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
+          <AlertDialogContent className="max-w-md rounded-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-center">Post genehmigen</AlertDialogTitle>
+              <AlertDialogDescription className="text-center space-y-2">
+                <div className="text-gray-700 font-medium">
+                  Möchten Sie diesen Entwurf genehmigen und planen?
+                </div>
+                <div className="text-gray-600 text-sm bg-gray-50 p-3 rounded-lg">
+                  <div className="font-medium text-gray-800 mb-1">
+                    {pendingApprovalPost?.title || 'Untitled Post'}
+                  </div>
+                  <div className="text-xs line-clamp-2">
+                    {pendingApprovalPost?.content || 'Kein Inhalt'}
+                  </div>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="flex gap-2">
+              <AlertDialogCancel onClick={() => handleApprovePost(false)} className="rounded-full">
+                Zurückstellen
+              </AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => handleApprovePost(true)} 
+                className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white rounded-full"
+              >
+                ✓ Genehmigen & Planen
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
     </div>
   )
 } 

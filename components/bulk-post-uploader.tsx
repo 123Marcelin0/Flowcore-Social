@@ -312,7 +312,7 @@ export function BulkPostUploader({ onUploadComplete, onClose }: BulkPostUploader
           <ul className="list-disc list-inside space-y-1 ml-2">
             <li>Choose upload method: Standard (requires user profile) or SQL Function (bypasses profiles)</li>
             <li>Upload a JSON file containing your social media posts data</li>
-            <li>Posts will be marked as "published" and stored as memory (not for future posting)</li>
+            <li>Beiträge werden als "veröffentlicht" markiert und als Erinnerung gespeichert (nicht für zukünftige Veröffentlichungen)</li>
             <li>Supported fields: caption, content, image_url, video_url, likes, comments, shares, views, platform, etc.</li>
             <li>All posts will be imported under your current user account</li>
             <li>Maximum 200 posts per upload</li>

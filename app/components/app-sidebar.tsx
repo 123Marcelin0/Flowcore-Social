@@ -41,9 +41,9 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
   const menuItems = [
     { id: "dashboard" as Section, label: "Dashboard", icon: Home },
     { id: "content" as Section, label: "Content Hub", icon: FileText },
-    { id: "interactions" as Section, label: "AI Interactions", icon: MessageSquare },
-    { id: "ideas" as Section, label: "Content Ideas", icon: Lightbulb },
-    { id: "settings" as Section, label: "Settings", icon: Settings },
+    { id: "interactions" as Section, label: "KI-Interaktionen", icon: MessageSquare },
+    { id: "ideas" as Section, label: "Content-Ideen", icon: Lightbulb },
+    { id: "settings" as Section, label: "Einstellungen", icon: Settings },
   ]
 
   // Get user display info
@@ -57,11 +57,11 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
   const getSubscriptionLabel = (tier: string) => {
     switch (tier) {
       case 'pro':
-        return 'Pro Plan'
+        return 'Pro-Plan'
       case 'enterprise':
         return 'Enterprise'
       default:
-        return 'Free Plan'
+        return 'Kostenlos'
     }
   }
 
@@ -161,19 +161,19 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
               <div className="space-y-1">
                 <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-lg">
                   <User className="w-4 h-4 text-gray-500" />
-                  Account Settings
+                  Konto-Einstellungen
                 </Button>
                 <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-lg">
                   <CreditCard className="w-4 h-4 text-gray-500" />
-                  Billing & Plans
+                  Abrechnung & Pläne
                 </Button>
                 <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-lg">
                   <Shield className="w-4 h-4 text-gray-500" />
-                  Privacy & Security
+                  Datenschutz & Sicherheit
                 </Button>
                 <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-lg">
                   <Mail className="w-4 h-4 text-gray-500" />
-                  Email Preferences
+                  E-Mail-Einstellungen
                 </Button>
               </div>
               
@@ -185,7 +185,7 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
                 onClick={onLogout}
               >
                 <LogOut className="w-4 h-4" />
-                Sign Out
+                Abmelden
               </Button>
             </div>
           </PopoverContent>

@@ -40,7 +40,6 @@ import { CalendarPopup } from "@/components/ui/calendar-popup"
 import { AIPostWorkflow } from "./ai-post-workflow"
 import { PostDetailPopup } from "./post-detail-popup"
 import { DynamicText } from "./dynamic-text"
-import { BulkPostUploader } from "@/components/bulk-post-uploader"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { usePost } from "@/lib/post-context"
 import { useAuth } from "@/lib/auth-context"
@@ -321,7 +320,6 @@ export const DashboardOverview = memo(function DashboardOverview() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [isPostDetailOpen, setIsPostDetailOpen] = useState(false)
   const [showTimeoutMessage, setShowTimeoutMessage] = useState(false)
-  const [isBulkUploaderOpen, setIsBulkUploaderOpen] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
   // Show timeout message after 10 seconds of loading
@@ -661,7 +659,19 @@ export const DashboardOverview = memo(function DashboardOverview() {
   }, [chatHistory, filteredPosts])
 
   // Process AI response to optimize formatting and remove redundant content
-  const processAIResponse = useCallback((response: string) => {
+  const processAIResponse = useCallback((response: string | undefined | null) => {
+    // Handle undefined or null responses
+    if (!response || typeof response !== 'string') {
+      console.warn('[DASHBOARD] Received invalid response:', response)
+      return "Entschuldigung, ich konnte keine Antwort generieren. Bitte versuchen Sie es erneut."
+    }
+
+    // Handle empty strings
+    if (response.trim().length === 0) {
+      console.warn('[DASHBOARD] Received empty response')
+      return "Ich habe eine leere Antwort erhalten. Können Sie Ihre Frage anders formulieren?"
+    }
+
     // Remove dynamic action suggestions at the end
     let cleanedResponse = response
       .replace(/---[\s\S]*?(\[.*?\]\(.*?\)[\s\S]*?)*---/g, '')
@@ -710,6 +720,10 @@ export const DashboardOverview = memo(function DashboardOverview() {
     })
   }, [])
 
+  const handleChatInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setChatMessage(e.target.value)
+  }, [])
+
   const handleSendMessage = useCallback(async () => {
     if (!chatMessage.trim()) return
 
@@ -732,6 +746,10 @@ export const DashboardOverview = memo(function DashboardOverview() {
         throw new Error('No authentication token found')
       }
 
+      // Add timeout to prevent hanging
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -741,17 +759,44 @@ export const DashboardOverview = memo(function DashboardOverview() {
         body: JSON.stringify({
           query: chatMessage + "\n\nBitte antworte prägnant und strukturiert. Verwende **fett** für wichtige Begriffe und halte dich kurz, außer bei detaillierten Fragen.",
           // conversation_id will be managed by the API
-        })
+        }),
+        signal: controller.signal
       })
 
+      clearTimeout(timeoutId)
+
       const data = await response.json()
+      console.log('[DASHBOARD] API Response received:', { 
+        ok: response.ok, 
+        status: response.status, 
+        dataKeys: Object.keys(data || {}),
+        hasMessage: !!data?.message,
+        messageType: typeof data?.message,
+        messageLength: data?.message?.length || 0
+      })
 
       if (!response.ok) {
+        console.error('[DASHBOARD] API Error:', data)
+        // Handle specific error cases
+        if (data.error === 'GPT-4o did not return a response.') {
+          throw new Error('Der AI-Assistent konnte keine Antwort generieren. Bitte versuchen Sie es mit einer anderen Formulierung.')
+        }
         throw new Error(data.error || 'Failed to get AI response')
       }
 
+      // Validate the response structure
+      if (!data || typeof data !== 'object') {
+        console.error('[DASHBOARD] Invalid response structure:', data)
+        throw new Error('Invalid response structure from API')
+      }
+
+      if (!data.message) {
+        console.error('[DASHBOARD] No message in response:', data)
+        throw new Error('No message content in API response')
+      }
+
       // Process the AI response to optimize formatting
-      const processedResponse = processAIResponse(data.response)
+      const processedResponse = processAIResponse(data.message)
 
       const aiResponse = {
         id: (Date.now() + 1).toString(),
@@ -763,10 +808,25 @@ export const DashboardOverview = memo(function DashboardOverview() {
       setIsTyping(false)
     } catch (error) {
       console.error('Error sending message to AI:', error)
+      
+      let errorMessage = "Entschuldigung, ich konnte Ihre Nachricht nicht verarbeiten. Bitte versuchen Sie es erneut."
+      let toastDescription = 'Bitte versuchen Sie es erneut.'
+      
+      // Handle specific error types
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorMessage = "Die Anfrage hat zu lange gedauert. Bitte versuchen Sie es mit einer kürzeren Nachricht erneut."
+          toastDescription = 'Anfrage unterbrochen - Zeitüberschreitung'
+        } else if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
+          errorMessage = "Netzwerkfehler. Bitte überprüfen Sie Ihre Internetverbindung."
+          toastDescription = 'Netzwerkproblem erkannt'
+        }
+      }
+      
       const errorResponse = {
         id: (Date.now() + 1).toString(),
         type: 'ai' as const,
-        message: "Entschuldigung, ich konnte Ihre Nachricht nicht verarbeiten. Bitte versuchen Sie es erneut.",
+        message: errorMessage,
         timestamp: new Date()
       }
       setChatHistory(prev => [...prev, errorResponse])
@@ -774,7 +834,7 @@ export const DashboardOverview = memo(function DashboardOverview() {
       
       // Show error toast
       toast.error('Fehler beim Senden der Nachricht', {
-        description: 'Bitte versuchen Sie es erneut.'
+        description: toastDescription
       })
     }
   }, [chatMessage, processAIResponse])
@@ -890,11 +950,6 @@ export const DashboardOverview = memo(function DashboardOverview() {
     setIsAiWorkflowOpen(true)
   }, [])
 
-  const handleBulkUploadComplete = useCallback(() => {
-    actions.fetchPosts() // Refresh posts after upload
-    setIsBulkUploaderOpen(false)
-  }, [actions])
-
   const handlePostClick = useCallback((post: DashboardPost) => {
     setSelectedPost(convertToPopupPost(post))
     setIsPostDetailOpen(true)
@@ -934,11 +989,11 @@ export const DashboardOverview = memo(function DashboardOverview() {
       // Force a refresh of all posts to ensure all views are updated
       await actions.fetchPosts();
       
-      toast.success('Post updated successfully!');
+      toast.success('Beitrag erfolgreich aktualisiert!');
       
     } catch (error) {
       console.error('Error updating post:', error);
-      toast.error('Failed to update post');
+      toast.error('Fehler beim Aktualisieren des Beitrags');
     }
   }, [user, actions]);
 
@@ -1066,38 +1121,40 @@ export const DashboardOverview = memo(function DashboardOverview() {
       <div className={`max-w-[1400px] mx-auto pl-4 ${isAiChatOpen ? 'pb-2' : 'pb-8'}`}>
         <div className="mb-4">
           {/* Status Filter and Actions */}
-          <div className="w-full flex items-center justify-between gap-4 mb-4">
-            <div className="flex-1 flex justify-center">
-              {/* Status Filter */}
-              <div className="flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-0.5">
-                {["Alle", "Geplant", "Veröffentlicht", "In Bearbeitung"].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setSelectedStatus(status)}
-                    className={`px-6 py-2.5 text-sm font-medium transition-all relative
-                      ${selectedStatus === status
-                        ? 'rounded-full bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200'
-                        : 'text-gray-600 hover:bg-gray-50 rounded-full'
-                      }`}
-                  >
-                    {status}
-                  </button>
-                ))}
-                <button 
-                  onClick={handleAiToggle}
-                  className={`px-4 py-2.5 rounded-full flex items-center gap-1 transition-all
-                    ${isAiChatOpen 
-                      ? 'bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200' 
-                      : 'text-gray-600 hover:bg-gray-50'
+          <div className="w-full flex items-center justify-between mb-4">
+            {/* Empty div for left spacing */}
+            <div className="w-32"></div>
+            
+            {/* Centered Status Filter */}
+            <div className="flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-0.5">
+              {["Alle", "Geplant", "Veröffentlicht", "In Bearbeitung"].map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setSelectedStatus(status)}
+                  className={`px-6 py-2.5 text-sm font-medium transition-all relative
+                    ${selectedStatus === status
+                      ? 'rounded-full bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200'
+                      : 'text-gray-600 hover:bg-gray-50 rounded-full'
                     }`}
                 >
-                  <Search className="w-4 h-4" />
-                  <Sparkles className="w-4 h-4" />
+                  {status}
                 </button>
-              </div>
+              ))}
+              <button 
+                onClick={handleAiToggle}
+                className={`px-4 py-2.5 rounded-full flex items-center gap-1 transition-all
+                  ${isAiChatOpen 
+                    ? 'bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200' 
+                    : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+              >
+                <Search className="w-4 h-4" />
+                <Sparkles className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="flex gap-2">
+            {/* Right-aligned Button */}
+            <div className="flex justify-end w-32">
               <Button 
                 onClick={handleOpenAiWorkflow}
                 size="default" 
@@ -1105,14 +1162,6 @@ export const DashboardOverview = memo(function DashboardOverview() {
               >
                 <Plus className="w-4 h-4" />
                 Neuer Post
-              </Button>
-              <Button 
-                onClick={() => setIsBulkUploaderOpen(true)}
-                size="default" 
-                variant="outline"
-                className="h-10 text-sm gap-2 px-4 rounded-full border-gray-300 hover:bg-gray-50"
-              >
-                📁 Bulk Upload
               </Button>
             </div>
           </div>
@@ -1243,17 +1292,23 @@ export const DashboardOverview = memo(function DashboardOverview() {
                 <div className="flex gap-2 flex-shrink-0 mt-auto pt-2 border-t border-gray-100">
                   <Input
                     value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
+                    onChange={handleChatInputChange}
                     placeholder="Stellen Sie mir eine Frage..."
                     className="flex-1 border-gray-200 focus:border-teal-500 focus:ring-teal-500/20 rounded-full"
-                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                    onKeyPress={(e) => e.key === 'Enter' && !isTyping && handleSendMessage()}
+                    disabled={isTyping}
                   />
                   <Button
                     onClick={handleSendMessage}
                     size="sm"
-                    className="h-10 w-10 p-0 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 rounded-full"
+                    disabled={isTyping || !chatMessage.trim()}
+                    className="h-10 w-10 p-0 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Send className="w-4 h-4" />
+                    {isTyping ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
                   </Button>
                 </div>
               </div>
@@ -1433,9 +1488,9 @@ export const DashboardOverview = memo(function DashboardOverview() {
                           : 'bg-red-50/90 text-red-600 border-red-200'
                       } text-xs px-2.5 py-1 rounded-full border shadow-sm backdrop-blur-sm`}
                     >
-                      {post.status === 'published' ? 'Published' : 
-                       post.status === 'scheduled' ? 'Scheduled' : 
-                       post.status === 'draft' ? 'Draft' : 'Failed'}
+                      {post.status === 'published' ? 'Veröffentlicht' : 
+                       post.status === 'scheduled' ? 'Geplant' : 
+                       post.status === 'draft' ? 'Entwurf' : 'Fehlgeschlagen'}
                     </Badge>
                   </div>
 
@@ -1657,15 +1712,6 @@ export const DashboardOverview = memo(function DashboardOverview() {
         onDuplicate={handlePostDuplicate}
       />
 
-      {/* Bulk Post Uploader Dialog */}
-      <Dialog open={isBulkUploaderOpen} onOpenChange={setIsBulkUploaderOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <BulkPostUploader 
-            onUploadComplete={handleBulkUploadComplete}
-            onClose={() => setIsBulkUploaderOpen(false)}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }) 

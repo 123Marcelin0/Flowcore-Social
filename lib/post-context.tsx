@@ -20,6 +20,10 @@ interface Post {
   shares: number
   createdAt: string
   updatedAt: string
+  approved?: boolean
+  category?: 'trend-reels' | 'content-strategies' | 'ai-strategies'
+  source?: 'ai-generated' | 'trend-explorer' | 'manual' | 'content-strategy'
+  tags?: string[]
   isOptimistic?: boolean
 }
 
@@ -70,6 +74,18 @@ const convertDatabasePost = (dbPost: DatabasePost): Post => {
     ? new Date(dbPost.scheduled_at) 
     : new Date()
 
+  // Helper function to check if a scheduled post is in the past
+  const isScheduledInPast = (status: string, scheduledAt: string | null): boolean => {
+    if (status !== 'scheduled' || !scheduledAt) return false;
+    const scheduledDate = new Date(scheduledAt);
+    return scheduledDate < new Date();
+  }
+
+  // Determine the correct status (convert past scheduled posts to drafts)
+  const correctStatus = isScheduledInPast(dbPost.status, dbPost.scheduled_at) 
+    ? 'draft' 
+    : dbPost.status as 'draft' | 'scheduled' | 'published' | 'failed';
+
   return {
     id: dbPost.id,
     title: dbPost.title || 'Untitled Post',
@@ -78,9 +94,9 @@ const convertDatabasePost = (dbPost: DatabasePost): Post => {
     image: (dbPost.media_urls && dbPost.media_urls[0]) || '/placeholder.svg',
     scheduledDate: dateTime.toISOString().split('T')[0],
     scheduledTime: dateTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
-    status: dbPost.status as 'draft' | 'scheduled' | 'published' | 'failed',
+    status: correctStatus,
     likes: dbPost.likes || 0,
-    comments: dbPost.comments || 0,
+    comments: dbPost.comments_count || 0,
     shares: dbPost.shares || 0,
     createdAt: new Date(dbPost.created_at).toLocaleDateString(),
     updatedAt: new Date(dbPost.updated_at).toLocaleDateString()
@@ -479,7 +495,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Error updating post:', error);
       dispatch({ type: 'REVERT_OPTIMISTIC', payload: id });
-      toast.error('Failed to update post');
+      toast.error('Fehler beim Aktualisieren des Beitrags');
     }
   }, [user, state.posts, broadcastSyncEvent]);
 
@@ -518,7 +534,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Error updating post date:', error)
       dispatch({ type: 'REVERT_OPTIMISTIC', payload: id })
-      toast.error('Failed to update post date')
+      toast.error('Fehler beim Aktualisieren des Beitragsdatums')
     }
   }, [user, broadcastSyncEvent])
 
@@ -541,19 +557,34 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         timestamp: Date.now()
       })
       
-      toast.success('Post deleted successfully!')
+      toast.success('Beitrag erfolgreich gelöscht!')
     } catch (error) {
       console.error('Error deleting post:', error)
       if (postToDelete) {
         dispatch({ type: 'ADD_POST', payload: postToDelete })
       }
-      toast.error('Failed to delete post')
+      toast.error('Fehler beim Löschen des Beitrags')
     }
   }, [user, state.posts, broadcastSyncEvent])
 
-  // Add new post with real-time sync
+  // Add new post with real-time sync and duplicate prevention
   const addPost = useCallback(async (post: Omit<Post, 'id'>) => {
     if (!user) return
+    
+    // Check for potential duplicates (same content and platforms within last 5 minutes)
+    const now = Date.now()
+    const duplicateThreshold = 5 * 60 * 1000 // 5 minutes
+    
+    const potentialDuplicate = Object.values(state.posts).find(existingPost => 
+      existingPost.content === post.content &&
+      JSON.stringify(existingPost.platforms.sort()) === JSON.stringify(post.platforms.sort()) &&
+      (now - new Date(existingPost.createdAt).getTime()) < duplicateThreshold
+    )
+    
+    if (potentialDuplicate) {
+      toast.error('Ein ähnlicher Beitrag wurde kürzlich erstellt. Bitte prüfen Sie Ihre Posts.')
+      return
+    }
     
     const tempId = `temp-${Date.now()}`
     const tempPost: Post = {
@@ -570,6 +601,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         new Date(`${post.scheduledDate}T${post.scheduledTime}:00`).toISOString() : null
       
       const dbPost = await PostsService.createPost({
+        user_id: user.id,
         title: post.title,
         content: post.content,
         media_urls: post.image ? [post.image] : [],
@@ -579,7 +611,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         scheduled_at: post.status === 'scheduled' ? postDateTime : null,
         published_at: post.status === 'published' ? postDateTime : null,
         likes: post.likes || 0,
-        comments: post.comments || 0,
+        comments_count: post.comments || 0,
         shares: post.shares || 0
       })
       
@@ -597,22 +629,22 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         timestamp: Date.now()
       })
       
-      toast.success('Post created successfully!')
+      console.log('Post erfolgreich erstellt:', realPost.title)
     } catch (error) {
       console.error('Error creating post:', error)
       dispatch({ type: 'DELETE_POST', payload: tempId })
       
       // Provide user-friendly error messages
-      let errorMessage = 'Failed to create post. Please try again.'
+      let errorMessage = 'Beitrag konnte nicht erstellt werden. Bitte versuchen Sie es erneut.'
       if (error instanceof Error) {
         if (error.message.includes('Authentication required')) {
-          errorMessage = 'Your session has expired. Please log in again.'
+          errorMessage = 'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.'
         } else if (error.message.includes('Database schema error')) {
-          errorMessage = 'There was a database error. Please try again.'
+          errorMessage = 'Es gab einen Datenbankfehler. Bitte versuchen Sie es erneut.'
         } else if (error.message.includes('session has expired')) {
-          errorMessage = 'Your session has expired. Please log in again.'
+          errorMessage = 'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.'
         } else if (error.message.includes('JWT')) {
-          errorMessage = 'Your session has expired. Please log in again.'
+          errorMessage = 'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.'
         } else {
           errorMessage = error.message
         }
@@ -621,7 +653,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_ERROR', payload: errorMessage })
       toast.error(errorMessage)
     }
-  }, [user, broadcastSyncEvent])
+  }, [user, state.posts, broadcastSyncEvent])
 
   // Drag state management
   const setDragState = useCallback((draggedPostId: string | null, dragOverDate: string | null) => {

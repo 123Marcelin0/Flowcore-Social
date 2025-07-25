@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,8 +13,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { Edit, Clock, Repeat, Trash2, GripVertical } from "lucide-react"
+import { Edit, Clock, Repeat, Trash2, GripVertical, TrendingUp, Target, ExternalLink } from "lucide-react"
 import { CalendarIcon } from "lucide-react"
+import { toast } from "sonner"
 
 export interface CalendarEvent {
   id: string
@@ -52,6 +54,7 @@ const categoryColors = {
 export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventCardProps) {
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [editedEvent, setEditedEvent] = useState<CalendarEvent>(event)
+  const router = useRouter()
 
   const categoryStyle = categoryColors[event.category as keyof typeof categoryColors] || categoryColors.other
 
@@ -68,22 +71,87 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
     return `${displayHour}:${minutes} ${ampm}`
   }
 
+  // Determine if this is a trend or content strategy based on category and metadata
+  const getIdeaType = () => {
+    // Check metadata first
+    if (event.description && typeof event.description === 'string') {
+      // Check for trend keywords in description
+      const description = event.description.toLowerCase()
+      if (description.includes('trend') || description.includes('trending') || 
+          description.includes('viral') || description.includes('tiktok') || 
+          description.includes('instagram trend')) {
+        return 'trend'
+      }
+    }
+    
+    // Check category
+    if (event.category === 'trend' || event.category === 'trends') {
+      return 'trend'
+    }
+    
+    // Default to content strategy
+    return 'content-strategy'
+  }
+
+  const handleEventClick = () => {
+    const ideaType = getIdeaType()
+    
+    if (ideaType === 'trend') {
+      // Navigate to trend optimization page
+      toast.success('Navigiere zu Trends Optimierung...')
+      // You can create a query param with the event data
+      const eventData = encodeURIComponent(JSON.stringify({
+        id: event.id,
+        title: event.title,
+        description: event.description
+      }))
+      router.push(`/?workflow=trend-optimization&eventData=${eventData}`)
+    } else {
+      // Navigate to content strategy workflow page
+      toast.success('Navigiere zu Content Strategien...')
+      // Create strategy data structure for content strategy workflow
+      const strategyData = {
+        id: event.id,
+        title: event.title,
+        description: event.description || '',
+        category: 'content-strategies',
+        content: {
+          platforms: ['instagram'],
+          targetAudience: 'Immobilienkäufer',
+          estimatedReach: 1000
+        },
+        priority: 'medium' as const,
+        estimatedEffort: 'medium' as const
+      }
+      const encodedStrategy = encodeURIComponent(JSON.stringify(strategyData))
+      router.push(`/?workflow=content-strategy&strategyData=${encodedStrategy}`)
+    }
+  }
+
   return (
     <>
       <Card
         className={`
           group relative overflow-hidden transition-all duration-200
-          hover:shadow-md hover:translate-y-[-1px]
+          hover:shadow-md hover:translate-y-[-1px] cursor-pointer
           ${isDragging ? "opacity-50 rotate-1 scale-95" : ""}
           border-l-4 ${categoryStyle.border}
           bg-white hover:bg-gray-50
         `}
         style={style}
+        onClick={handleEventClick}
       >
         <CardContent className="p-2">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <h4 className="font-medium text-sm text-gray-900 truncate">{event.title}</h4>
+              <div className="flex items-center gap-2 mb-1">
+                <h4 className="font-medium text-sm text-gray-900 truncate">{event.title}</h4>
+                {getIdeaType() === 'trend' ? (
+                  <TrendingUp className="w-3 h-3 text-orange-500" />
+                ) : (
+                  <Target className="w-3 h-3 text-teal-500" />
+                )}
+              </div>
               {!event.allDay && (
                 <div className="flex items-center gap-1 mt-0.5">
                   <Clock className="w-3 h-3 text-gray-400" />
@@ -100,6 +168,12 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
                   </span>
                 </div>
               )}
+              <div className="flex items-center gap-1 mt-1">
+                <Badge variant="secondary" className="text-xs">
+                  {getIdeaType() === 'trend' ? 'Trend' : 'Content Strategie'}
+                </Badge>
+                <ExternalLink className="w-3 h-3 text-gray-400" />
+              </div>
             </div>
             <div className="flex items-start gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
               <Button
@@ -132,12 +206,13 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
         </CardContent>
       </Card>
 
+      {/* Edit Dialog - Only for event management, not for idea workflows */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5 text-teal-600" />
-              <span>Edit Event</span>
+              <span>Event bearbeiten</span>
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -148,7 +223,7 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
                 value={editedEvent.title}
                 onChange={(e) => setEditedEvent({ ...editedEvent, title: e.target.value })}
                 className="mt-1"
-                placeholder="Enter event title"
+                placeholder="Veranstaltungstitel eingeben"
               />
             </div>
 
@@ -160,7 +235,7 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
                 onChange={(e) => setEditedEvent({ ...editedEvent, description: e.target.value })}
                 className="mt-1"
                 rows={3}
-                placeholder="Add event description (optional)"
+                placeholder="Veranstaltungsbeschreibung hinzufügen (optional)"
               />
             </div>
 

@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `AI-Posting-Plan für ${targetMonth} erfolgreich erstellt!`,
+      message: `AI-Entwürfe für ${targetMonth} erfolgreich erstellt!`,
       data: {
         postsGenerated: postingPlan.length,
         targetMonth,
@@ -55,7 +55,8 @@ export async function POST(request: NextRequest) {
           title: post.title,
           category: post.category,
           platforms: post.platforms
-        }))
+        })),
+        notice: 'Alle Posts wurden als Entwürfe erstellt und müssen manuell geplant werden.'
       }
     })
 

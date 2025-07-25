@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const authResult = await verifyAuth(request);
     if (!authResult.authenticated) {
       return NextResponse.json(
-        { success: false, error: 'Authentication required' },
+        { success: false, error: 'Anmeldung erforderlich' },
         { status: 401 }
       );
     }
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       posts: posts || [],
-      message: 'Posts retrieved successfully'
+      message: 'Beiträge erfolgreich abgerufen'
     }, { status: 200 });
 
   } catch (error) {
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     const authResult = await verifyAuth(request);
     if (!authResult.authenticated) {
       return NextResponse.json(
-        { success: false, error: 'Authentication required' },
+        { success: false, error: 'Anmeldung erforderlich' },
         { status: 401 }
       );
     }
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
 
     if (!platform || !media_type || !postContent) {
       return NextResponse.json(
-        { success: false, error: 'Platform, media_type, and content/description are required fields' },
+        { success: false, error: 'Plattform, Medientyp und Inhalt/Beschreibung sind Pflichtfelder' },
         { status: 400 }
       );
     }
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     const validPlatforms = ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'youtube', 'pinterest'];
     if (!validPlatforms.includes(platform)) {
       return NextResponse.json(
-        { success: false, error: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` },
+        { success: false, error: `Ungültige Plattform. Muss eine der folgenden sein: ${validPlatforms.join(', ')}` },
         { status: 400 }
       );
     }
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
     const validMediaTypes = ['image', 'video', 'text', 'carousel'];
     if (!validMediaTypes.includes(media_type)) {
       return NextResponse.json(
-        { success: false, error: `Invalid media_type. Must be one of: ${validMediaTypes.join(', ')}` },
+        { success: false, error: `Ungültiger Medientyp. Muss einer der folgenden sein: ${validMediaTypes.join(', ')}` },
         { status: 400 }
       );
     }
@@ -181,7 +181,7 @@ export async function PUT(request: NextRequest) {
     const authResult = await verifyAuth(request);
     if (!authResult.authenticated) {
       return NextResponse.json(
-        { success: false, error: 'Authentication required' },
+        { success: false, error: 'Anmeldung erforderlich' },
         { status: 401 }
       );
     }
@@ -316,7 +316,7 @@ export async function PATCH(request: NextRequest) {
     const authResult = await verifyAuth(request);
     if (!authResult.authenticated) {
       return NextResponse.json(
-        { success: false, error: 'Authentication required' },
+        { success: false, error: 'Anmeldung erforderlich' },
         { status: 401 }
       );
     }

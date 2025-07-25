@@ -1,6 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { useAuth } from "@/lib/auth-context"
+import { createClient } from '@supabase/supabase-js'
+import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -34,6 +37,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
 interface Interaction {
   id: number
   sender: string
@@ -60,7 +69,152 @@ interface Interaction {
 }
 
 // Mock data removed - will be replaced with real data from the database
-const mockInteractions: Interaction[] = []
+const mockInteractions: Interaction[] = [
+  {
+    id: 1,
+    sender: "Anna Müller",
+    avatar: "/placeholder-user.jpg",
+    platform: "instagram",
+    originalPost: {
+      id: "post-1",
+      title: "Traumvilla in München-Bogenhausen verfügbar",
+      content: "🏡 EXKLUSIV: Wunderschöne Villa mit 300m² Wohnfläche, großem Garten und Pool in bester Lage von München-Bogenhausen. Perfekt für Familien, die das Besondere suchen. #München #Immobilien #Villa",
+      image: "/placeholder.jpg",
+      platforms: ["Instagram", "Facebook"],
+      engagement: {
+        likes: 127,
+        comments: 23,
+        shares: 8
+      }
+    },
+    message: "Ist die Villa noch verfügbar? Wir suchen dringend ein Haus in München für unsere Familie mit 3 Kindern. Könnte ich einen Besichtigungstermin bekommen?",
+    aiSuggestion: "Hallo Anna! 😊 Ja, die Villa ist noch verfügbar und wäre perfekt für Ihre Familie! Gerne vereinbare ich einen Besichtigungstermin mit Ihnen. Können Sie mir Ihre Telefonnummer per DM senden? Dann rufe ich Sie heute noch an und wir finden einen passenden Termin. Freue mich auf Ihre Nachricht! 🏡✨",
+    timestamp: "vor 15 Min",
+    priority: "high",
+    status: "pending",
+    sentiment: "positive"
+  },
+  {
+    id: 2,
+    sender: "Thomas Weber",
+    avatar: "/placeholder-user.jpg",
+    platform: "facebook",
+    originalPost: {
+      id: "post-2",
+      title: "Erste Immobilie kaufen - Ratgeber für Einsteiger",
+      content: "📊 Du willst deine erste Immobilie kaufen? Dann schau dir unseren kostenlosen Ratgeber an! Wir erklären dir Schritt für Schritt, worauf du achten musst - von der Finanzierung bis zum Notartermin. Link in Bio! 💪 #Immobilienkauf #Erstimmobilie #Beratung",
+      image: "/placeholder.jpg",
+      platforms: ["Facebook", "LinkedIn"],
+      engagement: {
+        likes: 89,
+        comments: 15,
+        shares: 12
+      }
+    },
+    message: "Super Artikel! Ich bin 28 und spare seit 2 Jahren für meine erste Wohnung. Habt ihr auch Tipps zur optimalen Eigenkapitalquote? Sind 20% wirklich ausreichend oder sollte man mehr ansparen?",
+    aiSuggestion: "Hallo Thomas! Vielen Dank für Ihr Interesse! 😊 20% Eigenkapital ist ein guter Richtwert, aber je mehr Sie mitbringen, desto bessere Konditionen erhalten Sie. Bei Ihrer Situation würde ich eine persönliche Beratung empfehlen - so können wir Ihre individuelle Finanzierungsstrategie besprechen. Möchten Sie einen kostenlosen Beratungstermin vereinbaren? 📞",
+    timestamp: "vor 32 Min",
+    priority: "medium",
+    status: "pending",
+    sentiment: "positive"
+  },
+  {
+    id: 3,
+    sender: "Lisa Schmidt",
+    avatar: "/placeholder-user.jpg",
+    platform: "instagram",
+    originalPost: {
+      id: "post-3",
+      title: "Moderne 3-Zimmer Wohnung in Schwabing",
+      content: "✨ NEU: Stilvolle 3-Zimmer Wohnung in Schwabing-West. 95m², Balkon, Einbauküche, Parkplatz. Perfekt für Paare oder kleine Familien. Bezugsfertig ab sofort! #Schwabing #München #Wohnung #Miete",
+      image: "/placeholder.jpg",
+      platforms: ["Instagram"],
+      engagement: {
+        likes: 54,
+        comments: 8,
+        shares: 3
+      }
+    },
+    message: "Hallo, die Wohnung sieht toll aus! Ist sie noch frei? Wir sind ein Paar ohne Kinder, beide berufstätig. Könnten wir uns bewerben?",
+    aiSuggestion: "Hallo Lisa! Schön, dass Ihnen die Wohnung gefällt! 😊 Sie ist tatsächlich noch verfügbar. Für eine Bewerbung senden Sie mir gerne per DM Ihre Unterlagen: Gehaltsnachweise, SCHUFA-Auskunft und eine kurze Selbstauskunft. Dann können wir zeitnah einen Besichtigungstermin vereinbaren! 🏠",
+    timestamp: "vor 1 Std",
+    priority: "high",
+    status: "pending",
+    sentiment: "positive"
+  },
+  {
+    id: 4,
+    sender: "Michael Klein",
+    avatar: "/placeholder-user.jpg",
+    platform: "linkedin",
+    originalPost: {
+      id: "post-4",
+      title: "Investition in Immobilien 2024 - Marktanalyse",
+      content: "📈 Immobilienmarkt 2024: Trotz steigender Zinsen bleiben Immobilien eine stabile Wertanlage. Unsere aktuelle Marktanalyse zeigt interessante Entwicklungen in verschiedenen Münchner Stadtteilen. Was denken Sie über die aktuellen Trends? #Immobilieninvestment #München #Marktanalyse",
+      image: "/placeholder.jpg",
+      platforms: ["LinkedIn", "Facebook"],
+      engagement: {
+        likes: 156,
+        comments: 31,
+        shares: 24
+      }
+    },
+    message: "Interessante Analyse! Ich überlege, in eine Anlageimmobilie zu investieren. Welche Stadtteile würden Sie aktuell für Buy-and-Hold Strategien empfehlen? Budget bis 800k.",
+    aiSuggestion: "Hallo Michael! Danke für Ihr Interesse! 🏘️ Mit einem Budget von 800k sind besonders Giesing, Sendling und Teile von Laim interessant - dort gibt es noch gute Renditemöglichkeiten bei solider Wertstabilität. Gerne bespreche ich mit Ihnen konkrete Objekte und Renditekalkulationen. Soll ich Ihnen unsere aktuelle Investoren-Objektliste zusenden? 📊",
+    timestamp: "vor 2 Std",
+    priority: "medium",
+    status: "pending",
+    sentiment: "positive"
+  },
+  {
+    id: 5,
+    sender: "Sarah Johnson",
+    avatar: "/placeholder-user.jpg",
+    platform: "facebook",
+    originalPost: {
+      id: "post-5",
+      title: "Hausverkauf leicht gemacht - Kostenlose Bewertung",
+      content: "🏠 Sie möchten Ihr Haus verkaufen? Wir bieten Ihnen eine kostenlose und unverbindliche Marktwertermittlung! Mit über 15 Jahren Erfahrung am Münchner Immobilienmarkt sorgen wir für den optimalen Verkaufspreis. Kontaktieren Sie uns! #Hausverkauf #Immobilienbewertung #München",
+      image: "/placeholder.jpg",
+      platforms: ["Facebook", "Instagram"],
+      engagement: {
+        likes: 72,
+        comments: 12,
+        shares: 6
+      }
+    },
+    message: "Wir denken über den Verkauf unseres Hauses nach. Es ist von 1995, Doppelhaushälfte in Garching. Wie läuft so eine Bewertung ab und was kostet sie wirklich? Haben etwas Bedenken wegen versteckter Kosten...",
+    aiSuggestion: "Hallo Sarah! Verstehe Ihre Bedenken völlig - Transparenz ist uns wichtig! 😊 Die Bewertung ist komplett kostenlos und unverbindlich. Ich komme vorbei, schaue mir Ihr Haus an (ca. 45 Min), analysiere Vergleichsobjekte und erstelle einen detaillierten Bericht. Keine versteckten Kosten, kein Kleingedrucktes. Erst wenn Sie sich für unsere Vermarktung entscheiden, entstehen Gebühren. Soll ich einen Termin vorschlagen? 📋",
+    timestamp: "vor 3 Std",
+    priority: "high",
+    status: "pending",
+    sentiment: "neutral"
+  },
+  {
+    id: 6,
+    sender: "Frank Richter",
+    avatar: "/placeholder-user.jpg",
+    platform: "instagram",
+    originalPost: {
+      id: "post-6",
+      title: "Luxus-Penthouse mit Dachterrasse in Maxvorstadt",
+      content: "🌟 EXKLUSIV: Spektakuläres Penthouse in der Maxvorstadt! 180m² Wohnfläche + 80m² Dachterrasse mit 360° München-Blick. Hochwertige Ausstattung, Smart Home, 2 Parkplätze. Ein Traum wird wahr! #Penthouse #München #Luxus #Maxvorstadt",
+      image: "/placeholder.jpg",
+      platforms: ["Instagram"],
+      engagement: {
+        likes: 234,
+        comments: 45,
+        shares: 18
+      }
+    },
+    message: "Das Penthouse ist der Wahnsinn! Aber ehrlich gesagt, bei den Preisen in München... ist das überhaupt noch bezahlbar für normale Menschen? Für wen ist so etwas gedacht?",
+    aiSuggestion: "Hallo Frank! Sie haben einen wichtigen Punkt angesprochen! 🤔 Solche Luxusobjekte richten sich tatsächlich an einen sehr speziellen Kundenkreis. Aber wir haben auch viele bezahlbare Alternativen im Portfolio! Falls Sie sich für den Münchner Markt interessieren, zeige ich Ihnen gerne Objekte in verschiedenen Preisklassen. Jeder verdient ein schönes Zuhause! 🏠 Was ist denn Ihr Budget-Rahmen?",
+    timestamp: "vor 4 Std",
+    priority: "low",
+    status: "pending",
+    sentiment: "neutral"
+  }
+]
 
 const platformIcons = {
   instagram: Instagram,
@@ -89,12 +243,14 @@ const sentimentIndicators = {
 }
 
 export function AIInteractions() {
+  const { user } = useAuth()
   const [autoReply, setAutoReply] = useState(true)
   const [interactions, setInteractions] = useState<Interaction[]>([])
   const [selectedFilter, setSelectedFilter] = useState("all")
   const [editingResponse, setEditingResponse] = useState<number | null>(null)
   const [customResponse, setCustomResponse] = useState("")
   const [isLoading, setIsLoading] = useState(true)
+  const [regeneratingResponse, setRegeneratingResponse] = useState<number | null>(null)
 
   // Load interactions from database (simulated for now)
   useEffect(() => {
@@ -103,7 +259,7 @@ export function AIInteractions() {
       // Simulate loading time
       await new Promise(resolve => setTimeout(resolve, 1000))
       // For now, set to empty array - will be replaced with real data service call
-      setInteractions([])
+      setInteractions(mockInteractions)
       setIsLoading(false)
     }
     loadInteractions()
@@ -140,6 +296,71 @@ export function AIInteractions() {
     setCustomResponse(currentResponse)
   }
 
+  // Regenerate AI response
+  const regenerateAIResponse = useCallback(async (interactionId: number) => {
+    const interaction = interactions.find(i => i.id === interactionId)
+    if (!interaction || !user) return
+
+    setRegeneratingResponse(interactionId)
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        throw new Error('Keine Authentifizierung gefunden')
+      }
+
+      const prompt = `Erstelle eine professionelle, freundliche Antwort auf diese Nachricht in einem Social Media Kontext für ein Immobilienunternehmen:
+
+Original Post: "${interaction.originalPost.title}"
+Post Inhalt: "${interaction.originalPost.content}"
+Plattform: ${interaction.platform}
+
+Kundenanfrage: "${interaction.message}"
+
+Bitte antworte professionell, hilfsbereit und führe den Kunden zu einer konkreten Aktion (Termin, DM, etc.). Verwende Emojis sparsam und angemessen. Halte die Antwort persönlich aber professionell.`
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          query: prompt
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Fehler beim Generieren der Antwort')
+      }
+
+      // Update the interaction with the new AI suggestion
+      setInteractions(prev => prev.map(item => 
+        item.id === interactionId 
+          ? { ...item, aiSuggestion: data.message }
+          : item
+      ))
+
+      toast({
+        title: "KI-Antwort neu generiert",
+        description: "Eine neue Antwort wurde erfolgreich erstellt.",
+      })
+
+    } catch (error) {
+      console.error('Error regenerating AI response:', error)
+      toast({
+        title: "Fehler",
+        description: "Die KI-Antwort konnte nicht neu generiert werden.",
+        variant: "destructive"
+      })
+    } finally {
+      setRegeneratingResponse(null)
+    }
+  }, [interactions, user])
+
   const filteredInteractions = interactions.filter(interaction => {
     if (selectedFilter === "all") return interaction.status === "pending"
     if (selectedFilter === "high") return interaction.priority === "high" && interaction.status === "pending"
@@ -159,12 +380,12 @@ export function AIInteractions() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Community Management</h1>
-              <p className="text-gray-600">Manage interactions with AI-powered responses</p>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">KI Community Management</h1>
+              <p className="text-gray-600">Verwalten Sie Interaktionen mit KI-gestützten Antworten</p>
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-700">Auto-Reply</span>
+                <span className="text-sm font-medium text-gray-700">Auto-Antwort</span>
                 <Switch 
                   checked={autoReply} 
                   onCheckedChange={setAutoReply} 
@@ -173,7 +394,7 @@ export function AIInteractions() {
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span>{filteredInteractions.length} pending</span>
+                <span>{filteredInteractions.length} ausstehend</span>
               </div>
             </div>
           </div>
@@ -182,9 +403,9 @@ export function AIInteractions() {
           <div className="flex items-center justify-center mb-6">
             <div className="flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-0.5">
               {[
-                { key: "all", label: "All Pending" },
-                { key: "high", label: "High Priority" },
-                { key: "positive", label: "Positive" }
+                { key: "all", label: "Alle Ausstehend" },
+                { key: "high", label: "Hohe Priorität" },
+                { key: "positive", label: "Positiv" }
               ].map((filter) => (
                 <button
                   key={filter.key}
@@ -304,9 +525,9 @@ export function AIInteractions() {
                             <div className="w-6 h-6 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full flex items-center justify-center">
                               <Sparkles className="w-3 h-3 text-white" />
                             </div>
-                            <span className="text-sm font-semibold text-teal-700">AI Suggested Response</span>
+                            <span className="text-sm font-semibold text-teal-700">KI-Vorschlag für Antwort</span>
                             <Badge className="bg-teal-100 text-teal-700 text-xs px-2 py-1 rounded-full">
-                              {interaction.sentiment === 'positive' ? 'Friendly' : 'Professional'}
+                              {interaction.sentiment === 'positive' ? 'Freundlich' : 'Professionell'}
                             </Badge>
                           </div>
                           
@@ -316,7 +537,7 @@ export function AIInteractions() {
                                 value={customResponse}
                                 onChange={(e) => setCustomResponse(e.target.value)}
                                 className="bg-white border-teal-200 rounded-xl resize-none min-h-[100px] focus:border-teal-300 focus:ring-teal-200"
-                                placeholder="Edit the AI response..."
+                                placeholder="Bearbeiten Sie die KI-Antwort..."
                               />
                               <div className="flex items-center gap-2">
                                 <Button 
@@ -324,14 +545,14 @@ export function AIInteractions() {
                                   className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white rounded-full text-sm px-6"
                                 >
                                   <Send className="w-4 h-4 mr-2" />
-                                  Send Response
+                                  Antwort Senden
                                 </Button>
                                 <Button 
                                   variant="outline" 
                                   onClick={() => setEditingResponse(null)}
                                   className="rounded-full text-sm px-6 border-gray-200"
                                 >
-                                  Cancel
+                                  Abbrechen
                                 </Button>
                               </div>
                             </div>
@@ -347,7 +568,7 @@ export function AIInteractions() {
                                   className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white rounded-full text-sm px-6"
                                 >
                                   <Send className="w-4 h-4 mr-2" />
-                                  Send & Confirm
+                                  Senden & Bestätigen
                                 </Button>
                                 <Button 
                                   variant="outline" 
@@ -355,7 +576,20 @@ export function AIInteractions() {
                                   className="rounded-full text-sm px-6 border-gray-200 hover:bg-gray-50"
                                 >
                                   <Edit className="w-4 h-4 mr-2" />
-                                  Edit
+                                  Bearbeiten
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  onClick={() => regenerateAIResponse(interaction.id)}
+                                  disabled={regeneratingResponse === interaction.id}
+                                  className="rounded-full text-sm px-6 border-blue-200 text-blue-600 hover:bg-blue-50"
+                                >
+                                  {regeneratingResponse === interaction.id ? (
+                                    <div className="w-4 h-4 mr-2 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <Sparkles className="w-4 h-4 mr-2" />
+                                  )}
+                                  {regeneratingResponse === interaction.id ? 'Generiert...' : 'Neu Generieren'}
                                 </Button>
                                 <Button 
                                   variant="ghost" 
@@ -363,7 +597,7 @@ export function AIInteractions() {
                                   className="rounded-full text-sm px-6 text-gray-600 hover:bg-gray-100"
                                 >
                                   <X className="w-4 h-4 mr-2" />
-                                  Dismiss
+                                  Ablehnen
                                 </Button>
                                 
                                 <DropdownMenu>
@@ -375,15 +609,15 @@ export function AIInteractions() {
                                   <DropdownMenuContent align="end" className="w-48 rounded-xl">
                                     <DropdownMenuItem onClick={() => handleApprove(interaction.id)}>
                                       <CheckCircle className="w-4 h-4 mr-2" />
-                                      Approve for Auto-Send
+                                      Für Auto-Senden genehmigen
                                     </DropdownMenuItem>
                                     <DropdownMenuItem>
                                       <Eye className="w-4 h-4 mr-2" />
-                                      View Original Thread
+                                      Original Thread ansehen
                                     </DropdownMenuItem>
                                     <DropdownMenuItem>
                                       <Reply className="w-4 h-4 mr-2" />
-                                      Create Follow-up
+                                      Follow-up erstellen
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -406,8 +640,8 @@ export function AIInteractions() {
             <div className="w-16 h-16 bg-gradient-to-r from-teal-500/10 to-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading interactions...</h3>
-            <p className="text-gray-600">Please wait while we fetch your pending interactions.</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Interaktionen werden geladen...</h3>
+            <p className="text-gray-600">Bitte warten Sie, während wir Ihre ausstehenden Interaktionen laden.</p>
           </div>
         )}
 
@@ -417,13 +651,13 @@ export function AIInteractions() {
             <div className="w-16 h-16 bg-gradient-to-r from-teal-500/10 to-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <MessageCircle className="w-8 h-8 text-teal-600" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">All caught up!</h3>
-            <p className="text-gray-600 mb-6">No pending interactions to review. When users engage with your posts, their comments and messages will appear here for AI-powered response suggestions.</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Alles erledigt!</h3>
+            <p className="text-gray-600 mb-6">Keine ausstehenden Interaktionen zu überprüfen. Wenn Nutzer mit Ihren Posts interagieren, erscheinen deren Kommentare und Nachrichten hier für KI-gestützte Antwortvorschläge.</p>
             <Button 
               variant="outline" 
               className="rounded-full border-gray-200 text-gray-600 hover:bg-gray-50"
             >
-              View All Interactions
+              Alle Interaktionen anzeigen
             </Button>
           </div>
         )}

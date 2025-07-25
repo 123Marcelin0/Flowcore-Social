@@ -11,6 +11,7 @@ CREATE TABLE chat_messages (
     conversation_id UUID NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant')),
     content TEXT NOT NULL,
+    embedding VECTOR(1536), -- OpenAI text-embedding-3-small embedding vector
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -21,6 +22,9 @@ CREATE INDEX idx_chat_messages_conversation_id ON chat_messages(conversation_id)
 CREATE INDEX idx_chat_messages_role ON chat_messages(role);
 CREATE INDEX idx_chat_messages_user_conversation ON chat_messages(user_id, conversation_id);
 CREATE INDEX idx_chat_messages_created_at ON chat_messages(created_at);
+
+-- Create vector similarity index for embedding search
+CREATE INDEX idx_chat_messages_embedding ON chat_messages USING ivfflat (embedding vector_cosine_ops);
 
 -- Create trigger for updating timestamps
 CREATE TRIGGER update_chat_messages_updated_at 
@@ -48,6 +52,7 @@ COMMENT ON TABLE chat_messages IS 'Stores chat messages for AI conversations wit
 COMMENT ON COLUMN chat_messages.conversation_id IS 'Groups messages into conversations';
 COMMENT ON COLUMN chat_messages.role IS 'Indicates if message is from user or assistant';
 COMMENT ON COLUMN chat_messages.content IS 'The actual message content';
+COMMENT ON COLUMN chat_messages.embedding IS 'OpenAI text embedding vector for semantic search';
 
 -- Grant necessary permissions
 GRANT ALL ON chat_messages TO authenticated;
@@ -80,6 +85,91 @@ BEGIN
         UPDATE posts SET content_text = content WHERE content_text IS NULL;
     END IF;
 END $$;
+
+-- Add embedding column to existing chat_messages table if it doesn't exist
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'chat_messages' AND column_name = 'embedding'
+    ) THEN
+        ALTER TABLE chat_messages ADD COLUMN embedding VECTOR(1536);
+        CREATE INDEX idx_chat_messages_embedding_fallback ON chat_messages USING ivfflat (embedding vector_cosine_ops);
+        COMMENT ON COLUMN chat_messages.embedding IS 'OpenAI text embedding vector for semantic search';
+    END IF;
+END $$;
+
+-- Create a function to search similar messages using embeddings
+CREATE OR REPLACE FUNCTION search_similar_messages(
+    user_uuid UUID,
+    query_embedding VECTOR(1536),
+    similarity_threshold FLOAT DEFAULT 0.8,
+    limit_count INTEGER DEFAULT 10
+)
+RETURNS TABLE(
+    id UUID,
+    conversation_id UUID,
+    role VARCHAR(20),
+    content TEXT,
+    similarity FLOAT,
+    created_at TIMESTAMP WITH TIME ZONE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id,
+        c.conversation_id,
+        c.role,
+        c.content,
+        (1 - (c.embedding <=> query_embedding)) AS similarity,
+        c.created_at
+    FROM chat_messages c
+    WHERE c.user_id = user_uuid 
+    AND c.embedding IS NOT NULL
+    AND (1 - (c.embedding <=> query_embedding)) > similarity_threshold
+    ORDER BY c.embedding <=> query_embedding ASC
+    LIMIT limit_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create a function to search similar posts using embeddings
+CREATE OR REPLACE FUNCTION search_similar_posts(
+    user_uuid UUID,
+    query_embedding VECTOR(1536),
+    similarity_threshold FLOAT DEFAULT 0.8,
+    limit_count INTEGER DEFAULT 10
+)
+RETURNS TABLE(
+    id UUID,
+    content TEXT,
+    content_text TEXT,
+    platforms TEXT[],
+    status VARCHAR(20),
+    likes INTEGER,
+    comments INTEGER,
+    similarity FLOAT,
+    created_at TIMESTAMP WITH TIME ZONE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.id,
+        p.content,
+        p.content_text,
+        p.platforms,
+        p.status,
+        p.likes,
+        p.comments,
+        (1 - (p.embedding <=> query_embedding)) AS similarity,
+        p.created_at
+    FROM posts p
+    WHERE p.user_id = user_uuid 
+    AND p.embedding IS NOT NULL
+    AND (1 - (p.embedding <=> query_embedding)) > similarity_threshold
+    ORDER BY p.embedding <=> query_embedding ASC
+    LIMIT limit_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Create a function to clean up old chat messages (optional)
 CREATE OR REPLACE FUNCTION cleanup_old_chat_messages()
@@ -135,5 +225,5 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER; 
 
 -- Test chat functionality
-node test-chat-functionality.js
-pnpm run dev
+-- node test-chat-functionality.js
+-- pnpm run dev

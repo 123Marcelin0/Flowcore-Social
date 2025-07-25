@@ -381,7 +381,7 @@ export function MonthlyCalendar({ events, onEventCreate, onEventUpdate, onEventD
                 value={newEvent.title || ""}
                 onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
                 className="mt-1"
-                placeholder="Enter event title"
+                placeholder="Veranstaltungstitel eingeben"
               />
             </div>
 
@@ -393,7 +393,7 @@ export function MonthlyCalendar({ events, onEventCreate, onEventUpdate, onEventD
                 onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
                 className="mt-1"
                 rows={3}
-                placeholder="Add event description (optional)"
+                placeholder="Veranstaltungsbeschreibung hinzufügen (optional)"
               />
             </div>
 

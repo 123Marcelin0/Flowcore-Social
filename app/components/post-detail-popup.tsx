@@ -184,6 +184,7 @@ interface Post {
   date: string
   likes?: number
   comments?: number
+  approved?: boolean
 }
 
 interface PostDetailPopupProps {
@@ -202,6 +203,33 @@ interface TimeInterval {
   endTime?: string
 }
 
+// Helper function to check if a date is in the past
+function isDateInPast(dateString: string): boolean {
+  const postDate = new Date(dateString);
+  const now = new Date();
+  
+  // If the date is invalid, consider it as past to be safe
+  if (isNaN(postDate.getTime())) {
+    return true;
+  }
+  
+  return postDate < now;
+}
+
+// Helper function to get the correct status for a post
+function getCorrectPostStatus(originalStatus: string, dateString: string): "scheduled" | "published" | "draft" | "failed" {
+  // Only check for past dates if the original status is scheduled
+  if (originalStatus === 'scheduled') {
+    // If the post date is in the past, it cannot be scheduled
+    if (isDateInPast(dateString)) {
+      return 'draft'; // Convert past scheduled posts to drafts
+    }
+  }
+  
+  // Return the original status for all other cases
+  return originalStatus as "scheduled" | "published" | "draft" | "failed";
+}
+
 export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDuplicate }: PostDetailPopupProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editedPost, setEditedPost] = useState<Post | null>(null)
@@ -217,7 +245,14 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
 
   useEffect(() => {
     if (post) {
-      setEditedPost({ ...post })
+      // Correct the post status if it's in the past
+      const correctedStatus = getCorrectPostStatus(post.status, post.date);
+      const correctedPost: Post = {
+        ...post,
+        status: correctedStatus
+      };
+      
+      setEditedPost(correctedPost)
       setIsEditing(false)
       setActiveTab('preview')
       
@@ -272,11 +307,20 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
         );
       }
 
+      // Determine the correct status - can only be scheduled if date is in the future
+      let newStatus: "scheduled" | "published" | "draft" | "failed" = editedPost.status;
+      if (selectedTime && scheduledDateTime > new Date()) {
+        newStatus = 'scheduled';
+      } else if (isDateInPast(scheduledDateTime.toISOString())) {
+        newStatus = 'draft'; // Force draft status for past dates
+        toast.warning('Posts können nicht für vergangene Zeiten geplant werden. Als Entwurf gespeichert.');
+      }
+
       // Update the post with all edited values
       const updatedPost = {
         ...editedPost,
         date: scheduledDateTime.toISOString(),
-        status: selectedTime ? 'scheduled' : editedPost.status
+        status: newStatus
       };
 
       // Update the local state immediately for better UX
@@ -285,7 +329,7 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
       onSave(updatedPost);
       setIsEditing(false);
       setActiveTab('preview');
-      toast.success('Post updated successfully!');
+      toast.success('Beitrag erfolgreich aktualisiert!');
     }
   }
 
@@ -347,11 +391,19 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
     // Update the interval state
     setSelectedInterval(interval);
     
+    // Determine correct status based on date
+    let newStatus: "scheduled" | "published" | "draft" | "failed" = editedPost.status;
+    if (selectedTime && scheduledDateTime > new Date()) {
+      newStatus = 'scheduled';
+    } else if (isDateInPast(scheduledDateTime.toISOString())) {
+      newStatus = 'draft';
+    }
+    
     // Immediately update the editedPost state so the header shows the new date
     setEditedPost({
       ...editedPost,
       date: scheduledDateTime.toISOString(),
-      status: selectedTime ? 'scheduled' : editedPost.status
+      status: newStatus
     });
     
     setIsCalendarOpen(false);
@@ -379,40 +431,66 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
     failed: "Fehlgeschlagen"
   }
 
+  // Get the corrected status for display
+  const displayStatus: "scheduled" | "published" | "draft" | "failed" = getCorrectPostStatus(editedPost?.status || post.status, editedPost?.date || post.date);
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl w-full h-[90vh] max-h-[900px] p-0 bg-white rounded-2xl border-0 shadow-2xl">
+        <DialogContent className="max-w-4xl w-full h-[85vh] max-h-[800px] p-0 bg-white rounded-2xl border-0 shadow-2xl overflow-hidden">
           <DialogHeader className="sr-only">
-            <DialogTitle>Post Details - {statusLabels[post.status]}</DialogTitle>
+            <DialogTitle>Post Details - {statusLabels[displayStatus]}</DialogTitle>
           </DialogHeader>
-          <div className="absolute right-4 top-2 z-50 flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-400">
-                  <MoreHorizontal className="w-4 h-4" />
+          
+          {/* Header with trash can and close button */}
+          <div className="absolute right-2 top-2 z-50 flex items-center gap-3">
+            <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-9 w-9 p-0 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors">
+                  <Trash2 className="w-4 h-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => onDuplicate(post)}>
-                  <Copy className="w-4 h-4 mr-2" />
-                  Duplizieren
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Share2 className="w-4 h-4 mr-2" />
-                  Teilen
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  className="text-red-600"
-                  onClick={() => setShowDeleteDialog(true)}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Löschen
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2">
+                    <Trash2 className="w-5 h-5 text-red-600" />
+                    Post dauerhaft löschen?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2">
+                    <div className="font-medium text-gray-900">
+                      ⚠️ Diese Aktion kann nicht rückgängig gemacht werden!
+                    </div>
+                    <div>
+                      {displayStatus === 'scheduled' && 'Der geplante Post wird nicht veröffentlicht und alle Zeitpläne werden entfernt.'}
+                      {displayStatus === 'draft' && 'Der Entwurf wird dauerhaft gelöscht und kann nicht wiederhergestellt werden.'}
+                      {displayStatus === 'published' && 'Der bereits veröffentlichte Post wird aus der Datenbank entfernt, bleibt aber auf den sozialen Medien sichtbar.'}
+                      {displayStatus === 'failed' && 'Der fehlgeschlagene Post wird dauerhaft aus der Liste entfernt.'}
+                    </div>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={handleDelete} 
+                    className="bg-red-600 hover:bg-red-700 focus:ring-red-500"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Endgültig löschen
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={onClose}
+              className="h-9 w-9 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full"
+            >
+              <X className="w-4 h-4" />
+            </Button>
           </div>
+          
           <div className="h-full flex">
             {/* Left side - Enhanced Media */}
             <div className="flex-1 bg-black rounded-l-2xl relative">
@@ -447,8 +525,8 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
             {/* Right side - Content */}
             <div className="w-96 flex flex-col bg-white rounded-r-2xl">
               {/* Header */}
-              <div className="p-4 border-b border-gray-100">
-                <div className="flex items-center justify-between">
+              <div className="p-4 border-b border-gray-100 flex-shrink-0">
+                <div className="flex items-center justify-between pr-20"> {/* Add right padding to avoid button overlap */}
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full flex items-center justify-center">
                       <Settings className="w-4 h-4 text-white" />
@@ -457,9 +535,9 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
                       <h3 className="font-semibold text-gray-900">Post Details</h3>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge 
-                          className={`${statusColors[editedPost?.status || post.status]} text-xs px-2 py-0.5 rounded-full border`}
+                          className={`${statusColors[displayStatus]} text-xs px-2 py-0.5 rounded-full border`}
                         >
-                          {statusLabels[editedPost?.status || post.status]}
+                          {statusLabels[displayStatus]}
                         </Badge>
                         <span className="text-xs text-gray-500">
                           {new Date(editedPost?.date || post.date).toLocaleString('de-DE', {
@@ -480,7 +558,7 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
                   {[
                     { id: 'preview', label: 'Vorschau', icon: Eye },
                     { id: 'edit', label: 'Bearbeiten', icon: Edit3 },
-                    { id: 'analytics', label: 'Statistiken', icon: BarChart3 }
+                    { id: 'analytics', label: 'Analytik', icon: BarChart3 }
                   ].map(({ id, label, icon: Icon }) => (
                     <button
                       key={id}
@@ -498,53 +576,59 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
                 </div>
               </div>
 
-              {/* Content Area */}
-              <div className="flex-1 overflow-hidden">
+              {/* Content Area with proper scrolling */}
+              <div className="flex-1 overflow-hidden flex flex-col">
                 {activeTab === 'preview' && (
-                  <div className="p-4 space-y-4">
-                    {/* Post Content */}
-                    <div className="space-y-3">
-                      <p className="text-gray-900 leading-relaxed">{post.text}</p>
-                      
-                      {/* Platforms */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-500">Plattformen:</span>
-                        <div className="flex gap-2">
-                          {post.platforms.map((platform) => {
-                            const Icon = platformIcons[platform]
-                            return (
-                              <div
-                                key={platform}
-                                className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center"
-                              >
-                                <Icon className="w-4 h-4 text-gray-600" />
-                              </div>
-                            )
-                          })}
+                  <div className="flex-1 flex flex-col">
+                    <ScrollArea className="flex-1">
+                      <div className="p-4 space-y-4">
+                        {/* Post Content with larger scroll container */}
+                        <div className="space-y-3">
+                          <div className="max-h-[300px] overflow-y-auto"> {/* Increased from 200px to 300px */}
+                            <p className="text-gray-900 leading-relaxed whitespace-pre-wrap break-words">{post.text}</p>
+                          </div>
+                          
+                          {/* Platforms */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-500">Plattformen:</span>
+                            <div className="flex gap-2">
+                              {post.platforms.map((platform) => {
+                                const Icon = platformIcons[platform]
+                                return (
+                                  <div
+                                    key={platform}
+                                    className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center"
+                                  >
+                                    <Icon className="w-4 h-4 text-gray-600" />
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Engagement */}
+                          {(post.likes !== undefined || post.comments !== undefined) && (
+                            <div className="flex items-center gap-6 pt-3 border-t border-gray-100">
+                              {post.likes !== undefined && (
+                                <div className="flex items-center gap-2">
+                                  <Heart className="w-5 h-5 text-red-500" />
+                                  <span className="text-sm font-medium">{post.likes}</span>
+                                </div>
+                              )}
+                              {post.comments !== undefined && (
+                                <div className="flex items-center gap-2">
+                                  <MessageCircle className="w-5 h-5 text-blue-500" />
+                                  <span className="text-sm font-medium">{post.comments}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
-
-                      {/* Engagement */}
-                      {(post.likes !== undefined || post.comments !== undefined) && (
-                        <div className="flex items-center gap-6 pt-3 border-t border-gray-100">
-                          {post.likes !== undefined && (
-                            <div className="flex items-center gap-2">
-                              <Heart className="w-5 h-5 text-red-500" />
-                              <span className="text-sm font-medium">{post.likes}</span>
-                            </div>
-                          )}
-                          {post.comments !== undefined && (
-                            <div className="flex items-center gap-2">
-                              <MessageCircle className="w-5 h-5 text-blue-500" />
-                              <span className="text-sm font-medium">{post.comments}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="space-y-2 pt-4 border-t border-gray-100">
+                    </ScrollArea>
+                    
+                    {/* Actions moved to bottom */}
+                    <div className="p-4 border-t border-gray-100 space-y-2 flex-shrink-0">
                       <Button 
                         className="w-full bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600"
                         onClick={() => setActiveTab('edit')}
@@ -553,15 +637,15 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
                         Bearbeiten
                       </Button>
                       
-                      {post.status === 'draft' && (
+                      {displayStatus === 'draft' && (
                         <Button variant="outline" className="w-full">
                           <Send className="w-4 h-4 mr-2" />
                           Jetzt veröffentlichen
                         </Button>
                       )}
                       
-                      {post.status === 'scheduled' && (
-                        <Button variant="outline" className="w-full">
+                      {displayStatus === 'scheduled' && (
+                        <Button variant="outline" className="w-full" onClick={() => setActiveTab('edit')}>
                           <Calendar className="w-4 h-4 mr-2" />
                           Zeitplan ändern
                         </Button>
@@ -571,175 +655,194 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
                 )}
 
                 {activeTab === 'edit' && (
-                  <div className="p-4 space-y-4">
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Post-Text
-                        </label>
-                        <Textarea
-                          value={editedPost.text}
-                          onChange={(e) => setEditedPost({...editedPost, text: e.target.value})}
-                          placeholder="Was möchtest du teilen?"
-                          className="min-h-[100px] resize-none"
-                        />
-                      </div>
+                  <div className="flex-1 flex flex-col">
+                    <ScrollArea className="flex-1">
+                      <div className="p-4 space-y-4">
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Post-Text
+                            </label>
+                            <Textarea
+                              value={editedPost.text}
+                              onChange={(e) => setEditedPost({...editedPost, text: e.target.value})}
+                              placeholder="Was möchtest du teilen?"
+                              className="min-h-[180px] max-h-[300px] resize-none" // Increased from 120px to 180px
+                            />
+                          </div>
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Plattformen
-                        </label>
-                        <div className="grid grid-cols-2 gap-3">
-                          {Object.entries(platformIcons).map(([platform, Icon]) => (
-                            <div
-                              key={platform}
-                              className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${
-                                editedPost.platforms.includes(platform as any)
-                                  ? 'border-teal-500 bg-teal-50'
-                                  : 'border-gray-200 hover:border-gray-300'
-                              }`}
-                              onClick={() => handlePlatformToggle(platform)}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Icon className="w-4 h-4" />
-                                <span className="text-sm font-medium capitalize">
-                                  {platform}
-                                </span>
-                              </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Plattformen
+                            </label>
+                            <div className="grid grid-cols-2 gap-3">
+                              {Object.entries(platformIcons).map(([platform, Icon]) => (
+                                <div
+                                  key={platform}
+                                  className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${
+                                    editedPost.platforms.includes(platform as any)
+                                      ? 'border-teal-500 bg-teal-50'
+                                      : 'border-gray-200 hover:border-gray-300'
+                                  }`}
+                                  onClick={() => handlePlatformToggle(platform)}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Icon className="w-4 h-4" />
+                                    <span className="text-sm font-medium capitalize">
+                                      {platform}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </div>
+                          </div>
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Zeitplan
-                        </label>
-                        <div className="space-y-2">
-                          <div className="flex gap-2">
-                            <div className="flex-1">
-                              <Button
-                                onClick={() => setIsCalendarOpen(true)}
-                                variant="outline"
-                                className="w-full justify-start border-gray-200 hover:border-teal-300"
-                              >
-                                <CalendarIcon className="w-4 h-4 mr-2 text-teal-600" />
-                                <span className="text-sm">
-                                  {selectedInterval.startDate.toLocaleDateString('de-DE')}
-                                </span>
-                              </Button>
-                            </div>
-                            <div className="w-24">
-                              <div className="relative">
-                                <Input
-                                  type="time"
-                                  value={selectedInterval.startTime || '09:00'}
-                                  onChange={(e) => {
-                                    const newTime = e.target.value;
-                                    const newInterval = {
-                                      ...selectedInterval,
-                                      startTime: newTime
-                                    };
-                                    setSelectedInterval(newInterval);
-                                    
-                                    // Immediately update the editedPost state so the header shows the new date
-                                    if (editedPost) {
-                                      const currentDate = selectedInterval.startDate;
-                                      const [timeHours, timeMinutes] = newTime.split(':').map(Number);
-                                      
-                                      // Create date in local timezone to maintain precision
-                                      const updatedDateTime = new Date(
-                                        currentDate.getFullYear(),
-                                        currentDate.getMonth(),
-                                        currentDate.getDate(),
-                                        timeHours,
-                                        timeMinutes,
-                                        0,
-                                        0
-                                      );
-                                      
-                                      setEditedPost({
-                                        ...editedPost,
-                                        date: updatedDateTime.toISOString(),
-                                        status: 'scheduled'
-                                      });
-                                    }
-                                  }}
-                                  className="w-full text-sm border-gray-200 hover:border-teal-300 focus:border-teal-500 focus:ring-teal-500"
-                                />
-                                <Clock className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Zeitplan
+                            </label>
+                            <div className="space-y-2">
+                              <div className="flex gap-2">
+                                <div className="flex-1">
+                                  <Button
+                                    onClick={() => setIsCalendarOpen(true)}
+                                    variant="outline"
+                                    className="w-full justify-start border-gray-200 hover:border-teal-300"
+                                  >
+                                    <CalendarIcon className="w-4 h-4 mr-2 text-teal-600" />
+                                    <span className="text-sm">
+                                      {selectedInterval.startDate.toLocaleDateString('de-DE')}
+                                    </span>
+                                  </Button>
+                                </div>
+                                <div className="w-24">
+                                  <div className="relative">
+                                    <Input
+                                      type="time"
+                                      value={selectedInterval.startTime || '09:00'}
+                                      onChange={(e) => {
+                                        const newTime = e.target.value;
+                                        const newInterval = {
+                                          ...selectedInterval,
+                                          startTime: newTime
+                                        };
+                                        setSelectedInterval(newInterval);
+                                        
+                                        // Immediately update the editedPost state so the header shows the new date
+                                        if (editedPost) {
+                                          const currentDate = selectedInterval.startDate;
+                                          const [timeHours, timeMinutes] = newTime.split(':').map(Number);
+                                          
+                                          // Create date in local timezone to maintain precision
+                                          const updatedDateTime = new Date(
+                                            currentDate.getFullYear(),
+                                            currentDate.getMonth(),
+                                            currentDate.getDate(),
+                                            timeHours,
+                                            timeMinutes,
+                                            0,
+                                            0
+                                          );
+                                          
+                                          // Determine correct status based on date
+                                          let newStatus: "scheduled" | "published" | "draft" | "failed" = editedPost.status;
+                                          if (updatedDateTime > new Date()) {
+                                            newStatus = 'scheduled';
+                                          } else {
+                                            newStatus = 'draft';
+                                          }
+                                          
+                                          setEditedPost({
+                                            ...editedPost,
+                                            date: updatedDateTime.toISOString(),
+                                            status: newStatus
+                                          });
+                                        }
+                                      }}
+                                      className="w-full text-sm border-gray-200 hover:border-teal-300 focus:border-teal-500 focus:ring-teal-500"
+                                    />
+                                    <Clock className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                  </div>
+                                </div>
                               </div>
+                              {isDateInPast(editedPost.date) && (
+                                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded-md">
+                                  ⚠️ Datum liegt in der Vergangenheit. Post wird als Entwurf gespeichert.
+                                </p>
+                              )}
                             </div>
                           </div>
                         </div>
                       </div>
-
-                      {/* Save Button */}
-                      <div className="flex gap-2 pt-4 border-t border-gray-100">
-                        <Button 
-                          onClick={handleSave}
-                          className="flex-1 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600"
-                        >
-                          <Check className="w-4 h-4 mr-2" />
-                          Speichern
-                        </Button>
-                        <Button 
-                          variant="outline"
-                          onClick={() => setActiveTab('preview')}
-                          className="flex-1"
-                        >
-                          Abbrechen
-                        </Button>
-                      </div>
+                    </ScrollArea>
+                    
+                    {/* Save Button moved to bottom */}
+                    <div className="p-4 border-t border-gray-100 flex gap-2 flex-shrink-0">
+                      <Button 
+                        onClick={handleSave}
+                        className="flex-1 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600"
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        Speichern
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => setActiveTab('preview')}
+                        className="flex-1"
+                      >
+                        Abbrechen
+                      </Button>
                     </div>
                   </div>
                 )}
 
                 {activeTab === 'analytics' && (
-                  <div className="p-4 space-y-4">
-                    <div className="text-center py-8">
-                      <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                        Statistiken
-                      </h3>
-                      <p className="text-sm text-gray-500 mb-4">
-                        Detaillierte Analyse der Post-Performance
-                      </p>
-                      
-                      {post.status === 'published' && (
-                        <div className="grid grid-cols-2 gap-4 mt-6">
-                          <div className="bg-red-50 p-4 rounded-lg">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Heart className="w-5 h-5 text-red-500" />
-                              <span className="text-sm font-medium">Likes</span>
-                            </div>
-                            <div className="text-2xl font-bold text-red-600">
-                              {post.likes || 0}
-                            </div>
-                          </div>
-                          <div className="bg-blue-50 p-4 rounded-lg">
-                            <div className="flex items-center gap-2 mb-2">
-                              <MessageCircle className="w-5 h-5 text-blue-500" />
-                              <span className="text-sm font-medium">Kommentare</span>
-                            </div>
-                            <div className="text-2xl font-bold text-blue-600">
-                              {post.comments || 0}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {post.status !== 'published' && (
-                        <p className="text-sm text-gray-400 mt-4">
-                          Statistiken werden nach der Veröffentlichung verfügbar sein.
+                  <ScrollArea className="flex-1">
+                    <div className="p-4 space-y-4">
+                      <div className="text-center py-8">
+                        <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                          Statistiken
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-4">
+                          Detaillierte Analyse der Post-Performance
                         </p>
-                      )}
+                        
+                        {displayStatus === 'published' && (
+                          <div className="grid grid-cols-2 gap-4 mt-6">
+                            <div className="bg-red-50 p-4 rounded-lg">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Heart className="w-5 h-5 text-red-500" />
+                                <span className="text-sm font-medium">Likes</span>
+                              </div>
+                              <div className="text-2xl font-bold text-red-600">
+                                {post.likes || 0}
+                              </div>
+                            </div>
+                            <div className="bg-blue-50 p-4 rounded-lg">
+                              <div className="flex items-center gap-2 mb-2">
+                                <MessageCircle className="w-5 h-5 text-blue-500" />
+                                <span className="text-sm font-medium">Kommentare</span>
+                              </div>
+                              <div className="text-2xl font-bold text-blue-600">
+                                {post.comments || 0}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {displayStatus !== 'published' && (
+                          <p className="text-sm text-gray-400 mt-4">
+                            Statistiken werden nach der Veröffentlichung verfügbar sein.
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </ScrollArea>
                 )}
               </div>
             </div>
-                      </div>
+          </div>
             
           {/* Calendar Popup */}
           <CalendarPopup
@@ -750,30 +853,8 @@ export function PostDetailPopup({ post, isOpen, onClose, onSave, onDelete, onDup
             onConfirm={handleScheduleTimeSelect}
             onClose={() => setIsCalendarOpen(false)}
           />
-          </DialogContent>
-        </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Möchten Sie diesen Post wirklich löschen?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Diese Aktion kann nicht rückgängig gemacht werden. 
-              {post.status === 'scheduled' && ' Der geplante Post wird nicht veröffentlicht und alle Zeitpläne werden entfernt.'}
-              {post.status === 'draft' && ' Der Entwurf wird dauerhaft gelöscht und kann nicht wiederhergestellt werden.'}
-              {post.status === 'published' && ' Der bereits veröffentlichte Post wird aus der Datenbank entfernt, bleibt aber auf den sozialen Medien sichtbar.'}
-              {post.status === 'failed' && ' Der fehlgeschlagene Post wird dauerhaft aus der Liste entfernt.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setShowDeleteDialog(false)}>Abbrechen</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700 focus:ring-red-500">
-              Endgültig löschen
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </DialogContent>
+      </Dialog>
     </>
   )
 } 
