@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Edit, Instagram, Facebook, Twitter, Linkedin, Video, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Eye, Heart, MessageCircle, Share2, Move, Loader2, Brain, Sparkles, Zap, ArrowLeft, Calendar, List, Lightbulb } from "lucide-react"
+import { Plus, Edit, Instagram, Facebook, Twitter, Linkedin, Video, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Eye, Heart, MessageCircle, Share2, Move, Loader2, Brain, Sparkles, Zap, ArrowLeft, Calendar, List, Lightbulb, AlertCircle } from "lucide-react"
 import { MonthlyCalendar } from "@/components/calendar/monthly-calendar"
 import type { CalendarEvent } from "@/components/calendar/event-card"
 import { AIPostWorkflow } from "./ai-post-workflow"
@@ -1404,6 +1404,17 @@ export function ContentHub() {
               ))}
             </div>
           </div>
+
+          {/* Notice Section */}
+          {aiPlanData.notice && (
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600" />
+                <span className="text-sm text-amber-800 font-medium">Hinweis</span>
+              </div>
+              <p className="text-sm text-amber-700 mt-1">{aiPlanData.notice}</p>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3 mt-6 pt-4 border-t">
