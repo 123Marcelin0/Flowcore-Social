@@ -1306,6 +1306,134 @@ export function ContentHub() {
     )
   }
 
+  // Add new component for AI plan preview
+  const renderAIPlanPreview = () => {
+    if (!aiPlanData || !aiPlanData.postingPlan) return null
+
+    return (
+      <div className="mb-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 shadow-sm">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
+                <Brain className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">KI-Posting-Plan</h3>
+                <p className="text-sm text-gray-600">{aiPlanData.postsGenerated} Entwürfe für {aiPlanData.targetMonth}</p>
+              </div>
+            </div>
+            <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+              Neu generiert
+            </Badge>
+          </div>
+
+          {/* AI Analysis Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white/60 rounded-lg p-4 border">
+              <div className="text-2xl font-bold text-purple-600">{aiPlanData.analysisData.existingPosts}</div>
+              <div className="text-sm text-gray-600">Analysierte Posts</div>
+            </div>
+            <div className="bg-white/60 rounded-lg p-4 border">
+              <div className="text-2xl font-bold text-indigo-600">{aiPlanData.analysisData.availableIdeas}</div>
+              <div className="text-sm text-gray-600">Verwendete Ideen</div>
+            </div>
+            <div className="bg-white/60 rounded-lg p-4 border">
+              <div className="text-2xl font-bold text-teal-600">{aiPlanData.analysisData.drafts}</div>
+              <div className="text-sm text-gray-600">Integrierte Entwürfe</div>
+            </div>
+          </div>
+
+          {/* Post Examples Preview */}
+          <div className="space-y-4">
+            <h4 className="font-medium text-gray-900 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-500" />
+              Generierte Post-Beispiele
+            </h4>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-80 overflow-y-auto">
+              {aiPlanData.postingPlan.slice(0, 6).map((post: any, index: number) => (
+                <div key={index} className="bg-white rounded-lg p-4 border shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h5 className="font-medium text-gray-900 text-sm">{post.title}</h5>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge 
+                          variant="outline" 
+                          className={`text-xs ${
+                            post.category === 'fresh' ? 'border-green-200 text-green-700' :
+                            post.category === 'idea' ? 'border-blue-200 text-blue-700' :
+                            'border-orange-200 text-orange-700'
+                          }`}
+                        >
+                          {post.category === 'fresh' ? '✨ Neu' : 
+                           post.category === 'idea' ? '💡 Idee' : '📝 Entwurf'}
+                        </Badge>
+                        <span className="text-xs text-gray-500">Tag {post.day}</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {post.bestTime}
+                    </div>
+                  </div>
+                  
+                  <p className="text-sm text-gray-600 line-clamp-3 mb-3">
+                    {post.content}
+                  </p>
+                  
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {post.platforms.map((platform: string) => (
+                      <Badge key={platform} variant="secondary" className="text-xs">
+                        {platform}
+                      </Badge>
+                    ))}
+                  </div>
+                  
+                  {/* Performance Predictions */}
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+                    <div className="text-center">
+                      <div className="text-xs font-medium text-green-600">Reichweite</div>
+                      <div className="text-sm font-bold">{post.estimatedReach || '2.1K'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs font-medium text-blue-600">Engagement</div>
+                      <div className="text-sm font-bold">{post.estimatedEngagement || '8.5'}%</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-3 mt-6 pt-4 border-t">
+            <Button
+              onClick={() => {
+                setSelectedView("grid")
+                // Filter to show only AI-generated drafts
+                // This will be handled by the existing post filtering
+              }}
+              className="bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600"
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              Alle Entwürfe anzeigen
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAIPlanningMode(false)
+                setAiPlanData(null)
+              }}
+              className="border-purple-200 text-purple-700 hover:bg-purple-50"
+            >
+              Plan schließen
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-full w-full bg-gray-50/50 overflow-y-auto">
       {/* Top Header Section */}
@@ -1426,6 +1554,9 @@ export function ContentHub() {
             </div>
           </div>
         </div>
+
+        {/* AI Planning Preview */}
+        {isAIPlanningMode && renderAIPlanPreview()}
 
         {/* Content Area */}
         <div className="space-y-6">
