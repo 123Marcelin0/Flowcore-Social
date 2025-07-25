@@ -76,8 +76,13 @@ export default function LoginPage() {
               </div>
             </div>
             
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent mb-2">
-              Social Media Pro
+            <h1 className="mb-2">
+              <span className="font-medium text-transparent bg-clip-text bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-3xl tracking-tight" style={{ fontFamily: 'Circular, Helvetica Neue, Arial, sans-serif' }}>
+                flowcore
+              </span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-cyan-500 to-teal-500 font-medium text-2xl tracking-tight ml-1" style={{ fontFamily: 'Circular, Helvetica Neue, Arial, sans-serif' }}>
+                social
+              </span>
             </h1>
             <p className="text-gray-400 text-sm font-medium tracking-wide">
               Professionelle Social Media Verwaltung
