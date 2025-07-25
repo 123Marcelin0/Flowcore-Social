@@ -318,13 +318,13 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
       context.userPreferences = userPreferences;
     }
 
-    // 5. Enhanced conversation history with semantic search
+    // 5. Enhanced conversation history with semantic search for photographic memory
     const { data: chatHistory } = await supabase
       .from('chat_messages')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(30); // Increased for better context
+      .limit(50); // Increased for photographic memory capability
 
     if (chatHistory) {
       context.conversationHistory = chatHistory.reverse();
@@ -378,15 +378,15 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
 }
 
 // Helper function to calculate recent engagement trend
-function calculateRecentTrend(posts) {
+function calculateRecentTrend(posts: any[]): string {
   if (posts.length < 4) return 'insufficient_data';
   
   const recent = posts.slice(0, Math.floor(posts.length / 2));
   const older = posts.slice(Math.floor(posts.length / 2));
   
-  const recentAvg = recent.reduce((sum, p) => 
+  const recentAvg = recent.reduce((sum: number, p: any) => 
     sum + (p.likes || 0) + (p.comments_count || 0), 0) / recent.length;
-  const olderAvg = older.reduce((sum, p) => 
+  const olderAvg = older.reduce((sum: number, p: any) => 
     sum + (p.likes || 0) + (p.comments_count || 0), 0) / older.length;
   
   const change = ((recentAvg - olderAvg) / olderAvg) * 100;
@@ -397,15 +397,15 @@ function calculateRecentTrend(posts) {
 }
 
 // Helper function to analyze content types
-function analyzeContentTypes(posts) {
-  const types = {
+function analyzeContentTypes(posts: any[]): Record<string, number> {
+  const types: Record<string, number> = {
     text: 0,
     image: 0,
     video: 0,
     carousel: 0
   };
   
-  posts.forEach(post => {
+  posts.forEach((post: any) => {
     const type = post.media_type || 'text';
     if (types.hasOwnProperty(type)) {
       types[type]++;
@@ -416,7 +416,7 @@ function analyzeContentTypes(posts) {
 }
 
 // Helper function to get domain-relevant trending topics
-async function getTrendingTopics(domain) {
+async function getTrendingTopics(domain: string): Promise<any[]> {
   const topics = {
     immobilien: [
       { topic: 'Smart Home Technologie', engagement: 'high', relevance: 'technology' },
@@ -432,12 +432,20 @@ async function getTrendingTopics(domain) {
     ]
   };
   
-  return topics[domain.toLowerCase()] || topics.general;
+  return topics[domain.toLowerCase() as keyof typeof topics] || topics.general;
 }
 
 // Build comprehensive context string for AI with enhanced user knowledge
 function buildContextString(context: any, query: string) {
   let contextString = '';
+
+  // User Identity and Personalization Context - First Priority
+  if (context.userProfile?.full_name) {
+    contextString += `[🏡 BENUTZER-IDENTITÄT]\n`;
+    contextString += `Name: ${context.userProfile.full_name}\n`;
+    contextString += `Du kennst diesen Benutzer persönlich und sprichst ihn direkt an.\n`;
+    contextString += `Sei vertraut, freundlich und persönlich in deinen Antworten.\n\n`;
+  }
 
   // Check if query is post-related
   const postRelatedKeywords = [
@@ -629,15 +637,35 @@ function buildContextString(context: any, query: string) {
     contextString += '\n';
   }
 
-  // Conversation History
+  // Enhanced Conversation History - Critical for Memory
   if (context.conversationHistory.length > 0) {
-    contextString += `[CONVERSATION HISTORY - Last 20 Messages]\n`;
+    contextString += `[🧠 CONVERSATION MEMORY - VOLLSTÄNDIGER GESPRÄCHSVERLAUF]\n`;
+    contextString += `WICHTIG: Diese gesamte Gesprächshistorie ist dein fotografisches Gedächtnis.\n`;
+    contextString += `Beziehe dich auf vergangene Gespräche, erwähne Details und baue darauf auf.\n\n`;
+    
     context.conversationHistory.forEach((msg: any, index: number) => {
-      const role = msg.role === 'user' ? 'Du' : 'AI Assistant';
-      const date = new Date(msg.created_at).toLocaleString('de-DE');
-      contextString += `${index + 1}. [${date}] ${role}: ${msg.content}\n`;
+      const role = msg.role === 'user' ? '👤 BENUTZER' : '🤖 DU (AI Assistant)';
+      const date = new Date(msg.created_at).toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      contextString += `${index + 1}. [${date}] ${role}:\n`;
+      contextString += `   ${msg.content}\n\n`;
     });
-    contextString += '\n';
+    
+    if (context.conversationHistory.length > 1) {
+      contextString += `📋 MEMORY-HINWEISE:\n`;
+      contextString += `- Du kennst diese gesamte Unterhaltung auswendig\n`;
+      contextString += `- Beziehe dich auf frühere Punkte und Vereinbarungen\n`;
+      contextString += `- Erkenne Fortschritte und Entwicklungen\n`;
+      contextString += `- Baue persönliche Beziehung basierend auf Historie auf\n\n`;
+    }
+  } else {
+    contextString += `[🧠 CONVERSATION MEMORY]\n`;
+    contextString += `Dies ist unser erstes Gespräch. Lerne den Benutzer kennen und beginne die Gedächtnisbildung.\n\n`;
   }
 
   // User Preferences
@@ -784,42 +812,67 @@ export async function POST(request: NextRequest) {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content: `Du bist ein hochintelligenter Social Media & Content Marketing Analyst und vielseitiger Assistent.
+        content: `Du bist der perfekte Social Media Manager und persönliche Assistent für einen Immobilienmakler. Du hast ein fotografisches Gedächtnis und erinnerst dich an JEDES Detail aus allen vorherigen Gesprächen und Posts des Benutzers.
 
-🎯 **DEINE FÄHIGKEITEN:**
+🧠 **DEINE KERNFÄHIGKEITEN:**
 
-**👤 BENUTZER-PERSONALISIERUNG:**
-- Vollständiges User Profile (Name, Expertise, Erfahrung)
-- User Strategy Profile (Zielgruppe, Region, Positionierung, USPs)
-- User Preferences und Ziele
+**📚 VOLLSTÄNDIGES GEDÄCHTNIS:**
+- Du erinnerst dich an alle vorherigen Gespräche, Posts, Präferenzen und Verhaltensmuster des Benutzers
+- Du kennst die Performance-Historie, erfolgreiche Content-Typen und Engagement-Muster
+- Du behältst alle persönlichen Details, Ziele und Herausforderungen im Gedächtnis
+- Du baust kontinuierlich auf dem gesamten Gesprächsverlauf auf
 
-**📈 SOCIAL MEDIA EXPERTISE (wenn relevant):**
-- Performance Analytics und Engagement-Metriken
-- Platform-spezifische Optimierung
-- Content-Strategie und Timing
-- Hashtag- und Zielgruppen-Analyse
+**🎯 KONTEXTUELLE INTELLIGENZ:**
+- Du verstehst den vollständigen Kontext aller verfügbaren Daten
+- Du erkennst Zusammenhänge zwischen Posts, Performance und Nutzerverhalten
+- Du nutzt Gesprächshistorie, um personalisierte Empfehlungen zu geben
+- Du beziehst dich auf frühere Gespräche und Vereinbarungen
 
-**🧠 ALLGEMEINE BERATUNG:**
-- Immobilien-Fachwissen und Marktkenntnis
-- Business-Strategie und Marketing
-- Allgemeine Fragen und Hilfestellung
-- Conversation Memory für personalisierte Antworten
+**👥 PERSÖNLICHER ASSISTENT:**
+- Du kennst den Benutzer wie ein guter Freund und berätst ihn entsprechend
+- Du sprichst vertraut und persönlich, basierend auf eurer gemeinsamen Geschichte
+- Du verstehst die individuellen Ziele, Herausforderungen und Arbeitsweise
+- Du bietest maßgeschneiderte Unterstützung basierend auf der Beziehung
 
-**💬 ANTWORT-PRINZIPIEN:**
-- **Kontextbewusst**: Erkenne, worum es in der Frage geht
-- **Personalisiert**: Nutze verfügbare Benutzerdaten wo relevant
-- **Präzise**: Beantworte nur das, was gefragt wurde
-- **Hilfreich**: Biete konkrete, umsetzbare Unterstützung
-- **Ehrlich**: Sage, wenn du keine Daten hast, aber biete trotzdem Hilfe
+**🚀 PROAKTIVE HILFE:**
+- Du erkennst Muster in Posts, Performance und Verhalten
+- Du schlägst proaktiv Verbesserungen vor, basierend auf der Analyse
+- Du antizipierst Bedürfnisse basierend auf dem Gesprächsverlauf
+- Du erinnerst an wichtige Follow-ups und vergangene Empfehlungen
+
+**📊 DATENBASIERTE ANALYSE:**
+- Nutze IMMER die bereitgestellten echten Daten aus der Supabase-Datenbank
+- Analysiere tatsächliche Post-Performance, Engagement-Metriken und Trends
+- Beziehe dich auf konkrete Zahlen und Fakten aus der Nutzerhistorie
+- Vermeide Halluzinationen - nutze nur verfügbare Daten
+
+**💬 KOMMUNIKATIONSSTIL:**
+- Sei persönlich und freundlich wie ein guter Freund
+- Verwende Details aus früheren Gesprächen
+- Sprich über gemeinsame Erfahrungen und Fortschritte
+- Bleibe professionell aber warmherzig und vertraut
 
 **⚠️ WICHTIGE REGELN:**
-- Antworte NUR auf die gestellte Frage
-- Nutze bereitgestellte Daten nur wenn sie relevant sind
-- Bei Post/Performance-Fragen: Verwende nur echte Metriken
-- Bei allgemeinen Fragen: Fokussiere auf die Frage, nicht auf Posts
-- NIEMALS Daten erfinden oder halluzinieren
+- Verwende IMMER den bereitgestellten Kontext und die verfügbaren Daten
+- Baue auf vorherigen Gesprächen auf und erwähne relevante Details
+- Analysiere Muster in der bereitgestellten Nutzerhistorie
+- Sei proaktiv und schlage Verbesserungen vor
+- Kommuniziere ausschließlich auf Deutsch
+- Ende JEDE Antwort mit konkreten nächsten Schritten
 
-Du bist ein vielseitiger, intelligenter Assistent - nutze dein Wissen situationsangemessen!`,
+**📋 ANTWORT-FORMAT:**
+- Beantworte die Frage persönlich und kontextuell
+- Nutze Daten und Erkenntnisse aus der Nutzerhistorie
+- Erkenne und erwähne Muster oder Trends
+- Gib praktische, umsetzbare Empfehlungen
+
+**Ende JEDE Antwort mit:**
+Nächste Schritte:
+- Konkreter Aktionspunkt 1
+- Konkreter Aktionspunkt 2
+- Konkreter Aktionspunkt 3
+
+Du bist mehr als ein Assistent - du bist ein vertrauter Partner im Social Media Erfolg!`,
       },
       {
         role: 'user',
@@ -846,14 +899,19 @@ Du bist ein vielseitiger, intelligenter Assistent - nutze dein Wissen situations
       // Provide a helpful fallback response instead of an error
       const fallbackResponse = `Entschuldigung, ich konnte keine spezifische Antwort auf Ihre Frage generieren. 
 
-**Hier sind einige Bereiche, in denen ich Ihnen helfen kann:**
+Als Ihr persönlicher Social Media Assistent stehe ich Ihnen in vielen Bereichen zur Verfügung:
 
-• **Content-Analyse** - Bewertung Ihrer bestperformenden Posts
-• **Content-Ideen** - Neue Vorschläge basierend auf Ihren Daten  
-• **Strategie-Optimierung** - Verbesserung Ihrer Social Media Performance
-• **Hashtag-Empfehlungen** - Relevante Tags für bessere Reichweite
+**📊 Content-Analyse** - Bewertung Ihrer bestperformenden Posts
+**💡 Content-Ideen** - Neue Vorschläge basierend auf Ihren Daten  
+**🚀 Strategie-Optimierung** - Verbesserung Ihrer Social Media Performance
+**#️⃣ Hashtag-Empfehlungen** - Relevante Tags für bessere Reichweite
 
-Können Sie Ihre Frage spezifischer formulieren oder einen dieser Bereiche wählen?`;
+Können Sie Ihre Frage spezifischer formulieren oder einen dieser Bereiche wählen?
+
+**Nächste Schritte:**
+- Frage präziser formulieren oder einen der obigen Bereiche wählen
+- Mir mitteilen, womit ich Ihnen konkret helfen kann
+- Bei spezifischen Posts oder Problemen - Details nennen`;
 
       const aiResponse = {
         success: true,
