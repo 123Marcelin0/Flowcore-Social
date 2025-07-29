@@ -12,7 +12,6 @@ import {
 import { Separator } from "@/components/ui/separator"
 import {
   Home,
-  FileText,
   MessageSquare,
   Lightbulb,
   Settings,
@@ -24,10 +23,12 @@ import {
   LogOut,
   Mail,
   Shield,
+  Sparkles,
+  Calendar
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 
-type Section = "dashboard" | "content" | "interactions" | "ideas" | "settings"
+type Section = "dashboard" | "calendar" | "ai-studio" | "interactions" | "ideas" | "settings"
 
 interface AppSidebarProps {
   activeSection: Section
@@ -40,8 +41,9 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
 
   const menuItems = [
     { id: "dashboard" as Section, label: "Dashboard", icon: Home },
-    { id: "content" as Section, label: "Content Hub", icon: FileText },
-    { id: "interactions" as Section, label: "KI-Interaktionen", icon: MessageSquare },
+    { id: "calendar" as Section, label: "Calendar", icon: Calendar },
+    { id: "ai-studio" as Section, label: "AI Studio", icon: Sparkles },
+    { id: "interactions" as Section, label: "AI Assistant", icon: MessageSquare },
     { id: "ideas" as Section, label: "Content-Ideen", icon: Lightbulb },
     { id: "settings" as Section, label: "Einstellungen", icon: Settings },
   ]

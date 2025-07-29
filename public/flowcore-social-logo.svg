@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="300" height="100" viewBox="0 0 300 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- White background -->
+  <rect width="300" height="100" fill="white"/>
+  
+  <!-- Define gradients -->
+  <defs>
+    <!-- Red gradient for "flowcore" -->
+    <linearGradient id="redGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#dc2626;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#ea580c;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f97316;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Blue/Teal gradient for "social" -->
+    <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#06b6d4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#14b8a6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Text elements -->
+  <text x="20" y="60" 
+        font-family="Circular, Helvetica Neue, Arial, sans-serif" 
+        font-weight="500" 
+        font-size="32" 
+        letter-spacing="-0.025em"
+        fill="url(#redGradient)">flowcore</text>
+  
+  <text x="185" y="60" 
+        font-family="Circular, Helvetica Neue, Arial, sans-serif" 
+        font-weight="500" 
+        font-size="24" 
+        letter-spacing="-0.025em"
+        fill="url(#blueGradient)">social</text>
+</svg> 

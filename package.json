@@ -9,7 +9,12 @@
     "start": "next start",
     "start-alt": "next start -p 3001",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "db:migrate": "psql $DATABASE_URL -f",
+    "db:migrate:01": "psql $DATABASE_URL -f database/migration_01_posts_normalization.sql",
+    "db:migrate:02": "psql $DATABASE_URL -f database/migration_02_unified_metrics_embeddings.sql",
+    "db:migrate:03": "psql $DATABASE_URL -f database/migration_03_organizations_ai_context.sql",
+    "db:migrate:04": "psql $DATABASE_URL -f database/migration_04_cleanup_consolidation.sql"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

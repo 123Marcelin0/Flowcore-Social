@@ -28,7 +28,9 @@ import {
   X,
   Bot,
   Calendar as CalendarIcon,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -321,6 +323,10 @@ export const DashboardOverview = memo(function DashboardOverview() {
   const [isPostDetailOpen, setIsPostDetailOpen] = useState(false)
   const [showTimeoutMessage, setShowTimeoutMessage] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const [postsPerPage] = useState(16) // Optimal number for 4x4 grid
 
   // Show timeout message after 10 seconds of loading
   useEffect(() => {
@@ -437,6 +443,40 @@ export const DashboardOverview = memo(function DashboardOverview() {
     })
   }, [posts, selectedPlatforms, selectedStatus, selectedInterval, dateState.currentDate])
 
+  // Paginated posts
+  const paginatedPosts = useMemo(() => {
+    const startIndex = (currentPage - 1) * postsPerPage
+    const endIndex = startIndex + postsPerPage
+    return filteredPosts.slice(startIndex, endIndex)
+  }, [filteredPosts, currentPage, postsPerPage])
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredPosts.length / postsPerPage)
+  const hasNextPage = currentPage < totalPages
+  const hasPrevPage = currentPage > 1
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedPlatforms, selectedStatus, selectedInterval])
+
+  // Pagination handlers
+  const handleNextPage = useCallback(() => {
+    if (hasNextPage) {
+      setCurrentPage(prev => prev + 1)
+    }
+  }, [hasNextPage])
+
+  const handlePrevPage = useCallback(() => {
+    if (hasPrevPage) {
+      setCurrentPage(prev => prev - 1)
+    }
+  }, [hasPrevPage])
+
+  const handlePageClick = useCallback((page: number) => {
+    setCurrentPage(page)
+  }, [])
+
   // Will add empty state check later after functions are defined
 
   const scrollToBottom = useCallback(() => {
@@ -467,32 +507,11 @@ export const DashboardOverview = memo(function DashboardOverview() {
     setIsAiChatOpen(!isAiChatOpen)
   }, [isAiChatOpen])
 
-  // Generate initial large suggestions for empty chat
-  const getInitialSuggestions = useCallback(() => {
-    const hasDrafts = filteredPosts.filter(p => p.status === 'draft').length > 0
-    const hasScheduled = filteredPosts.filter(p => p.status === 'scheduled').length > 0
-    
-    const suggestions: Array<{ id: string; text: string; icon: string }> = [
-      { id: 'analyze-performance', text: 'Post-Performance analysieren', icon: '📊' },
-      { id: 'content-ideas', text: 'Content-Ideen generieren', icon: '💡' },
-      { id: 'schedule-help', text: 'Posting-Zeiten optimieren', icon: '📅' }
-    ]
 
-    if (hasDrafts || hasScheduled) {
-      const totalContent = Number(hasDrafts) + Number(hasScheduled)
-      suggestions.push({ 
-        id: 'review-content', 
-        text: `${totalContent} Inhalte verwalten`, 
-        icon: '📝' 
-      })
-    }
 
-    return suggestions.slice(0, 4)
-  }, [filteredPosts])
-
-  // Generate small hashtag-style quick actions during conversation
-  const getQuickActions = useCallback(() => {
-    const actions: Array<{ id: string; text: string; icon: string }> = []
+  // Generate dynamic sentence suggestions based on conversation context
+  const getDynamicSuggestions = useCallback(() => {
+    const suggestions: Array<{ id: string; text: string }> = []
     const lastMessage = chatHistory[chatHistory.length - 1]
     const lastFewMessages = chatHistory.slice(-3) // Look at last 3 messages for context
     const conversationText = lastFewMessages.map(m => m.message.toLowerCase()).join(' ')
@@ -507,155 +526,98 @@ export const DashboardOverview = memo(function DashboardOverview() {
     const hasStrategyKeywords = /strategie|plan|konzept|vorgehens|ansatz/i.test(conversationText)
     const hasImmobilienKeywords = /immobilie|haus|wohnung|makler|verkauf|kauf|finanzierung/i.test(conversationText)
     const hasPlatformKeywords = /instagram|facebook|linkedin|tiktok|twitter|story|reel/i.test(conversationText)
-    const hasFinancingKeywords = /finanzierung|hypothek|kredit|investment|darlehen/i.test(conversationText)
     
-    // Context-based dynamic actions (priority actions based on conversation)
+    // Context-based dynamic suggestions
     if (lastMessage?.type === 'ai') {
       // If AI just gave content ideas
       if (hasContentKeywords) {
-        actions.push({ id: 'create-post', text: 'Post erstellen', icon: '✨' })
-        actions.push({ id: 'more-ideas', text: 'Mehr Ideen', icon: '💡' })
-        actions.push({ id: 'content-strategy', text: 'Content-Strategie', icon: '🎯' })
+        suggestions.push({ id: 'create-post', text: 'Erstelle einen vollständigen Post basierend auf diesen Ideen.' })
+        suggestions.push({ id: 'more-ideas', text: 'Gib mir weitere kreative Content-Ideen für diese Woche.' })
+        suggestions.push({ id: 'content-strategy', text: 'Entwickle eine Content-Strategie für die nächsten 4 Wochen.' })
       }
       
       // If AI mentioned hashtags
       if (hasHashtagKeywords) {
-        actions.push({ id: 'more-hashtags', text: 'Mehr Tags', icon: '#️⃣' })
-        actions.push({ id: 'hashtag-strategy', text: 'Tag-Strategie', icon: '🎯' })
-        actions.push({ id: 'trending-tags', text: 'Trending Tags', icon: '🔥' })
+        suggestions.push({ id: 'hashtag-strategy', text: 'Erstelle eine Hashtag-Strategie für maximale Reichweite.' })
+        suggestions.push({ id: 'trending-tags', text: 'Zeige mir die aktuell viral gehenden Hashtags.' })
       }
       
       // If AI talked about timing/scheduling
       if (hasScheduleKeywords) {
-        actions.push({ id: 'schedule-now', text: 'Jetzt planen', icon: '⏰' })
-        actions.push({ id: 'best-times', text: 'Beste Zeiten', icon: '📅' })
-        actions.push({ id: 'auto-schedule', text: 'Auto-Schedule', icon: '🤖' })
+        suggestions.push({ id: 'best-times', text: 'Zeige mir die optimalen Posting-Zeiten für meine Zielgruppe.' })
+        suggestions.push({ id: 'schedule-plan', text: 'Erstelle einen detaillierten Posting-Plan für diese Woche.' })
       }
       
       // If AI gave analytics/performance info
       if (hasAnalyticsKeywords) {
-        actions.push({ id: 'deep-dive', text: 'Details', icon: '🔍' })
-        actions.push({ id: 'compare-posts', text: 'Vergleichen', icon: '📊' })
-        actions.push({ id: 'competitor-analysis', text: 'Wettbewerb', icon: '🎯' })
+        suggestions.push({ id: 'deep-analysis', text: 'Analysiere meine Top-Posts und erkläre warum sie erfolgreich waren.' })
+        suggestions.push({ id: 'improvement-tips', text: 'Gib mir konkrete Tipps zur Verbesserung meiner Performance.' })
       }
       
       // If AI mentioned trends
       if (hasTrendsKeywords) {
-        actions.push({ id: 'trend-content', text: 'Trend-Post', icon: '🔥' })
-        actions.push({ id: 'viral-tips', text: 'Viral-Tipps', icon: '🚀' })
-        actions.push({ id: 'trending-topics', text: 'Trending Topics', icon: '📈' })
+        suggestions.push({ id: 'trend-content', text: 'Erstelle Content-Ideen basierend auf aktuellen Trends.' })
+        suggestions.push({ id: 'viral-strategy', text: 'Zeige mir bewährte Strategien für virale Inhalte.' })
       }
       
       // If conversation was about optimization
       if (hasOptimizeKeywords) {
-        actions.push({ id: 'next-steps', text: 'Nächste Schritte', icon: '📈' })
-        actions.push({ id: 'quick-wins', text: 'Quick Wins', icon: '⚡' })
-        actions.push({ id: 'optimize-content', text: 'Content optimieren', icon: '🎯' })
+        suggestions.push({ id: 'quick-wins', text: 'Zeige mir 3 Quick-Win Optimierungen für sofortige Verbesserungen.' })
+        suggestions.push({ id: 'next-steps', text: 'Was sind meine konkreten nächsten Schritte zur Optimierung?' })
       }
       
       // If conversation was about real estate
       if (hasImmobilienKeywords) {
-        actions.push({ id: 'property-content', text: 'Immobilien-Content', icon: '🏠' })
-        actions.push({ id: 'market-insights', text: 'Markt-Insights', icon: '📊' })
-        actions.push({ id: 'client-stories', text: 'Kunden-Geschichten', icon: '👥' })
-      }
-      
-      // If conversation was about financing
-      if (hasFinancingKeywords) {
-        actions.push({ id: 'financing-content', text: 'Finanzierungs-Content', icon: '💰' })
-        actions.push({ id: 'mortgage-tips', text: 'Hypothek-Tipps', icon: '🏦' })
-        actions.push({ id: 'investment-advice', text: 'Investment-Beratung', icon: '📈' })
-      }
-      
-      // If conversation was about specific platforms
-      if (hasPlatformKeywords) {
-        if (conversationText.includes('instagram')) {
-          actions.push({ id: 'story-ideas', text: 'Story-Ideen', icon: '📱' })
-          actions.push({ id: 'reel-suggestions', text: 'Reel-Vorschläge', icon: '🎬' })
-        }
-        if (conversationText.includes('linkedin')) {
-          actions.push({ id: 'professional-content', text: 'Professioneller Content', icon: '💼' })
-          actions.push({ id: 'industry-insights', text: 'Branchen-Insights', icon: '📊' })
-        }
-        if (conversationText.includes('tiktok')) {
-          actions.push({ id: 'video-ideas', text: 'Video-Ideen', icon: '🎥' })
-          actions.push({ id: 'trending-sounds', text: 'Trending Sounds', icon: '🎵' })
-        }
+        suggestions.push({ id: 'property-content', text: 'Erstelle spezifische Content-Ideen für Immobilienmakler.' })
+        suggestions.push({ id: 'client-attraction', text: 'Wie kann ich mehr qualifizierte Kunden über Social Media gewinnen?' })
       }
     }
     
-    // Conversation flow-based actions with more variety
+    // Conversation flow-based suggestions
     const messageCount = chatHistory.length
     
-    if (messageCount <= 2) {
+    if (messageCount === 0) {
+      // Initial suggestions for empty chat
+      return [
+        { id: 'analyze-performance', text: 'Analysiere meine Post-Performance und gib konkrete Verbesserungsvorschläge.' },
+        { id: 'content-ideas', text: 'Erstelle 5 kreative Content-Ideen für meine Immobilien-Posts.' },
+        { id: 'posting-strategy', text: 'Entwickle eine optimale Posting-Strategie für maximale Reichweite.' },
+        { id: 'competitor-analysis', text: 'Analysiere meine Konkurrenz und zeige Differenzierungsmöglichkeiten.' }
+      ]
+    } else if (messageCount <= 2) {
       // Early conversation - broad exploration
-      if (!hasContentKeywords) actions.push({ id: 'content-ideas', text: 'Content-Ideen', icon: '💡' })
-      if (!hasAnalyticsKeywords) actions.push({ id: 'analytics', text: 'Performance', icon: '📊' })
-      if (!hasTrendsKeywords) actions.push({ id: 'trending', text: 'Trends', icon: '🔥' })
-      if (!hasImmobilienKeywords) actions.push({ id: 'property-focus', text: 'Immobilien-Fokus', icon: '🏠' })
+      if (!hasContentKeywords) suggestions.push({ id: 'content-ideas', text: 'Gib mir frische Content-Ideen für diese Woche.' })
+      if (!hasAnalyticsKeywords) suggestions.push({ id: 'performance-check', text: 'Wie performt mein aktueller Content und was kann ich verbessern?' })
+      if (!hasTrendsKeywords) suggestions.push({ id: 'trending-topics', text: 'Welche Trends sollte ich für meinen Content nutzen?' })
+      if (!hasImmobilienKeywords) suggestions.push({ id: 'real-estate-focus', text: 'Erstelle spezifische Strategien für Immobilien-Marketing.' })
     } else if (messageCount <= 5) {
       // Mid conversation - specific actions
-      if (!hasHashtagKeywords) actions.push({ id: 'hashtags', text: 'Hashtags', icon: '#️⃣' })
-      if (!hasScheduleKeywords) actions.push({ id: 'timing', text: 'Timing', icon: '⏰' })
-      if (!hasOptimizeKeywords) actions.push({ id: 'optimize', text: 'Optimieren', icon: '🎯' })
-      if (!hasFinancingKeywords) actions.push({ id: 'financing-tips', text: 'Finanzierungstipps', icon: '💰' })
+      if (!hasHashtagKeywords) suggestions.push({ id: 'hashtag-optimization', text: 'Optimiere meine Hashtag-Strategie für bessere Sichtbarkeit.' })
+      if (!hasScheduleKeywords) suggestions.push({ id: 'timing-optimization', text: 'Wann sind die besten Zeiten zum Posten für meine Zielgruppe?' })
+      if (!hasOptimizeKeywords) suggestions.push({ id: 'growth-strategy', text: 'Erstelle eine Wachstumsstrategie für die nächsten 3 Monate.' })
     } else {
       // Deep conversation - advanced actions
-      actions.push({ id: 'strategy-review', text: 'Strategie', icon: '🎯' })
-      actions.push({ id: 'action-plan', text: 'Aktionsplan', icon: '📋' })
-      actions.push({ id: 'summary', text: 'Zusammenfassung', icon: '📝' })
-      actions.push({ id: 'content-audit', text: 'Content-Audit', icon: '📋' })
+      suggestions.push({ id: 'comprehensive-strategy', text: 'Fasse alles zusammen und erstelle einen umfassenden Aktionsplan.' })
+      suggestions.push({ id: 'advanced-tactics', text: 'Zeige mir fortgeschrittene Taktiken für exponentielles Wachstum.' })
+      suggestions.push({ id: 'roi-optimization', text: 'Wie kann ich den ROI meiner Social Media Aktivitäten maximieren?' })
     }
     
-    // Smart base actions that adapt to context
-    const adaptiveBaseActions = []
-    
-    // Only suggest what hasn't been covered
-    if (!conversationText.includes('konkurren') && !conversationText.includes('mitbewerb')) {
-      adaptiveBaseActions.push({ id: 'competitor', text: 'Konkurrenz', icon: '🎯' })
-    }
-    
-    if (!conversationText.includes('zielgruppe') && !conversationText.includes('audience')) {
-      adaptiveBaseActions.push({ id: 'audience', text: 'Zielgruppe', icon: '👥' })
-    }
-    
-    if (!conversationText.includes('kalender') && !conversationText.includes('content-plan')) {
-      adaptiveBaseActions.push({ id: 'content-calendar', text: 'Content-Plan', icon: '📅' })
-    }
-    
-    if (!conversationText.includes('seo') && !conversationText.includes('suchmaschine')) {
-      adaptiveBaseActions.push({ id: 'seo-optimization', text: 'SEO-Optimierung', icon: '🔍' })
-    }
-    
-    if (!conversationText.includes('email') && !conversationText.includes('newsletter')) {
-      adaptiveBaseActions.push({ id: 'email-marketing', text: 'Email-Marketing', icon: '📧' })
-    }
-    
-    // Add adaptive actions if there's space
-    adaptiveBaseActions.forEach(action => {
-      if (actions.length < 6 && !actions.find(a => a.id === action.id)) {
-        actions.push(action)
-      }
-    })
-    
-    // Fallback actions if no specific context detected
-    if (actions.length === 0) {
-      const fallbackActions = [
-        { id: 'help-me', text: 'Hilf mir', icon: '🤝' },
-        { id: 'inspire-me', text: 'Inspiriere mich', icon: '✨' },
-        { id: 'quick-tip', text: 'Quick-Tipp', icon: '💡' },
-        { id: 'what-next', text: 'Was nun?', icon: '❓' },
-        { id: 'trending-topics', text: 'Trending Topics', icon: '🔥' },
-        { id: 'content-audit', text: 'Content-Audit', icon: '📋' }
+    // Fallback suggestions if no specific context detected
+    if (suggestions.length === 0) {
+      const fallbackSuggestions = [
+        { id: 'general-help', text: 'Wobei kann ich dir heute am besten helfen?' },
+        { id: 'quick-tip', text: 'Gib mir einen schnellen Tipp zur Verbesserung meiner Posts.' },
+        { id: 'content-audit', text: 'Führe ein Content-Audit durch und zeige Optimierungspotenziale.' },
+        { id: 'strategy-review', text: 'Bewerte meine aktuelle Social Media Strategie.' }
       ]
       
-      actions.push(...fallbackActions.slice(0, 4))
+      suggestions.push(...fallbackSuggestions.slice(0, 3))
     }
     
-    // Shuffle actions to avoid always showing the same order
-    return actions
-      .slice(0, 6)
-      .sort(() => Math.random() - 0.5) // Random shuffle
+    // Limit to 3-4 suggestions and shuffle for variety
+    return suggestions
+      .slice(0, Math.min(4, suggestions.length))
+      .sort(() => Math.random() - 0.5)
   }, [chatHistory, filteredPosts])
 
   // Process AI response to optimize formatting and remove redundant content
@@ -839,68 +801,7 @@ export const DashboardOverview = memo(function DashboardOverview() {
     }
   }, [chatMessage, processAIResponse])
 
-  const handleQuickAction = useCallback((actionId: string, actionText: string) => {
-    const prompts = {
-      // Content-related actions
-      'analyze-performance': 'Analysiere meine Post-Performance kurz und gib 3 konkrete Verbesserungstipps.',
-      'content-ideas': 'Gib mir 5 prägnante Content-Ideen mit je einem Satz Beschreibung.',
-      'create-post': 'Hilf mir einen Post zu erstellen - kurz und strukturiert.',
-      'more-ideas': 'Gib mir weitere kreative Content-Ideen basierend auf unserer Diskussion.',
-      'trend-content': 'Erstelle einen Post-Entwurf basierend auf den aktuellen Trends.',
-      
-      // Hashtag-related actions
-      'hashtags': 'Die 15 wichtigsten Hashtags für meine Branche.',
-      'more-hashtags': 'Liste 10 weitere effektive Hashtags für meine Nische auf.',
-      'hashtag-strategy': 'Erkläre eine Hashtag-Strategie für maximale Reichweite.',
-      
-      // Scheduling and timing
-      'schedule-help': 'Nenne die 3 besten Posting-Zeiten für maximale Reichweite.',
-      'schedule-now': 'Wann ist die beste Zeit zum Posten heute/diese Woche?',
-      'timing': 'Optimale Posting-Zeiten für verschiedene Plattformen.',
-      'best-times': 'Die besten Zeiten für meine Zielgruppe - kurz und knapp.',
-      
-      // Analytics and performance
-      'analytics': 'Die 5 wichtigsten KPIs, die ich verfolgen sollte.',
-      'deep-dive': 'Vertiefe die Performance-Analyse mit konkreten Zahlen.',
-      'compare-posts': 'Vergleiche meine besten und schlechtesten Posts.',
-      
-      // Trends and viral content
-      'trending': 'Top 3 Social Media Trends, die ich sofort nutzen kann.',
-      'viral-tips': '5 bewährte Strategien für virale Inhalte.',
-      
-      // Optimization and improvement
-      'optimize': '3 sofort umsetzbare Optimierungen für meine Social Media Strategie.',
-      'next-steps': 'Was sind meine konkreten nächsten Schritte?',
-      'quick-wins': '3 Quick-Win Optimierungen, die ich heute umsetzen kann.',
-      
-      // Strategy and planning
-      'strategy-review': 'Bewerte meine aktuelle Social Media Strategie.',
-      'action-plan': 'Erstelle einen strukturierten Aktionsplan für die nächsten 2 Wochen.',
-      'content-calendar': 'Hilf mir bei der Content-Planung für den nächsten Monat.',
-      
-      // Audience and targeting
-      'audience': 'Analysiere meine Zielgruppe und gib Targeting-Tipps.',
-      'competitor': 'Wie kann ich mich von der Konkurrenz abheben?',
-      
-      // General help and inspiration
-      'help-me': 'Wobei kann ich dir am besten helfen?',
-      'inspire-me': 'Inspiriere mich mit einer kreativen Idee.',
-      'quick-tip': 'Gib mir einen schnellen, umsetzbaren Tipp.',
-      'what-next': 'Was sollte mein nächster Schritt sein?',
-      'summary': 'Fasse unsere Diskussion zusammen und gib konkrete Handlungsempfehlungen.',
-      
-      // Legacy actions
-      'review-content': 'Checke meine Inhalte und gib 3 Quick-Win Optimierungen.'
-    }
-    
-    const prompt = prompts[actionId as keyof typeof prompts] || actionText
-    setChatMessage(prompt)
-    
-    // Auto-send the message
-    setTimeout(() => {
-      handleSendMessage()
-    }, 100)
-  }, [handleSendMessage])
+
 
   const handleTimeFilterSelect = useCallback((filter: string) => {
     setTimeFilter(filter)
@@ -1191,31 +1092,12 @@ export const DashboardOverview = memo(function DashboardOverview() {
                   </Button>
                 </div>
 
-                {/* Dynamic Text Component */}
-                {chatHistory.length === 0 && (
-                  <div className="mb-4">
-                    <DynamicText 
-                      conversationHistory={chatHistory}
-                      userPosts={posts}
-                      isTyping={isTyping}
-                      className="mb-4"
-                      onSuggestionClick={(suggestion) => {
-                        setChatMessage(suggestion);
-                        // Auto-send the suggestion after a short delay
-                        setTimeout(() => {
-                          handleSendMessage();
-                        }, 100);
-                      }}
-                    />
-                  </div>
-                )}
-
                 {/* Chat Messages */}
                 <div className="space-y-3 flex-1 overflow-y-auto mb-4 scroll-smooth pr-2" 
                      ref={chatContainerRef}
                      style={{ 
                        scrollbarWidth: 'thin',
-                       maxHeight: 'calc(100vh - 400px)' // Account for header, buttons, input
+                       maxHeight: 'calc(100vh - 500px)' // Account for header, buttons, input, suggestions
                      }}>
                   {chatHistory.length === 0 ? (
                     <div className="text-center py-4">
@@ -1225,16 +1107,21 @@ export const DashboardOverview = memo(function DashboardOverview() {
                       <p className="text-sm text-gray-600 mb-2">Willkommen beim AI Assistant!</p>
                       <p className="text-xs text-gray-500 mb-4">Wählen Sie eine Aktion oder stellen Sie mir eine Frage.</p>
                       
-                      {/* Big suggestions moved up under welcome message */}
+                      {/* Initial suggestions for empty chat */}
                       <div className="flex flex-col gap-3 mt-4">
-                        {getInitialSuggestions().map((suggestion) => (
+                        {getDynamicSuggestions().map((suggestion) => (
                           <button
                             key={suggestion.id}
-                            onClick={() => handleQuickAction(suggestion.id, suggestion.text)}
+                            onClick={() => {
+                              setChatMessage(suggestion.text);
+                              setTimeout(() => {
+                                handleSendMessage();
+                              }, 100);
+                            }}
                             className="flex items-center gap-4 p-4 text-left bg-gradient-to-r from-gray-50 to-gray-100 hover:from-teal-50 hover:to-cyan-50 border border-gray-200 hover:border-teal-200 rounded-xl transition-all duration-200 group"
                           >
-                            <span className="text-2xl">{suggestion.icon}</span>
-                            <span className="text-base font-medium text-gray-700 group-hover:text-teal-700">
+                            <span className="text-2xl">💡</span>
+                            <span className="text-sm font-medium text-gray-700 group-hover:text-teal-700 leading-relaxed">
                               {suggestion.text}
                             </span>
                             <Send className="w-5 h-5 text-gray-400 group-hover:text-teal-500 ml-auto transition-colors" />
@@ -1270,46 +1157,54 @@ export const DashboardOverview = memo(function DashboardOverview() {
                   )}
                 </div>
 
-                {/* Dynamic Action Buttons - only show small actions when chat has history */}
-                {chatHistory.length > 0 && (
-                  <div className="mb-3 flex-shrink-0">
-                    <div className="flex flex-wrap gap-2">
-                      {getQuickActions().map((action) => (
+                {/* Chat Input */}
+                <div className="flex-shrink-0 mt-auto">
+                  {/* Dynamic Suggestion Sentences - Right above input */}
+                  <div className="mb-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {getDynamicSuggestions().map((suggestion) => (
                         <button
-                          key={action.id}
-                          onClick={() => handleQuickAction(action.id, action.text)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gradient-to-r from-gray-100 to-gray-200 hover:from-teal-100 hover:to-cyan-100 border border-gray-200 hover:border-teal-300 rounded-full transition-all duration-200 group"
+                          key={suggestion.id}
+                          onClick={() => {
+                            setChatMessage(suggestion.text);
+                            setTimeout(() => {
+                              handleSendMessage();
+                            }, 100);
+                          }}
+                          className="text-left px-2 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 rounded-full transition-all duration-200 group flex-1 min-w-0"
+                          style={{ maxWidth: 'calc(50% - 3px)' }}
                         >
-                          <span className="text-sm">{action.icon}</span>
-                          <span className="text-gray-700 group-hover:text-teal-700">{action.text}</span>
+                          <span className="text-xs text-gray-600 group-hover:text-gray-800 leading-tight line-clamp-2">
+                            {suggestion.text}
+                          </span>
                         </button>
                       ))}
                     </div>
                   </div>
-                )}
-
-                {/* Chat Input */}
-                <div className="flex gap-2 flex-shrink-0 mt-auto pt-2 border-t border-gray-100">
-                  <Input
-                    value={chatMessage}
-                    onChange={handleChatInputChange}
-                    placeholder="Stellen Sie mir eine Frage..."
-                    className="flex-1 border-gray-200 focus:border-teal-500 focus:ring-teal-500/20 rounded-full"
-                    onKeyPress={(e) => e.key === 'Enter' && !isTyping && handleSendMessage()}
-                    disabled={isTyping}
-                  />
-                  <Button
-                    onClick={handleSendMessage}
-                    size="sm"
-                    disabled={isTyping || !chatMessage.trim()}
-                    className="h-10 w-10 p-0 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isTyping ? (
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                  </Button>
+                  
+                  {/* Input Field */}
+                  <div className="flex gap-2 pt-2 border-t border-gray-100">
+                    <Input
+                      value={chatMessage}
+                      onChange={handleChatInputChange}
+                      placeholder="Stellen Sie mir eine Frage..."
+                      className="flex-1 border-gray-200 focus:border-teal-500 focus:ring-teal-500/20 rounded-full"
+                      onKeyPress={(e) => e.key === 'Enter' && !isTyping && handleSendMessage()}
+                      disabled={isTyping}
+                    />
+                    <Button
+                      onClick={handleSendMessage}
+                      size="sm"
+                      disabled={isTyping || !chatMessage.trim()}
+                      className="h-10 w-10 p-0 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isTyping ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -1399,12 +1294,76 @@ export const DashboardOverview = memo(function DashboardOverview() {
             <h2 className="text-xs font-medium text-gray-400">
               Beiträge & Entwürfe
             </h2>
-            <span className="text-xs text-gray-400">{filteredPosts.length} Beiträge</span>
+            <div className="flex items-center gap-4">
+              {/* Pagination Info */}
+              {filteredPosts.length > 0 && (
+                <span className="text-xs text-gray-400">
+                  {currentPage * postsPerPage - postsPerPage + 1}-{Math.min(currentPage * postsPerPage, filteredPosts.length)} von {filteredPosts.length} Beiträgen
+                </span>
+              )}
+              
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePrevPage}
+                    disabled={!hasPrevPage}
+                    className="h-8 w-8 p-0 rounded-full border-gray-200"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  
+                  {/* Page numbers - show up to 5 pages */}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum
+                      if (totalPages <= 5) {
+                        pageNum = i + 1
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i
+                      } else {
+                        pageNum = currentPage - 2 + i
+                      }
+                      
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "ghost"}
+                          size="sm"
+                          onClick={() => handlePageClick(pageNum)}
+                          className={`h-8 w-8 p-0 rounded-full text-xs ${
+                            currentPage === pageNum 
+                              ? 'bg-teal-500 text-white' 
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          {pageNum}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleNextPage}
+                    disabled={!hasNextPage}
+                    className="h-8 w-8 p-0 rounded-full border-gray-200"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Post Grid */}
+          {/* Post Grid - Now showing paginated posts */}
           <div className="grid grid-cols-4 gap-3 pb-4">
-            {filteredPosts.map((post) => (
+            {paginatedPosts.map((post) => (
               <Card 
                 key={post.id} 
                 className="overflow-hidden group border border-gray-100 shadow-sm bg-white hover:shadow-md transition-all duration-300 rounded-2xl cursor-pointer"
@@ -1681,6 +1640,20 @@ export const DashboardOverview = memo(function DashboardOverview() {
               >
                 <Plus className="w-3.5 h-3.5" />
                 Neuer Post
+              </Button>
+            </div>
+          )}
+
+          {/* Load More for Better UX (Alternative to pagination) */}
+          {filteredPosts.length > 0 && hasNextPage && (
+            <div className="text-center py-6">
+              <Button
+                variant="outline"
+                onClick={handleNextPage}
+                className="gap-2 rounded-full border-gray-200 hover:bg-gray-50"
+              >
+                Weitere Beiträge laden ({filteredPosts.length - currentPage * postsPerPage} verbleibend)
+                <ChevronDown className="w-4 h-4" />
               </Button>
             </div>
           )}

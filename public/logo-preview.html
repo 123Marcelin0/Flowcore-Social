@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flowcore Social Logo Preview</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .logo-container {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .logo {
+            display: inline-block;
+            font-family: 'Circular', 'Helvetica Neue', Arial, sans-serif;
+            font-weight: 500;
+            letter-spacing: -0.025em;
+        }
+        .flowcore {
+            background: linear-gradient(to right, #dc2626, #ea580c, #f97316);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .social {
+            background: linear-gradient(to right, #3b82f6, #06b6d4, #14b8a6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-left: 4px;
+        }
+        .size-small .flowcore { font-size: 20px; }
+        .size-small .social { font-size: 16px; }
+        .size-medium .flowcore { font-size: 32px; }
+        .size-medium .social { font-size: 24px; }
+        .size-large .flowcore { font-size: 48px; }
+        .size-large .social { font-size: 36px; }
+        .size-xlarge .flowcore { font-size: 64px; }
+        .size-xlarge .social { font-size: 48px; }
+        h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .instructions {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .copy-button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .copy-button:hover {
+            background: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Flowcore Social Logo Preview</h1>
+        
+        <div class="instructions">
+            <h3>🎯 So konvertieren Sie zu PNG:</h3>
+            <ol>
+                <li><strong>Rechtsklick</strong> auf das gewünschte Logo</li>
+                <li><strong>"Bild speichern unter"</strong> auswählen</li>
+                <li>Oder: <strong>Screenshot</strong> mit Windows + Shift + S</li>
+                <li>Oder: Browser-Erweiterung wie "Full Page Screen Capture"</li>
+            </ol>
+        </div>
+
+        <div class="logo-container">
+            <h3>Klein (für Favicons)</h3>
+            <div class="logo size-small">
+                <span class="flowcore">flowcore</span><span class="social">social</span>
+            </div>
+        </div>
+
+        <div class="logo-container">
+            <h3>Medium (für Headers)</h3>
+            <div class="logo size-medium">
+                <span class="flowcore">flowcore</span><span class="social">social</span>
+            </div>
+        </div>
+
+        <div class="logo-container">
+            <h3>Groß (für Hero-Bereiche)</h3>
+            <div class="logo size-large">
+                <span class="flowcore">flowcore</span><span class="social">social</span>
+            </div>
+        </div>
+
+        <div class="logo-container">
+            <h3>Extra Groß (für Printmedien)</h3>
+            <div class="logo size-xlarge">
+                <span class="flowcore">flowcore</span><span class="social">social</span>
+            </div>
+        </div>
+
+        <!-- Separate logo containers for individual words -->
+        <div class="logo-container">
+            <h3>Nur "flowcore"</h3>
+            <div class="logo size-medium">
+                <span class="flowcore">flowcore</span>
+            </div>
+        </div>
+
+        <div class="logo-container">
+            <h3>Nur "social"</h3>
+            <div class="logo size-medium">
+                <span class="social">social</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Optional: Add copy functionality
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(function() {
+                alert('SVG Code kopiert!');
+            });
+        }
+    </script>
+</body>
+</html> 
