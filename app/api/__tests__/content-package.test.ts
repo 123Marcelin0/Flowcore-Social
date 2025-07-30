@@ -50,6 +50,19 @@ vi.mock('@/lib/content-package-builder', () => ({
   }
 }))
 
+vi.mock('@/lib/enhanced-content-generator', () => ({
+  enhancedContentGenerator: {
+    generateContentPackage: vi.fn(),
+    regenerateContent: vi.fn()
+  }
+}))
+
+vi.mock('@/lib/content-package-builder', () => ({
+  contentPackageBuilder: {
+    buildContentPackage: vi.fn()
+  }
+}))
+
 // Test utilities
 function createMockRequest(
   method: string,
@@ -160,14 +173,12 @@ describe('Content Package API', () => {
     const { createClient } = require('@supabase/supabase-js')
     mockSupabase = createClient('https://example.supabase.co', 'example-anon-key')
     
-    const { chatContextAnalyzer } = require('@/lib/chat-context-analyzer')
-    mockChatContextAnalyzer = chatContextAnalyzer
-    
-    const { enhancedContentGenerator } = require('@/lib/enhanced-content-generator')
-    mockEnhancedContentGenerator = enhancedContentGenerator
-    
-    const { contentPackageBuilder } = require('@/lib/content-package-builder')
-    mockContentPackageBuilder = contentPackageBuilder
+    const { chatContextAnalyzer } = require('../../../lib/chat-context-analyzer');
+    mockChatContextAnalyzer = chatContextAnalyzer;
+    const { enhancedContentGenerator } = require('../../../lib/enhanced-content-generator');
+    mockEnhancedContentGenerator = enhancedContentGenerator;
+    const { contentPackageBuilder } = require('../../../lib/content-package-builder');
+    mockContentPackageBuilder = contentPackageBuilder;
   })
 
   describe('POST /api/content-package', () => {
