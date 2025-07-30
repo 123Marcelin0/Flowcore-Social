@@ -160,7 +160,7 @@ describe('Content Package API', () => {
     const { createClient } = require('@supabase/supabase-js')
     mockSupabase = createClient('https://example.supabase.co', 'example-anon-key')
     
-    const { chatContextAnalyzer } = require('../../../lib/chat-context-analyzer')
+    const { chatContextAnalyzer } = require('@/lib/chat-context-analyzer')
     mockChatContextAnalyzer = chatContextAnalyzer
     
     const { enhancedContentGenerator } = require('@/lib/enhanced-content-generator')
