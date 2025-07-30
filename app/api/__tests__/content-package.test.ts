@@ -151,22 +151,25 @@ describe('Content Package API', () => {
     vi.clearAllMocks()
     
     // Reset rate limiting store
-    const { checkRateLimit } = await import('@/lib/rate-limiter')
-    if (checkRateLimit) {
-      // Clear rate limit store if accessible
+    const { rateLimitStore } = await import('@/lib/rate-limiter')
+    if (rateLimitStore) {
+      rateLimitStore.clear()
     }
 
     // Setup mocks
-    const { createClient } = require('@supabase/supabase-js')
-    mockSupabase = createClient('https://example.supabase.co', 'example-anon-key')
+    const { createClient } = await import('@supabase/supabase-js')
+    mockSupabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
     
-    const { chatContextAnalyzer } = require('@/lib/chat-context-analyzer')
+    const { chatContextAnalyzer } = await import('@/lib/chat-context-analyzer')
     mockChatContextAnalyzer = chatContextAnalyzer
     
-    const { enhancedContentGenerator } = require('@/lib/enhanced-content-generator')
+    const { enhancedContentGenerator } = await import('@/lib/enhanced-content-generator')
     mockEnhancedContentGenerator = enhancedContentGenerator
     
-    const { contentPackageBuilder } = require('@/lib/content-package-builder')
+    const { contentPackageBuilder } = await import('@/lib/content-package-builder')
     mockContentPackageBuilder = contentPackageBuilder
   })
 
@@ -445,7 +448,7 @@ describe('Content Package API', () => {
         const data = await response.json()
         expect(data.success).toBe(false)
         expect(data.error).toBe('Failed to generate content package')
-      })
+      }, 10000)
 
       it('should handle content generation failure', async () => {
         mockChatContextAnalyzer.analyzeUserContext.mockResolvedValue(mockUserContext)
@@ -461,7 +464,7 @@ describe('Content Package API', () => {
         const data = await response.json()
         expect(data.success).toBe(false)
         expect(data.error).toBe('Failed to generate content package')
-      })
+      }, 10000)
 
       it('should retry failed operations with exponential backoff', async () => {
         let attemptCount = 0

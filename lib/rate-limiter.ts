@@ -1,4 +1,4 @@
-const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+export const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_REQUESTS = 10; // 10 requests per window
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 
