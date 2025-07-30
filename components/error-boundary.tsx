@@ -1,6 +1,7 @@
 "use client"
 
 import React, { Component, ErrorInfo, ReactNode } from 'react'
+import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertTriangle, RefreshCw, Home, Bug } from 'lucide-react'
@@ -42,7 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return {
       hasError: true,
       error,
-      errorId: Date.now().toString(36) + Math.random().toString(36).substr(2)
+      errorId: uuidv4()
     }
   }
 

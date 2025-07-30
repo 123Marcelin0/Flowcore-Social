@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { v4 as uuidv4 } from 'uuid';
 
 import { useState, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
@@ -175,7 +176,7 @@ export function MonthlyCalendar({ events, onEventCreate, onEventUpdate, onEventD
   const handleCreateEvent = () => {
     if (newEvent.title && newEvent.startDate) {
       const event: CalendarEvent = {
-        id: `event-${Date.now()}`,
+        id: uuidv4(),
         title: newEvent.title,
         description: newEvent.description || "",
         startDate: newEvent.startDate!,

@@ -384,11 +384,19 @@ function calculateRecentTrend(posts: any[]): string {
   const recent = posts.slice(0, Math.floor(posts.length / 2));
   const older = posts.slice(Math.floor(posts.length / 2));
   
+  if (recent.length === 0 || older.length === 0) {
+    return 'insufficient_data';
+  }
+
   const recentAvg = recent.reduce((sum: number, p: any) => 
     sum + (p.likes || 0) + (p.comments_count || 0), 0) / recent.length;
   const olderAvg = older.reduce((sum: number, p: any) => 
     sum + (p.likes || 0) + (p.comments_count || 0), 0) / older.length;
   
+  if (olderAvg === 0) {
+    return recentAvg > 0 ? 'improving' : 'stable';
+  }
+
   const change = ((recentAvg - olderAvg) / olderAvg) * 100;
   
   if (change > 10) return 'improving';

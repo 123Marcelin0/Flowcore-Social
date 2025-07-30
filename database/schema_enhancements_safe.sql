@@ -404,6 +404,13 @@ ALTER TABLE media_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media_post_associations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hashtags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_hashtags ENABLE ROW LEVEL SECURITY;
+
+-- Post hashtags policies
+DROP POLICY IF EXISTS "users_can_manage_own_post_hashtags" ON post_hashtags;
+CREATE POLICY "users_can_manage_own_post_hashtags" ON post_hashtags
+    FOR ALL USING (
+        (SELECT user_id FROM posts WHERE id = post_id) = auth.uid()
+    );
 ALTER TABLE hashtag_analytics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE publishing_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE publishing_logs ENABLE ROW LEVEL SECURITY;

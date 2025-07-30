@@ -99,7 +99,6 @@ export async function POST(request: NextRequest) {
       avatar_url: avatar_url || null,
       bio: bio || null,
       website: website || null,
-      subscription_tier: subscription_tier || 'free',
       onboarding_completed: onboarding_completed || false,
       preferences: preferences || {}
     }
@@ -153,7 +152,7 @@ export async function PUT(request: NextRequest) {
 
     // Prepare update data (only include provided fields)
     const updateData: any = {}
-    const allowedFields = ['email', 'full_name', 'avatar_url', 'bio', 'website', 'subscription_tier', 'onboarding_completed', 'preferences']
+    const allowedFields = ['email', 'full_name', 'avatar_url', 'bio', 'website', 'onboarding_completed', 'preferences']
     
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

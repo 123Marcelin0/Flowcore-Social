@@ -435,6 +435,18 @@ export function InteriorDesignWorkflow({
     }
   }, [showComparison, handleSliderDrag, handleSliderDragEnd])
 
+  // Cleanup object URLs to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview)
+      }
+      if (transformResult?.imageUrl) {
+        URL.revokeObjectURL(transformResult.imageUrl)
+      }
+    }
+  }, [imagePreview, transformResult])
+
   // Render upload step
   const renderUploadStep = () => (
     <div className="text-center space-y-8">

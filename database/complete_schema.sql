@@ -255,7 +255,8 @@ CREATE POLICY "Users can view own profile" ON user_profiles
     FOR SELECT USING (auth.uid() = id);
 
 CREATE POLICY "Users can update own profile" ON user_profiles
-    FOR UPDATE USING (auth.uid() = id);
+    FOR UPDATE USING (auth.uid() = id)
+    WITH CHECK (auth.uid() = id);
 
 CREATE POLICY "Users can insert own profile" ON user_profiles
     FOR INSERT WITH CHECK (auth.uid() = id);
@@ -268,7 +269,8 @@ CREATE POLICY "Users can insert own posts" ON posts
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update own posts" ON posts
-    FOR UPDATE USING (auth.uid() = user_id);
+    FOR UPDATE USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own posts" ON posts
     FOR DELETE USING (auth.uid() = user_id);
@@ -281,7 +283,8 @@ CREATE POLICY "Users can insert own social accounts" ON social_accounts
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update own social accounts" ON social_accounts
-    FOR UPDATE USING (auth.uid() = user_id);
+    FOR UPDATE USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own social accounts" ON social_accounts
     FOR DELETE USING (auth.uid() = user_id);
@@ -294,7 +297,8 @@ CREATE POLICY "Users can insert own content ideas" ON content_ideas
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update own content ideas" ON content_ideas
-    FOR UPDATE USING (auth.uid() = user_id);
+    FOR UPDATE USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own content ideas" ON content_ideas
     FOR DELETE USING (auth.uid() = user_id);
@@ -307,7 +311,8 @@ CREATE POLICY "Users can insert own calendar events" ON calendar_events
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update own calendar events" ON calendar_events
-    FOR UPDATE USING (auth.uid() = user_id);
+    FOR UPDATE USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own calendar events" ON calendar_events
     FOR DELETE USING (auth.uid() = user_id);
@@ -320,7 +325,8 @@ CREATE POLICY "Users can insert own post analytics" ON post_analytics
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update own post analytics" ON post_analytics
-    FOR UPDATE USING (auth.uid() = user_id);
+    FOR UPDATE USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own post analytics" ON post_analytics
     FOR DELETE USING (auth.uid() = user_id);
@@ -333,7 +339,8 @@ CREATE POLICY "Users can insert own interactions" ON interactions
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update own interactions" ON interactions
-    FOR UPDATE USING (auth.uid() = user_id);
+    FOR UPDATE USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own interactions" ON interactions
     FOR DELETE USING (auth.uid() = user_id);

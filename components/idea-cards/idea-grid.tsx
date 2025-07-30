@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { v4 as uuidv4 } from 'uuid';
 import { IdeaCard, type IdeaCardData } from "./idea-card"
 import { Video, FileText, Sparkles } from "lucide-react"
 
@@ -46,7 +47,7 @@ export function IdeaGrid({
       await onConvertToPost?.(idea)
       // Optionally mark as implemented after conversion
       if (onSaveIdea) {
-        const updatedIdea = { ...idea, isImplemented: true, implementedPostId: `post-${Date.now()}` }
+        const updatedIdea = { ...idea, isImplemented: true, implementedPostId: uuidv4() }
         onSaveIdea(updatedIdea)
       }
     } catch (error) {

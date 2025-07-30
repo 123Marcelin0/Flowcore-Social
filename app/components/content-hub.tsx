@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { v4 as uuidv4 } from 'uuid';
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -705,7 +706,7 @@ export function ContentHub() {
   const handleDuplicateIdea = (idea: IdeaCardData) => {
     const duplicatedIdea: IdeaCardData = {
       ...idea,
-      id: `idea-${Date.now()}`,
+      id: uuidv4(),
       title: `${idea.title} (Copy)`,
       savedAt: new Date().toISOString(),
       lastModified: new Date().toISOString(),
@@ -1762,7 +1763,7 @@ export function ContentHub() {
               if (ideaToMark) {
                 const updatedIdeas = ideas.map(i => 
                   i.id === ideaToMark.id 
-                    ? { ...i, isImplemented: true, implementedPostId: `post-${Date.now()}` }
+                    ? { ...i, isImplemented: true, implementedPostId: uuidv4() }
                     : i
                 )
                 setIdeas(updatedIdeas)

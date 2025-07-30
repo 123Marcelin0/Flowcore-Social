@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import { v4 as uuidv4 } from 'uuid';
 import { 
   ArrowLeft, 
   Sparkles, 
@@ -233,7 +234,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
     const ideaPools = {
       'content-types': [
         {
-          id: `content-${Date.now()}-1`,
+          id: uuidv4(),
           type: 'video' as const,
           title: 'Immobilien-Marktanalyse Serie',
           content: 'Erstelle wöchentliche Videos über lokale Markttrends, Preisentwicklungen und Investitionschancen in deiner Region.',
@@ -241,7 +242,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
           tags: ['marktanalyse', 'trends', 'investment']
         },
         {
-          id: `content-${Date.now()}-2`,
+          id: uuidv4(),
           type: 'visual' as const,
           title: 'Kunden-Success-Stories',
           content: 'Teile anonymisierte Erfolgsgeschichten deiner Kunden mit Before/After Bildern ihrer neuen Homes.',
@@ -249,7 +250,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
           tags: ['success', 'kunden', 'transformation']
         },
         {
-          id: `content-${Date.now()}-3`,
+          id: uuidv4(),
           type: 'text' as const,
           title: 'Finanzierungstipps für Erstkäufer',
           content: 'Erstelle eine Infografik-Serie mit praktischen Tipps zur Immobilienfinanzierung für junge Familien.',
@@ -259,7 +260,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
       ],
       'hashtags': [
         {
-          id: `hashtag-${Date.now()}-1`,
+          id: uuidv4(),
           type: 'hashtag' as const,
           title: 'Engagement-Optimierte Hashtag-Sets',
           content: `Hochperformance-Set: #LuxusImmobilien #TraumhausGefunden #ImmobilienExperte #ExklusiveObjekte #PremiumMakler\n\nNischen-Set: #ErsthauskäuferTipps #FinanzierungsBeratung #ImmobilienInvestment #ModernesWohnen #NachhaltigeBauweise`,
@@ -267,7 +268,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
           tags: ['engagement', 'reichweite', 'targeting']
         },
         {
-          id: `hashtag-${Date.now()}-2`,
+          id: uuidv4(),
           type: 'hashtag' as const,
           title: 'Lokale Community Hashtags',
           content: `#[Stadt]Immobilien #[Stadt]Makler #WohnenIn[Stadt] #[Stadt]Lifestyle #Immobilien[Bezirk] #[Stadt]Architecture #[Stadt]PropertyMarket`,
@@ -277,7 +278,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
       ],
       'platforms': [
         {
-          id: `platform-${Date.now()}-1`,
+          id: uuidv4(),
           type: 'strategy' as const,
           title: 'LinkedIn Authority Building',
           content: 'Positioniere dich als Marktexperte durch täglich einen wertvollen Tipp oder Marktinsight. Nutze LinkedIn Artikel für tiefere Analysen.',
@@ -285,7 +286,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
           tags: ['authority', 'expertise', 'networking']
         },
         {
-          id: `platform-${Date.now()}-2`,
+          id: uuidv4(),
           type: 'video' as const,
           title: 'TikTok Trend-Integration',
           content: 'Nutze populäre TikTok-Sounds für "Day in the Life of a Realtor" Content oder "House Hunt with me" Videos.',
@@ -295,7 +296,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
       ],
       'engagement': [
         {
-          id: `engagement-${Date.now()}-1`,
+          id: uuidv4(),
           type: 'text' as const,
           title: 'Interactive Story-Umfragen',
           content: 'Erstelle wöchentliche "This or That" Umfragen: Moderner vs. Klassischer Stil, Stadt vs. Land, Neubau vs. Altbau.',
@@ -303,7 +304,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
           tags: ['interaction', 'stories', 'engagement']
         },
         {
-          id: `engagement-${Date.now()}-2`,
+          id: uuidv4(),
           type: 'text' as const,
           title: 'Community Challenge',
           content: 'Starte eine #TraumhausChallenge wo Follower ihre Wunschimmobilie beschreiben und du passende Objekte vorstellst.',
@@ -313,7 +314,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
       ],
       'visuals': [
         {
-          id: `visual-${Date.now()}-1`,
+          id: uuidv4(),
           type: 'visual' as const,
           title: 'Saisonale Immobilien-Aesthetics',
           content: 'Zeige dieselbe Immobilie in verschiedenen Jahreszeiten oder Tageszeiten um emotionale Verbindungen zu schaffen.',
@@ -321,7 +322,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
           tags: ['seasonal', 'emotions', 'aesthetics']
         },
         {
-          id: `visual-${Date.now()}-2`,
+          id: uuidv4(),
           type: 'visual' as const,
           title: 'Makler-Behind-the-Scenes',
           content: 'Dokumentiere deinen Alltag: Objektbesichtigungen, Kundengespräche, Vertragsvorbereitung - authentisch und professionell.',
@@ -331,7 +332,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
       ],
       'trends': [
         {
-          id: `trend-${Date.now()}-1`,
+          id: uuidv4(),
           type: 'video' as const,
           title: 'Sustainable Living Trend',
           content: 'Erstelle Content über nachhaltige Immobilien, Energieeffizienz und umweltfreundliche Bauweisen - hochaktueller Trend.',
@@ -339,7 +340,7 @@ export function ContentIdeasBrainstorm({ setCurrentStep }: ContentIdeasBrainstor
           tags: ['sustainability', 'green', 'future']
         },
         {
-          id: `trend-${Date.now()}-2`,
+          id: uuidv4(),
           type: 'text' as const,
           title: 'Remote Work Spaces',
           content: 'Zeige perfekte Home-Office Setups in deinen Immobilien und erkläre warum Remote-Work-taugliche Homes gefragter sind.',

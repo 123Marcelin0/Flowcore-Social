@@ -11,8 +11,8 @@ const mockEnvVars = {
 }
 
 // Mock modules
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => ({
+vi.mock('@supabase/supabase-js', () => {
+  const mockSupabase = {
     auth: {
       getUser: vi.fn()
     },
@@ -27,8 +27,9 @@ vi.mock('@supabase/supabase-js', () => ({
       })),
       insert: vi.fn()
     }))
-  }))
-}))
+  };
+  return { createClient: vi.fn(() => mockSupabase) };
+})
 
 vi.mock('@/lib/chat-context-analyzer', () => ({
   chatContextAnalyzer: {
@@ -146,20 +147,20 @@ describe('Content Package API', () => {
     })
   })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     
     // Reset rate limiting store
-    const { checkRateLimit } = require('../content-package/route')
+    const { checkRateLimit } = await import('@/lib/rate-limiter')
     if (checkRateLimit) {
       // Clear rate limit store if accessible
     }
 
     // Setup mocks
     const { createClient } = require('@supabase/supabase-js')
-    mockSupabase = createClient()
+    mockSupabase = createClient('https://example.supabase.co', 'example-anon-key')
     
-    const { chatContextAnalyzer } = require('@/lib/chat-context-analyzer')
+    const { chatContextAnalyzer } = require('../../../lib/chat-context-analyzer')
     mockChatContextAnalyzer = chatContextAnalyzer
     
     const { enhancedContentGenerator } = require('@/lib/enhanced-content-generator')

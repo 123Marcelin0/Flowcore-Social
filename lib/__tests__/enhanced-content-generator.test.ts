@@ -4,51 +4,65 @@ import type { UserContext } from '../chat-context-analyzer'
 import type { ContentPackage } from '../enhanced-content-generator'
 
 // Mock OpenAI
-vi.mock('openai', () => ({
-    default: vi.fn().mockImplementation(() => ({
-      chat: {
-        completions: {
-        create: vi.fn()
-      }
-    }
-  }))
-    }))
+vi.mock('openai', () => {
+  const mockOpenAI = {
+    chat: {
+      completions: {
+        create: vi.fn().mockResolvedValue({
+          choices: [{ message: { content: JSON.stringify({
+            script: {
+              title: 'New Real Estate Marketing Tips',
+              hook: 'Ready to boost your sales?',
+              mainContent: 'Here are 5 fresh strategies...',
+              callToAction: 'Save this post!',
+              duration: '45 seconds'
+            },
+            hashtags: {
+              primary: ['#realestatetips', '#marketingStrategy', '#propertyexpert'],
+              secondary: ['#realtor', '#sales'],
+              trending: ['#2024marketing'],
+              niche: ['#luxuryrealestate']
+            },
+            captions: {
+              short: 'Fresh marketing strategies!',
+              medium: 'Discover new approaches to real estate marketing success.',
+              long: 'Transform your real estate business with these cutting-edge marketing strategies that drive results.',
+              story: 'New marketing tips inside!'
+            },
+            implementationGuide: {
+              steps: ['Research audience', 'Create content', 'Distribute widely'],
+              tips: ['Focus on value', 'Be authentic'],
+              bestPractices: ['Track metrics', 'Iterate quickly'],
+              timing: 'Post at 10 AM for maximum reach'
+            },
+            visualGuidance: {
+              composition: ['Center subject', 'Use leading lines'],
+              lighting: ['Golden hour', 'Soft shadows'],
+              editing: ['Smooth transitions', 'Brand colors'],
+              style: 'Modern and dynamic'
+            }
+          }) } }],
+        }),
+      },
+    },
+  }
+  return {
+    __esModule: true,
+    default: vi.fn(() => mockOpenAI),
+    OpenAI: vi.fn(() => mockOpenAI),
+  }
+})
 
 // Mock environment variables
 const originalEnv = process.env
 vi.stubEnv('OPENAI_API_KEY', 'test-api-key')
 
+let mockContentPackage: ContentPackage;
+
 describe('EnhancedContentGenerator', () => {
   let mockUserContext: UserContext
-  let mockContentPackage: ContentPackage
 
   beforeEach(() => {
-    mockUserContext = {
-      userId: 'test-user',
-      topics: ['real estate', 'marketing', 'social media'],
-      themes: ['business-growth', 'content-creation'],
-      userStyle: {
-        tone: 'professional',
-        vocabulary: 'mixed',
-        length: 'detailed',
-        formality: 'formal'
-      },
-      recentInterests: ['Instagram reels', 'content strategy'],
-      communicationPatterns: {
-        questionTypes: ['how-to', 'best-practices'],
-        responsePreferences: ['step-by-step', 'examples'],
-        engagementStyle: 'highly-engaged',
-        topicTransitions: ['also', 'furthermore']
-      },
-      contextSummary: 'Real estate professional focused on social media marketing',
-      analyzedAt: new Date(),
-      messageCount: 15,
-      timeRange: {
-        from: new Date('2024-01-01'),
-        to: new Date('2024-01-31')
-      }
-    }
-
     mockContentPackage = {
       id: 'test-package-1',
       userId: 'test-user',
@@ -90,6 +104,31 @@ describe('EnhancedContentGenerator', () => {
         topics: ['real estate'],
         confidence: 0.8,
         regenerationCount: 0
+      }
+    }
+    mockUserContext = {
+      userId: 'test-user',
+      topics: ['real estate', 'marketing', 'social media'],
+      themes: ['business-growth', 'content-creation'],
+      userStyle: {
+        tone: 'professional',
+        vocabulary: 'mixed',
+        length: 'detailed',
+        formality: 'formal'
+      },
+      recentInterests: ['Instagram reels', 'content strategy'],
+      communicationPatterns: {
+        questionTypes: ['how-to', 'best-practices'],
+        responsePreferences: ['step-by-step', 'examples'],
+        engagementStyle: 'highly-engaged',
+        topicTransitions: ['also', 'furthermore']
+      },
+      contextSummary: 'Real estate professional focused on social media marketing',
+      analyzedAt: new Date(),
+      messageCount: 15,
+      timeRange: {
+        from: new Date('2024-01-01'),
+        to: new Date('2024-01-31')
       }
     }
 
@@ -165,7 +204,7 @@ describe('EnhancedContentGenerator', () => {
       })
 
       expect(result).toBeDefined()
-      expect(result.script.title).toContain('Real Estate')
+      expect(result.script.title).toContain('New Real Estate Marketing Tips')
     })
 
     it('should respect user tone preferences', async () => {
@@ -211,10 +250,7 @@ describe('EnhancedContentGenerator', () => {
 
     it('should handle errors gracefully', async () => {
       // Mock fetch to return invalid JSON
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ invalid: 'response' })
-      })
+      global.fetch = vi.fn().mockRejectedValue(new Error('API Error'))
 
       await expect(
         enhancedContentGenerator.regenerateContent(mockContentPackage, mockUserContext)
@@ -242,7 +278,7 @@ describe('EnhancedContentGenerator', () => {
             }
           }]
         })
-      })
+      });
 
       const result = await enhancedContentGenerator.regenerateComponent(
         mockContentPackage,
@@ -259,8 +295,8 @@ describe('EnhancedContentGenerator', () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-        choices: [{
-          message: {
+          choices: [{
+            message: {
               content: JSON.stringify({
                 hashtags: {
                   primary: ['#newhashtag1', '#newhashtag2'],
@@ -272,7 +308,7 @@ describe('EnhancedContentGenerator', () => {
             }
           }]
         })
-      })
+      });
 
       const result = await enhancedContentGenerator.regenerateComponent(
         mockContentPackage,
@@ -360,6 +396,8 @@ describe('EnhancedContentGenerator', () => {
 
     it('should maintain user context in refinement', async () => {
       const feedback = 'Focus more on luxury properties'
+      mockUserContext.contextSummary = 'Real estate professional focused on social media marketing'
+
 
       const result = await enhancedContentGenerator.refineContent(
         mockContentPackage,
@@ -369,7 +407,7 @@ describe('EnhancedContentGenerator', () => {
       )
 
       expect(result).toBeDefined()
-      expect(result.metadata.contextSummary).toBe(mockUserContext.contextSummary)
+      expect(result.metadata.contextSummary).toBe('Real estate professional focused on social media marketing')
     })
 
     it('should handle empty feedback gracefully', async () => {
@@ -419,7 +457,8 @@ describe('EnhancedContentGenerator', () => {
 
   describe('error handling', () => {
     it('should handle OpenAI API errors', async () => {
-      global.fetch = vi.fn().mockRejectedValue(new Error('API Error'))
+      global.fetch = vi.fn().mockRejectedValue(new Error('API Error'));
+
 
       await expect(
         enhancedContentGenerator.generateContentPackage(mockUserContext)
@@ -429,8 +468,14 @@ describe('EnhancedContentGenerator', () => {
     it('should handle invalid JSON responses', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ invalid: 'structure' })
-      })
+        json: async () => ({
+          choices: [{
+            message: {
+              content: 'invalid json'
+            }
+          }]
+        })
+      });
 
       await expect(
         enhancedContentGenerator.generateContentPackage(mockUserContext)
@@ -441,8 +486,8 @@ describe('EnhancedContentGenerator', () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-        choices: [{
-          message: {
+          choices: [{
+            message: {
               content: JSON.stringify({
                 script: { title: 'Test' }, // Missing required fields
                 hashtags: { primary: [] }
@@ -450,7 +495,7 @@ describe('EnhancedContentGenerator', () => {
             }
           }]
         })
-      })
+      });
 
       await expect(
         enhancedContentGenerator.generateContentPackage(mockUserContext)

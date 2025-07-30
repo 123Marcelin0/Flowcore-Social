@@ -474,6 +474,9 @@ export class ChatContextAnalyzer {
   }
 
   private analyzeMessageLength(messages: ChatMessage[]): UserStyle['length'] {
+    if (messages.length === 0) {
+      return 'varied';
+    }
     const lengths = messages.map(msg => msg.content.length)
     const avgLength = lengths.reduce((sum, len) => sum + len, 0) / lengths.length
     const variance = lengths.reduce((sum, len) => sum + Math.pow(len - avgLength, 2), 0) / lengths.length

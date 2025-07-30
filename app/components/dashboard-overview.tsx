@@ -1,5 +1,6 @@
 "use client"
 
+import { v4 as uuidv4 } from 'uuid';
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -728,7 +729,7 @@ export const DashboardOverview = memo(function DashboardOverview() {
     if (!chatMessage.trim()) return
 
     const newMessage = {
-      id: Date.now().toString(),
+      id: uuidv4(),
       type: 'user' as const,
       message: chatMessage,
       timestamp: new Date()
@@ -799,7 +800,7 @@ export const DashboardOverview = memo(function DashboardOverview() {
       const processedResponse = processAIResponse(data.message)
 
       const aiResponse = {
-        id: (Date.now() + 1).toString(),
+        id: uuidv4(),
         type: 'ai' as const,
         message: processedResponse,
         timestamp: new Date()
@@ -824,7 +825,7 @@ export const DashboardOverview = memo(function DashboardOverview() {
       }
       
       const errorResponse = {
-        id: (Date.now() + 1).toString(),
+        id: uuidv4(),
         type: 'ai' as const,
         message: errorMessage,
         timestamp: new Date()

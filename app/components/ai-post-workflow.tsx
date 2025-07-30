@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { v4 as uuidv4 } from 'uuid';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -272,7 +273,7 @@ export function AIPostWorkflow({ open, onOpenChange, onPostCreated }: AIPostWork
       const url = URL.createObjectURL(file)
       
       newFiles.push({
-        id: Date.now().toString() + Math.random(),
+        id: uuidv4(),
         file,
         url,
         type: actualType,
@@ -298,11 +299,25 @@ export function AIPostWorkflow({ open, onOpenChange, onPostCreated }: AIPostWork
   }
 
   const handleRemoveFile = (fileId: string) => {
+    const fileToRemove = postData.files.find(f => f.id === fileId);
+    if (fileToRemove) {
+      URL.revokeObjectURL(fileToRemove.url);
+    }
     setPostData(prev => ({
       ...prev,
       files: prev.files.filter(f => f.id !== fileId)
     }))
   }
+
+  // Cleanup object URLs to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      postData.files.forEach(file => URL.revokeObjectURL(file.url));
+      if (transformedImage?.url) {
+        URL.revokeObjectURL(transformedImage.url);
+      }
+    };
+  }, []);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
