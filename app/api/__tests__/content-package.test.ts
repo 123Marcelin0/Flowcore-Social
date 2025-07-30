@@ -31,20 +31,20 @@ vi.mock('@supabase/supabase-js', () => {
   return { createClient: vi.fn(() => mockSupabase) };
 })
 
-vi.mock('@/lib/chat-context-analyzer', () => ({
+vi.doMock('@/lib/chat-context-analyzer', () => ({
   chatContextAnalyzer: {
     analyzeUserContext: vi.fn()
   }
 }))
 
-vi.mock('@/lib/enhanced-content-generator', () => ({
+vi.doMock('@/lib/enhanced-content-generator', () => ({
   enhancedContentGenerator: {
     generateContentPackage: vi.fn(),
     regenerateContent: vi.fn()
   }
 }))
 
-vi.mock('@/lib/content-package-builder', () => ({
+vi.doMock('@/lib/content-package-builder', () => ({
   contentPackageBuilder: {
     buildContentPackage: vi.fn()
   }
@@ -173,11 +173,11 @@ describe('Content Package API', () => {
     const { createClient } = require('@supabase/supabase-js')
     mockSupabase = createClient('https://example.supabase.co', 'example-anon-key')
     
-    const { chatContextAnalyzer } = require('../../../lib/chat-context-analyzer');
+    const { chatContextAnalyzer } = require('@/lib/chat-context-analyzer');
     mockChatContextAnalyzer = chatContextAnalyzer;
-    const { enhancedContentGenerator } = require('../../../lib/enhanced-content-generator');
+    const { enhancedContentGenerator } = require('@/lib/enhanced-content-generator');
     mockEnhancedContentGenerator = enhancedContentGenerator;
-    const { contentPackageBuilder } = require('../../../lib/content-package-builder');
+    const { contentPackageBuilder } = require('@/lib/content-package-builder');
     mockContentPackageBuilder = contentPackageBuilder;
   })
 
