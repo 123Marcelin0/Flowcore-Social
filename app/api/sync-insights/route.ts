@@ -209,9 +209,12 @@ export async function GET(request: NextRequest) {
 
 // Helper Functions
 
-async function checkSyncStatus(userId: string, platform: string, forceSync: boolean) {
-  if (forceSync) return { needsSync: true }
-async function checkSyncStatus(userId: string, platform: string, forceSync: boolean) {
+interface SyncStatus {
+  needsSync: boolean
+  nextSync?: string
+}
+
+async function checkSyncStatus(userId: string, platform: string, forceSync: boolean): Promise<SyncStatus> {
   if (forceSync) return { needsSync: true }
 
   const { data: status } = await supabase
@@ -247,7 +250,10 @@ async function checkSyncStatus(userId: string, platform: string, forceSync: bool
     needsSync: now >= nextSync && status.sync_enabled,
     nextSync: status.next_sync_at
   }
-}  // Get published posts from the last 30 days that haven't been synced recently
+}
+
+async function getPostsNeedingSync(userId: string, platform: string) {
+  // Get published posts from the last 30 days that haven't been synced recently
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 

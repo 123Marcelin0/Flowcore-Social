@@ -330,16 +330,14 @@ export function AIInteriorDesigner() {
       const link = document.createElement('a')
       link.href = url
       link.download = `ai-design-${result.id}.jpg`
+      document.body.appendChild(link)
       link.click()
+      document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
     } catch (error) {
       toast.error('Failed to download image')
       console.error('Download failed:', error)
     }
-  }
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
   }
 
   const startOver = () => {
@@ -1489,4 +1487,4 @@ export function AIInteriorDesigner() {
       </div>
     </div>
   )
-} 
+}
