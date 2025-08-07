@@ -1,0 +1,48 @@
+# Large data files that cause lag
+*.xlsx
+*.xls
+*.csv
+dataset_*.json
+SDK_*.json
+instagram-posts-*.json
+generated-posts.json
+template-*.json
+sample-posts.json
+
+# Build artifacts
+.next/
+.cache/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Lock files (very large)
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Large documentation files
+*.md
+
+# Test files
+__tests__/
+*.test.*
+*.spec.*
+
+# Database files
+*.sql
+database/
+
+# Scripts
+scripts/
+# Build output JavaScript files
+dist/**/*.js
+build/**/*.js
+coverage/**/*.js
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
