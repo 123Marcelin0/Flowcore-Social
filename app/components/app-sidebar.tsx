@@ -41,9 +41,9 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
 
   const menuItems = [
     { id: "dashboard" as Section, label: "Dashboard", icon: Home },
-    { id: "calendar" as Section, label: "Calendar", icon: Calendar },
-    { id: "ai-studio" as Section, label: "AI Studio", icon: Sparkles },
-    { id: "interactions" as Section, label: "AI Assistant", icon: MessageSquare },
+    { id: "calendar" as Section, label: "Kalender", icon: Calendar },
+    { id: "ai-studio" as Section, label: "KI-Studio", icon: Sparkles },
+    { id: "interactions" as Section, label: "KI-Assistent", icon: MessageSquare },
     { id: "ideas" as Section, label: "Content-Ideen", icon: Lightbulb },
     { id: "settings" as Section, label: "Einstellungen", icon: Settings },
   ]
@@ -78,16 +78,40 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
     }
   }
 
+  // Check if AI Studio is active for glassmorphic design
+  const isAIStudio = activeSection === "ai-studio"
+  // Check if Content page is active for black text
+  const isContentPage = activeSection === "ideas"
+
   return (
-    <div className="w-80 bg-white border-r border-gray-100 h-screen flex flex-col rounded-tr-2xl">
+    <div className={`w-72 flex flex-col transition-all duration-500 ${
+      isAIStudio 
+        ? 'hidden' 
+        : 'bg-white h-screen'
+    }`}>
+
       {/* Header */}
-      <div className="p-6">
+      <div className={`p-8 transition-all duration-500 ${
+        isAIStudio ? 'glass-panel shadow-[0_1px_20px_rgba(255,255,255,0.1)]' : ''
+      }`}>
         <div className="flex items-center">
           <div className="flex items-baseline">
-            <span className="font-medium text-transparent bg-clip-text bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316] text-2xl tracking-tight" style={{ fontFamily: 'Circular, Helvetica Neue, Arial, sans-serif' }}>
+            <span className={`font-medium text-transparent bg-clip-text text-2xl tracking-tight transition-all duration-500 ${
+              isAIStudio 
+                ? 'bg-gradient-to-r from-white via-blue-100 to-purple-100' 
+                : isContentPage
+                  ? 'bg-gradient-to-r from-gray-800 via-black to-gray-900'
+                  : 'bg-gradient-to-r from-[#dc2626] via-[#ea580c] to-[#f97316]'
+            }`} style={{ fontFamily: 'Circular, Helvetica Neue, Arial, sans-serif' }}>
               flowcore
             </span>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-cyan-500 to-teal-500 font-medium text-lg tracking-tight ml-1" style={{ fontFamily: 'Circular, Helvetica Neue, Arial, sans-serif' }}>
+            <span className={`text-transparent bg-clip-text font-medium text-lg tracking-tight ml-1 transition-all duration-500 ${
+              isAIStudio 
+                ? 'bg-gradient-to-r from-blue-200 via-cyan-200 to-teal-200' 
+                : isContentPage
+                  ? 'bg-gradient-to-r from-gray-800 via-black to-gray-900'
+                  : 'bg-gradient-to-r from-blue-500 via-cyan-500 to-teal-500'
+            }`} style={{ fontFamily: 'Circular, Helvetica Neue, Arial, sans-serif' }}>
               social
             </span>
           </div>
@@ -95,23 +119,31 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 px-6">
+      <div className="flex-1 px-8">
         <nav className="space-y-2">
           {menuItems.map((item) => (
             <Button
               key={item.id}
               onClick={() => setActiveSection(item.id)}
               variant="ghost"
-              className={`w-full justify-start gap-3 px-4 py-2 text-sm rounded-xl transition-all duration-200 ${
+              className={`w-full justify-start gap-3 px-4 py-3 text-sm rounded-2xl transition-all duration-300 ${
                 activeSection === item.id
-                  ? "bg-gradient-to-r from-teal-50 to-cyan-50 text-teal-600 border border-teal-100"
-                  : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                  ? isAIStudio
+                    ? "glass-panel-strong text-white border border-white/40 shadow-xl"
+                    : "bg-blue-50 text-blue-700 border border-blue-200"
+                  : isAIStudio
+                    ? "text-white/80 hover:glass-button hover:text-white"
+                    : "text-slate-700 hover:bg-gray-50 hover:text-slate-800"
               }`}
             >
-              <item.icon className={`w-4 h-4 ${
+              <item.icon className={`w-4 h-4 transition-all duration-300 ${
                 activeSection === item.id 
-                  ? "text-teal-600" 
-                  : "text-gray-500"
+                  ? isAIStudio 
+                    ? "text-white" 
+                    : "text-blue-600"
+                  : isAIStudio
+                    ? "text-white/70"
+                    : "text-gray-500"
               }`} />
               <span className="font-medium tracking-tight">{item.label}</span>
             </Button>
@@ -120,70 +152,144 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
       </div>
 
       {/* User Profile */}
-      <div className="p-6 border-t border-gray-100">
+      <div className={`p-8 transition-all duration-500`}>
         <Popover>
           <PopoverTrigger asChild>
             <Button 
               variant="ghost" 
-              className="w-full justify-start gap-3 px-3 py-2 h-auto hover:bg-gray-50 rounded-xl transition-colors"
+              className={`w-full justify-start gap-3 px-3 py-2 h-auto rounded-2xl transition-all duration-300 ${
+                isAIStudio 
+                  ? 'hover:glass-button' 
+                  : 'hover:bg-gray-50'
+              }`}
             >
-              <Avatar className="w-9 h-9 border-2 border-white shadow-sm">
+              <Avatar className={`w-9 h-9 border-2 shadow-lg transition-all duration-300 ${
+                isAIStudio ? 'border-white/40' : 'border-gray-200'
+              }`}>
                 <AvatarImage src={userAvatar} alt={userDisplayName} />
-                <AvatarFallback className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-sm font-medium">
+                <AvatarFallback className={`font-medium transition-all duration-300 ${
+                  isAIStudio 
+                    ? 'bg-white/30 backdrop-blur-xl text-white text-sm' 
+                    : 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-sm'
+                }`}>
                   {userInitials}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 text-left">
-                <p className="text-sm font-semibold text-gray-900 tracking-tight truncate">{userDisplayName}</p>
-                <p className="text-xs text-gray-500 truncate">{userEmail}</p>
+                <p className={`text-sm font-semibold tracking-tight truncate transition-all duration-300 ${
+                  isAIStudio ? 'text-white' : 'text-slate-800'
+                }`}>{userDisplayName}</p>
+                <p className={`text-xs truncate transition-all duration-300 ${
+                  isAIStudio ? 'text-white/70' : 'text-slate-600'
+                }`}>{userEmail}</p>
               </div>
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              <ChevronDown className={`w-4 h-4 transition-all duration-300 ${
+                isAIStudio ? 'text-white/70' : 'text-slate-600'
+              }`} />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-64 p-0 border-gray-200 rounded-xl shadow-xl" align="start">
+          <PopoverContent className={`w-64 p-0 rounded-2xl shadow-2xl transition-all duration-500 ${
+            isAIStudio 
+              ? 'glass-panel-strong border-white/20' 
+              : 'bg-white border border-gray-200'
+          }`} align="start">
             <div className="p-4">
               <div className="flex items-center gap-3 mb-4">
-                <Avatar className="w-12 h-12 border-2 border-white shadow-md">
+                <Avatar className={`w-12 h-12 border-2 shadow-lg ${
+                  isAIStudio ? 'border-white/40' : 'border-gray-200'
+                }`}>
                   <AvatarImage src={userAvatar} alt={userDisplayName} />
-                  <AvatarFallback className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-medium">
+                  <AvatarFallback className={`font-medium ${
+                    isAIStudio 
+                      ? 'bg-white/30 backdrop-blur-xl text-white' 
+                      : 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white'
+                  }`}>
                     {userInitials}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="font-semibold text-gray-900 truncate">{userDisplayName}</p>
-                  <p className="text-sm text-gray-500 truncate">{userEmail}</p>
-                  <Badge variant="secondary" className={`mt-1 text-xs ${getSubscriptionColor(subscriptionTier)}`}>
+                  <p className={`font-semibold truncate ${
+                    isAIStudio ? 'text-white' : 'text-gray-900'
+                  }`}>{userDisplayName}</p>
+                  <p className={`text-sm truncate ${
+                    isAIStudio ? 'text-white/70' : 'text-gray-500'
+                  }`}>{userEmail}</p>
+                  <Badge variant="secondary" className={`mt-1 text-xs transition-all duration-300 ${
+                    isAIStudio 
+                      ? 'bg-white/20 text-white border-white/30' 
+                      : getSubscriptionColor(subscriptionTier)
+                  }`}>
                     {getSubscriptionLabel(subscriptionTier)}
                   </Badge>
                 </div>
               </div>
               
-              <Separator className="my-3" />
+              <Separator className={`my-3 ${
+                isAIStudio ? 'bg-white/20' : ''
+              }`} />
               
               <div className="space-y-1">
-                <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-lg">
-                  <User className="w-4 h-4 text-gray-500" />
+                <Button variant="ghost" className={`w-full justify-start gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all duration-300 ${
+                  isAIStudio 
+                    ? 'hover:bg-white/15 text-white/90 backdrop-blur-lg' 
+                    : isContentPage
+                      ? 'hover:bg-gray-50 text-black'
+                      : 'hover:bg-gray-50'
+                }`}>
+                  <User className={`w-4 h-4 ${
+                    isAIStudio ? 'text-white/70' : isContentPage ? 'text-black/70' : 'text-gray-500'
+                  }`} />
                   Konto-Einstellungen
                 </Button>
-                <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-lg">
-                  <CreditCard className="w-4 h-4 text-gray-500" />
+                <Button variant="ghost" className={`w-full justify-start gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all duration-300 ${
+                  isAIStudio 
+                    ? 'hover:bg-white/15 text-white/90 backdrop-blur-lg' 
+                    : isContentPage
+                      ? 'hover:bg-gray-50 text-black'
+                      : 'hover:bg-gray-50'
+                }`}>
+                  <CreditCard className={`w-4 h-4 ${
+                    isAIStudio ? 'text-white/70' : isContentPage ? 'text-black/70' : 'text-gray-500'
+                  }`} />
                   Abrechnung & Pläne
                 </Button>
-                <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-lg">
-                  <Shield className="w-4 h-4 text-gray-500" />
+                <Button variant="ghost" className={`w-full justify-start gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all duration-300 ${
+                  isAIStudio 
+                    ? 'hover:bg-white/15 text-white/90 backdrop-blur-lg' 
+                    : isContentPage
+                      ? 'hover:bg-gray-50 text-black'
+                      : 'hover:bg-gray-50'
+                }`}>
+                  <Shield className={`w-4 h-4 ${
+                    isAIStudio ? 'text-white/70' : isContentPage ? 'text-black/70' : 'text-gray-500'
+                  }`} />
                   Datenschutz & Sicherheit
                 </Button>
-                <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-lg">
-                  <Mail className="w-4 h-4 text-gray-500" />
+                <Button variant="ghost" className={`w-full justify-start gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all duration-300 ${
+                  isAIStudio 
+                    ? 'hover:bg-white/15 text-white/90 backdrop-blur-lg' 
+                    : isContentPage
+                      ? 'hover:bg-gray-50 text-black'
+                      : 'hover:bg-gray-50'
+                }`}>
+                  <Mail className={`w-4 h-4 ${
+                    isAIStudio ? 'text-white/70' : isContentPage ? 'text-black/70' : 'text-gray-500'
+                  }`} />
                   E-Mail-Einstellungen
                 </Button>
               </div>
               
-              <Separator className="my-3" />
+              <Separator className={`my-3 ${
+                isAIStudio ? 'bg-white/20' : ''
+              }`} />
               
               <Button 
                 variant="ghost" 
-                className="w-full justify-start gap-3 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700 rounded-lg"
+                className={`w-full justify-start gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all duration-300 ${
+                  isAIStudio 
+                    ? 'text-red-300 hover:bg-red-500/20 hover:text-red-200 backdrop-blur-lg' 
+                    : 'text-red-600 hover:bg-red-50 hover:text-red-700'
+                }`}
                 onClick={onLogout}
               >
                 <LogOut className="w-4 h-4" />
@@ -198,11 +304,19 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
       <div className="p-6 pt-0">
         <Button 
           variant="outline" 
-          className="w-full justify-start gap-3 border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl"
+          className={`w-full justify-start gap-3 rounded-2xl transition-all duration-300 ${
+            isAIStudio 
+              ? 'border-white/20 text-white/80 hover:text-white hover:bg-white/15 backdrop-blur-lg' 
+              : 'border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
         >
           <div className="relative">
             <Bell className="w-5 h-5" />
-            <Badge className="absolute -top-2 -right-2 w-4 h-4 p-0 flex items-center justify-center bg-red-500 text-[10px]">
+            <Badge className={`absolute -top-2 -right-2 w-4 h-4 p-0 flex items-center justify-center text-[10px] transition-all duration-300 ${
+              isAIStudio 
+                ? 'bg-red-400/90 backdrop-blur-lg text-white' 
+                : 'bg-red-500 text-white'
+            }`}>
               3
             </Badge>
           </div>

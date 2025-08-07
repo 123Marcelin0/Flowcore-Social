@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { 
@@ -13,7 +14,19 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { toast } from 'sonner'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 import { AIInteriorDesigner } from './ai-interior-designer'
+import { AIStudioVideoGenerator } from './ai-studio-video-generator'
+import { AIStudioImageGenerator } from './ai-studio-image-generator'
+import { AIStudioVideoMerger } from './ai-studio-video-merger'
+import { AIStudioVideoEditor } from './ai-studio-video-editor'
+import { AIStudioEditorRedesigned } from './ai-studio-editor-redesigned'
+import { ContentGallery } from './content-gallery'
 
 interface UploadedFile {
   id: string
@@ -38,6 +51,30 @@ interface AIStudioMainProps {
   onProcessingComplete?: () => void
 }
 
+// Enhanced page transition variants for liquid glass style
+const pageVariants = {
+  initial: {
+    y: 20,
+    opacity: 0,
+    scale: 0.98
+  },
+  animate: {
+    y: 0,
+    opacity: 1,
+    scale: 1
+  },
+  exit: {
+    y: -20,
+    opacity: 0,
+    scale: 0.98
+  }
+}
+
+const pageTransition = {
+  duration: 0.6,
+  ease: [0.4, 0, 0.2, 1] as [number, number, number, number]
+}
+
 export function AIStudioMain({ 
   activeTool, 
   isProcessing, 
@@ -51,6 +88,16 @@ export function AIStudioMain({
   const [chatInput, setChatInput] = useState('')
   const [isChatLoading, setIsChatLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const chatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (chatTimeoutRef.current) {
+        clearTimeout(chatTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Handle file upload
   const handleFileUpload = useCallback(async (files: FileList | File[]) => {
@@ -71,16 +118,42 @@ export function AIStudioMain({
         continue
       }
 
-      const uploadedFile: UploadedFile = {
-        id: `${Date.now()}-${Math.random()}`,
-        file,
-        url: URL.createObjectURL(file),
-        type: isImage ? 'image' : 'video',
-        name: file.name,
-        size: file.size
-      }
+      try {
+        // Upload to database via API
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('fileType', isImage ? 'image' : 'video')
 
-      newFiles.push(uploadedFile)
+        const response = await fetch('/api/media-upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          },
+          body: formData
+        })
+
+        const result = await response.json()
+
+        if (!result.success) {
+          toast.error(`Upload failed: ${result.error}`)
+          continue
+        }
+
+        const uploadedFile: UploadedFile = {
+          id: result.data.id,
+          file,
+          url: result.data.storage_url || result.data.public_url,
+          type: isImage ? 'image' : 'video',
+          name: file.name,
+          size: file.size
+        }
+
+        newFiles.push(uploadedFile)
+        toast.success(`${file.name} uploaded successfully`)
+      } catch (error) {
+        console.error('Upload error:', error)
+        toast.error(`Failed to upload ${file.name}`)
+      }
     }
 
     setUploadedFiles(prev => {
@@ -88,10 +161,7 @@ export function AIStudioMain({
       onFilesChange?.(updated.length > 0)
       return updated
     })
-    if (newFiles.length > 0) {
-      toast.success(`${newFiles.length} file(s) uploaded`)
-    }
-  }, [])
+  }, [user])
 
   // Handle drag and drop
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
@@ -137,6 +207,11 @@ export function AIStudioMain({
   const handleChatSend = useCallback(async () => {
     if (!chatInput.trim()) return
 
+    // Clear any existing timeout
+    if (chatTimeoutRef.current) {
+      clearTimeout(chatTimeoutRef.current)
+    }
+
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       content: chatInput,
@@ -149,7 +224,7 @@ export function AIStudioMain({
     setIsChatLoading(true)
 
     // Simulate AI response
-    setTimeout(() => {
+    chatTimeoutRef.current = setTimeout(() => {
       let response = "I can help you with image enhancement, interior design, video editing, and content creation. What would you like to work on?"
       
       if (activeTool) {
@@ -170,6 +245,7 @@ export function AIStudioMain({
       }
       setChatMessages(prev => [...prev, aiMessage])
       setIsChatLoading(false)
+      chatTimeoutRef.current = null
     }, 1000)
   }, [chatInput, activeTool, uploadedFiles.length])
 
@@ -186,22 +262,106 @@ export function AIStudioMain({
     })
   }, [onFilesChange])
 
-  // Show Interior Designer when interior-design tool is active
-  if (activeTool === 'interior-design') {
-    return <AIInteriorDesigner />
-  }
-
+  // Enhanced page transitions with AnimatePresence
   return (
-    <div className="flex flex-col h-screen bg-gray-50 relative">
+    <AnimatePresence mode="wait">
+      {activeTool === 'interior-design' && (
+        <motion.div
+          key="interior-design"
+          variants={pageVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={pageTransition}
+        >
+          <AIInteriorDesigner />
+        </motion.div>
+      )}
+
+      {activeTool === 'video-edit' && (
+        <motion.div
+          key="video-edit"
+          variants={pageVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={pageTransition}
+        >
+          <AIStudioVideoGenerator />
+        </motion.div>
+      )}
+
+      {activeTool === 'image-generation' && (
+        <motion.div
+          key="image-generation"
+          variants={pageVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={pageTransition}
+        >
+          <AIStudioImageGenerator />
+        </motion.div>
+      )}
+
+      {activeTool === 'video-merger' && (
+        <motion.div
+          key="video-merger"
+          variants={pageVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={pageTransition}
+        >
+          <AIStudioVideoMerger />
+        </motion.div>
+      )}
+
+      {activeTool === 'video-editor' && (
+        <motion.div
+          key="video-editor"
+          variants={pageVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={pageTransition}
+        >
+          <AIStudioEditorRedesigned />
+        </motion.div>
+      )}
+
+      {activeTool === 'content-create' && (
+        <motion.div
+          key="content-create"
+          variants={pageVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={pageTransition}
+        >
+          <ContentGallery />
+        </motion.div>
+      )}
+
+      {!activeTool && (
+        <motion.div
+          key="default-upload"
+          variants={pageVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={pageTransition}
+          className="flex flex-col h-screen relative w-full"
+        >
       {/* Upload Area */}
       <div className="flex-1 p-8">
         <div
-          className={`h-full border-2 border-dashed rounded-2xl transition-all cursor-pointer ${
+          className={`h-full rounded-3xl transition-all duration-200 cursor-pointer glass-shimmer ${
             isDragging 
-              ? 'border-blue-500 bg-blue-50' 
+              ? 'glass-panel-strong border-2 border-dashed border-white/40 shadow-2xl' 
               : uploadedFiles.length > 0
-              ? 'border-gray-300 bg-white'
-              : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+              ? 'glass-panel-strong border border-white/25 shadow-2xl'
+              : 'glass-panel border-2 border-dashed border-white/30 hover:glass-panel-strong hover:border-white/40 shadow-xl'
           }`}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -214,7 +374,7 @@ export function AIStudioMain({
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                 {uploadedFiles.map((file) => (
                   <div key={file.id} className="relative group">
-                    <div className="aspect-square rounded-lg overflow-hidden bg-gray-100 border">
+                    <div className="aspect-square rounded-2xl overflow-hidden glass-panel border border-white/25 shadow-lg transition-all duration-200 hover:glass-panel-strong">
                       {file.type === 'image' ? (
                         <img
                           src={file.url}
@@ -223,7 +383,7 @@ export function AIStudioMain({
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <Play className="w-8 h-8 text-gray-400" />
+                          <Play className="w-6 h-6 text-slate-500" />
                         </div>
                       )}
                     </div>
@@ -232,25 +392,25 @@ export function AIStudioMain({
                         e.stopPropagation()
                         removeFile(file.id)
                       }}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500/90 backdrop-blur-lg rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-red-600/90 active:scale-95 shadow-lg border border-white/20"
                     >
                       <X className="w-3 h-3 text-white" />
                     </button>
-                    <p className="text-xs text-gray-600 mt-2 truncate">{file.name}</p>
+                    <p className="text-xs text-slate-700 mt-2 truncate font-medium">{file.name}</p>
                   </div>
                 ))}
                 
                 {/* Add More Button */}
                 <div 
-                  className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 transition-colors cursor-pointer"
+                  className="aspect-square rounded-2xl border-2 border-dashed border-white/30 flex items-center justify-center glass-panel hover:glass-panel-strong hover:border-white/40 transition-all duration-200 cursor-pointer active:scale-95"
                   onClick={(e) => {
                     e.stopPropagation()
                     fileInputRef.current?.click()
                   }}
                 >
                   <div className="text-center">
-                    <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                    <span className="text-xs text-gray-500">Add More</span>
+                    <Upload className="w-5 h-5 text-slate-700 mx-auto mb-2" />
+                    <span className="text-xs text-slate-700 font-medium">Add More</span>
                   </div>
                 </div>
               </div>
@@ -259,16 +419,16 @@ export function AIStudioMain({
             // Empty State
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
-                <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Upload className="w-12 h-12 text-gray-400" />
+                <div className="w-24 h-24 glass-panel-strong border border-white/25 shadow-2xl rounded-3xl flex items-center justify-center mx-auto mb-6 transition-all duration-200 hover:glass-panel-strong liquid-float">
+                  <Upload className="w-10 h-10 text-slate-700" />
                 </div>
-                <h3 className="text-xl font-medium text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-slate-800 mb-2 drop-shadow-sm">
                   {isDragging ? 'Drop your files here' : 'Upload your files'}
                 </h3>
-                <p className="text-gray-500 mb-6">
+                <p className="text-slate-700 mb-6 drop-shadow-sm">
                   Drag and drop images or videos, or click to browse
                 </p>
-                <div className="flex items-center justify-center gap-4 text-sm text-gray-400">
+                <div className="flex items-center justify-center gap-4 text-sm text-slate-600 drop-shadow-sm">
                   <span>Images: JPG, PNG, WebP</span>
                   <span>•</span>
                   <span>Videos: MP4, MOV</span>
@@ -291,7 +451,7 @@ export function AIStudioMain({
       </div>
 
       {/* Chat Interface - Extended height for better alignment */}
-      <div className="border-t border-gray-200 bg-white flex flex-col" style={{ minHeight: '180px' }}>
+      <div className="border-t border-white/20 glass-panel-strong flex flex-col" style={{ minHeight: '180px' }}>
         {/* Chat Messages */}
         {chatMessages.length > 0 && (
           <div className="max-h-40 overflow-y-auto p-4 space-y-3">
@@ -301,10 +461,10 @@ export function AIStudioMain({
                 className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                  className={`max-w-xs px-3 py-2 rounded-xl text-sm transition-all duration-200 ${
                     message.sender === 'user'
-                      ? 'bg-black text-white'
-                      : 'bg-gray-100 text-gray-900'
+                      ? 'backdrop-blur-xl bg-slate-800 text-white shadow-lg'
+                      : 'backdrop-blur-xl bg-white/60 text-slate-800 border border-white/20 shadow-lg'
                   }`}
                 >
                   {message.content}
@@ -313,8 +473,8 @@ export function AIStudioMain({
             ))}
             {isChatLoading && (
               <div className="flex justify-start">
-                <div className="bg-gray-100 px-3 py-2 rounded-lg">
-                  <Loader2 className="w-4 h-4 animate-spin text-gray-600" />
+                <div className="backdrop-blur-xl bg-white/60 border border-white/20 shadow-lg px-3 py-2 rounded-xl">
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
                 </div>
               </div>
             )}
@@ -325,33 +485,39 @@ export function AIStudioMain({
         <div className="flex-1"></div>
 
         {/* Chat Input - Positioned at bottom with extra padding */}
-        <div className="p-6 border-t border-gray-100 bg-white">
+        <div className="p-6 border-t border-white/20 backdrop-blur-xl bg-white/60">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="sm"
-              className="text-gray-400 hover:text-gray-600 h-12 w-12"
+              className="text-slate-500 hover:text-slate-700 backdrop-blur-xl bg-white/40 hover:bg-white/80 border border-white/20 transition-all duration-200 active:scale-95 h-12 w-12 rounded-xl"
             >
               <Paperclip className="w-4 h-4" />
             </Button>
             <Input
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleChatSend()}
+              onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}
               placeholder="Ask AI anything about your files..."
-              className="flex-1 border-0 bg-gray-50 focus:bg-white transition-colors h-12 rounded-lg"
+              className="flex-1 border-0 backdrop-blur-xl bg-white/40 focus:bg-white/80 transition-all duration-200 h-12 rounded-xl text-slate-800 placeholder:text-slate-500"
             />
             <Button
               onClick={handleChatSend}
               disabled={!chatInput.trim() || isChatLoading}
               size="sm"
-              className="bg-black text-white hover:bg-gray-800 h-12 px-4 rounded-lg"
+              className={`h-12 px-4 rounded-xl transition-all duration-200 active:scale-95 ${
+                !chatInput.trim() || isChatLoading
+                  ? 'backdrop-blur-xl bg-slate-200 text-slate-500 cursor-not-allowed opacity-50'
+                  : 'backdrop-blur-xl bg-slate-800 text-white hover:bg-slate-700 shadow-lg'
+              }`}
             >
               <Send className="w-4 h-4" />
             </Button>
           </div>
         </div>
       </div>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 } 

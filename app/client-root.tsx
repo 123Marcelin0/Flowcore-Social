@@ -26,6 +26,60 @@ export function ClientPageRoot() {
     hasFiles: false,
     isProcessing: false
   })
+
+  // Auto-set interior tool when AI Studio is activated
+  useEffect(() => {
+    if (activeSection === "ai-studio" && !aiStudioState.activeTool) {
+      setAiStudioState(prev => ({ ...prev, activeTool: 'interior-design' }))
+    }
+  }, [activeSection, aiStudioState.activeTool])
+
+  // Update body and html class based on AI Studio tool
+  useEffect(() => {
+    const body = document.body
+    const html = document.documentElement
+    
+    const aiStudioClasses = [
+      'ai-studio-interior',
+      'ai-studio-video-editor', 
+      'ai-studio-content-create',
+      'ai-studio-video-edit',
+      'ai-studio-image-generation',
+      'ai-studio-video-merger'
+    ]
+    
+    // Remove all AI Studio classes from both html and body
+    aiStudioClasses.forEach(className => {
+      body.classList.remove(className)
+      html.classList.remove(className)
+    })
+    
+    // Add appropriate class if in AI Studio
+    if (activeSection === "ai-studio" && aiStudioState.activeTool) {
+      const toolClassMap: Record<string, string> = {
+        'interior-design': 'ai-studio-interior',
+        'video-editor': 'ai-studio-video-editor',
+        'content-create': 'ai-studio-content-create',
+        'video-edit': 'ai-studio-video-edit',
+        'image-generation': 'ai-studio-image-generation',
+        'video-merger': 'ai-studio-video-merger'
+      }
+      
+      const targetClass = toolClassMap[aiStudioState.activeTool]
+      if (targetClass) {
+        body.classList.add(targetClass)
+        html.classList.add(targetClass)
+      }
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      aiStudioClasses.forEach(className => {
+        body.classList.remove(className)
+        html.classList.remove(className)
+      })
+    }
+  }, [activeSection, aiStudioState.activeTool])
   const { isAuthenticated, isLoading, signOut } = useAuth()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -99,8 +153,54 @@ export function ClientPageRoot() {
 
   return (
     <DateProvider>
-      <div className="flex h-screen bg-gray-50">
-        <div className="relative">
+      {/* Fixed background layer to ensure complete coverage */}
+      <div 
+        className="fixed inset-0 z-0"
+        style={{
+          backgroundImage: activeSection === "ai-studio" && aiStudioState.activeTool === 'interior-design'
+            ? 'url(/vecteezy_ai-generated-real-estate-advertisment-background-with-copy_36725233.jpg)'
+            : activeSection === "ai-studio" && aiStudioState.activeTool === 'video-editor'
+            ? 'url(/abstract-liquid-marble-white-background-handmade-experimental-art.jpg)'
+            : activeSection === "ai-studio" && aiStudioState.activeTool === 'content-create'
+            ? 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 25%, #bae6fd 50%, #7dd3fc 75%, #38bdf8 100%)'
+            : activeSection === "ai-studio" && aiStudioState.activeTool === 'video-edit'
+            ? 'none'
+            : activeSection === "ai-studio" && aiStudioState.activeTool === 'image-generation'
+            ? 'linear-gradient(135deg, #0A0A10 0%, #1A0B2E 50%, #0A0A10 100%)'
+            : activeSection === "ai-studio" && aiStudioState.activeTool === 'video-merger'
+            ? 'linear-gradient(135deg, #ffffff 0%, #fff7ed 50%, #fed7aa 100%)'
+            : 'none',
+          backgroundColor: activeSection === "ai-studio" && aiStudioState.activeTool === 'video-edit'
+            ? '#080a13'
+            : '#f9fafb', // Default bg-gray-50
+          backgroundSize: (activeSection === "ai-studio" && (aiStudioState.activeTool === 'interior-design' || aiStudioState.activeTool === 'video-editor')) ? 'cover' : 'auto',
+          backgroundPosition: (activeSection === "ai-studio" && (aiStudioState.activeTool === 'interior-design' || aiStudioState.activeTool === 'video-editor')) ? 'center' : 'initial',
+          backgroundRepeat: (activeSection === "ai-studio" && (aiStudioState.activeTool === 'interior-design' || aiStudioState.activeTool === 'video-editor')) ? 'no-repeat' : 'initial',
+          backgroundAttachment: (activeSection === "ai-studio" && (aiStudioState.activeTool === 'interior-design' || aiStudioState.activeTool === 'video-editor')) ? 'fixed' : 'initial'
+        }}
+      />
+      
+
+      
+      <div className="flex h-screen relative overflow-hidden z-10">
+        {/* AI Studio Liquid Glass Background Layer - Only when AI Studio is active */}
+        {activeSection === "ai-studio" && (
+          <div className="absolute inset-0 pointer-events-none">
+            {/* Primary liquid glass overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] via-white/[0.01] to-transparent" />
+            
+            {/* Floating liquid orbs */}
+            <div className="absolute top-1/4 left-1/5 w-96 h-96 bg-white/[0.03] rounded-full blur-3xl liquid-float" />
+            <div className="absolute top-1/2 right-1/4 w-80 h-80 bg-white/[0.02] rounded-full blur-3xl liquid-float" style={{ animationDelay: '2s' }} />
+            <div className="absolute bottom-1/3 left-1/3 w-72 h-72 bg-white/[0.025] rounded-full blur-3xl liquid-float" style={{ animationDelay: '4s' }} />
+            
+            {/* Subtle light refractions */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.008] to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-bl from-transparent via-white/[0.006] to-transparent" />
+          </div>
+        )}
+        
+        <div className="relative z-10 flex w-full">
           {/* Sidebar */}
           <AppSidebar 
             activeSection={activeSection} 
@@ -110,32 +210,35 @@ export function ClientPageRoot() {
           
           {/* AI Studio Toolbar Overlay */}
           {activeSection === "ai-studio" && (
-            <AIStudioToolbar 
-              onBack={() => setActiveSection("dashboard")}
-              activeTool={aiStudioState.activeTool}
-              onToolSelect={(tool) => setAiStudioState(prev => ({ ...prev, activeTool: tool }))}
-              onProcess={() => setAiStudioState(prev => ({ ...prev, isProcessing: true }))}
-              isProcessing={aiStudioState.isProcessing}
-              hasFiles={aiStudioState.hasFiles}
-            />
+            <div className="absolute left-0 top-0 bottom-0 z-40">
+              <AIStudioToolbar 
+                onBack={() => setActiveSection("dashboard")}
+                activeTool={aiStudioState.activeTool}
+                onToolSelect={(tool) => setAiStudioState(prev => ({ ...prev, activeTool: tool }))}
+                onProcess={() => setAiStudioState(prev => ({ ...prev, isProcessing: true }))}
+                isProcessing={aiStudioState.isProcessing}
+                hasFiles={aiStudioState.hasFiles}
+              />
+            </div>
           )}
+          
+          {/* Main Content Area */}
+          <main className={`flex-1 overflow-y-auto relative z-20 ${activeSection === "ai-studio" ? "scrollbar-thin ml-72" : ""}`}>
+            {activeSection === "dashboard" && <DashboardOverviewOptimized />}
+            {activeSection === "calendar" && <ContentHub />}
+            {activeSection === "ai-studio" && (
+              <AIStudioMain 
+                activeTool={aiStudioState.activeTool}
+                isProcessing={aiStudioState.isProcessing}
+                onFilesChange={(hasFiles) => setAiStudioState(prev => ({ ...prev, hasFiles }))}
+                onProcessingComplete={() => setAiStudioState(prev => ({ ...prev, isProcessing: false }))}
+              />
+            )}
+            {activeSection === "interactions" && <AIInteractions />}
+            {activeSection === "ideas" && <ContentIdeas />}
+            {activeSection === "settings" && <SettingsPage />}
+          </main>
         </div>
-        
-        <main className={`flex-1 overflow-y-auto ${activeSection === "ai-studio" ? "" : "p-8"}`}>
-          {activeSection === "dashboard" && <DashboardOverviewOptimized />}
-          {activeSection === "calendar" && <ContentHub />}
-          {activeSection === "ai-studio" && (
-            <AIStudioMain 
-              activeTool={aiStudioState.activeTool}
-              isProcessing={aiStudioState.isProcessing}
-              onFilesChange={(hasFiles) => setAiStudioState(prev => ({ ...prev, hasFiles }))}
-              onProcessingComplete={() => setAiStudioState(prev => ({ ...prev, isProcessing: false }))}
-            />
-          )}
-          {activeSection === "interactions" && <AIInteractions />}
-          {activeSection === "ideas" && <ContentIdeas />}
-          {activeSection === "settings" && <SettingsPage />}
-        </main>
         
         {/* Connection Status Monitor */}
         <ConnectionStatus />

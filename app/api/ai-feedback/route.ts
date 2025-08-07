@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/supabase'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 
 // POST /api/ai-feedback - Log user feedback for AI suggestions
 export async function POST(request: NextRequest) {
@@ -29,9 +28,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         error: 'action_type and action_id are required'
-      })
+      }, { status: 400 })
     }
-
     // Log the feedback
     const { data: feedbackRecord, error: feedbackError } = await supabase
       .from('ai_feedback')
@@ -63,8 +61,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Update AI suggestions table if this is feedback on a specific suggestion
+    // Update AI suggestions table if this is feedback on a specific suggestion
     if (action_type === 'caption' || action_type === 'idea') {
-      await supabase
+      const { error: updateError } = await supabase
         .from('ai_suggestions')
         .update({
           user_feedback: improvement_notes,
@@ -74,9 +73,13 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', action_id)
         .eq('user_id', user.id)
+
+      if (updateError) {
+        console.error('Error updating ai_suggestions:', updateError)
+        // Continue processing as this is not critical
+      }
     }
 
-    // Analyze feedback patterns for this user
     const feedbackInsights = await analyzeFeedbackPatterns(user.id, action_type)
 
     // Log the feedback collection in context logs
@@ -127,16 +130,21 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
-
+    
     const { searchParams } = new URL(request.url)
     const action_type = searchParams.get('action_type') || undefined
-    const timeframe = searchParams.get('timeframe') || '30' // days
+    const timeframeDays = parseInt(searchParams.get('timeframe') || '30')
+
+    // Calculate the date threshold
+    const dateThreshold = new Date()
+    dateThreshold.setDate(dateThreshold.getDate() - timeframeDays)
 
     // Get recent feedback
     let feedbackQuery = supabase
       .from('ai_feedback')
       .select('*')
       .eq('user_id', user.id)
+      .gte('created_at', dateThreshold.toISOString())
       .order('created_at', { ascending: false })
 
     if (action_type) {
@@ -184,22 +192,27 @@ async function analyzeFeedbackPatterns(userId: string, actionType: string) {
   if (!feedback || feedback.length === 0) {
     return { patterns_count: 0, insights: [] }
   }
-
-  const patterns = []
   const helpfulCount = feedback.filter(f => f.helpful === true).length
   const unhelpfulCount = feedback.filter(f => f.helpful === false).length
-  const averageRating = feedback
-    .filter(f => f.rating)
-    .reduce((sum, f) => sum + f.rating, 0) / feedback.filter(f => f.rating).length
+  const ratingsArray = feedback.filter(f => f.rating)
+  const averageRating = ratingsArray.length > 0
+    ? ratingsArray.reduce((sum: number, f: any) => sum + f.rating, 0) / ratingsArray.length
+    : null
+
+  // Initialize patterns array
+  const patterns: any[] = []
 
   // Analyze improvement notes for common themes
   const improvementThemes = extractImprovementThemes(feedback)
 
-  patterns.push({
-    type: 'satisfaction_rate',
-    value: helpfulCount / (helpfulCount + unhelpfulCount),
-    insight: `User finds ${Math.round((helpfulCount / (helpfulCount + unhelpfulCount)) * 100)}% of ${actionType} suggestions helpful`
-  })
+  const totalResponses = helpfulCount + unhelpfulCount
+  if (totalResponses > 0) {
+    patterns.push({
+      type: 'satisfaction_rate',
+      value: helpfulCount / totalResponses,
+      insight: `User finds ${Math.round((helpfulCount / totalResponses) * 100)}% of ${actionType} suggestions helpful`
+    })
+  }
 
   if (averageRating) {
     patterns.push({
@@ -267,9 +280,11 @@ function extractImprovementThemes(feedback: any[]) {
 function generateImprovementPlan(insights: any, feedbackType: string, improvementNotes: string) {
   const improvements = []
 
-  if (feedbackType === 'thumbs_down' || feedbackType === 'rating' && insights.insights.some((i: any) => i.value < 3)) {
-    improvements.push('I\'ll adjust my suggestions based on your preferences')
-  }
+  if (
+    feedbackType === 'thumbs_down' ||
+    (feedbackType === 'rating' && insights.insights.some((i: any) => i.type === 'average_rating' && i.value < 3))
+  ) {
+    improvements.push('I\'ll adjust my suggestions based on your preferences')  }
 
   if (improvementNotes) {
     if (improvementNotes.toLowerCase().includes('shorter')) {
@@ -405,9 +420,15 @@ function analyzeFeedbackTrends(feedback: any[]) {
   const recent = feedback.slice(0, 5)
   const older = feedback.slice(5, 10)
 
-  const recentHelpful = recent.filter(f => f.helpful).length / recent.length
-  const olderHelpful = older.filter(f => f.helpful).length / older.length
-
+  const recentHelpful =
+    recent.length > 0
+      ? recent.filter(f => f.helpful).length / recent.length
+      : 0
+  const olderHelpful =
+    older.length > 0
+      ? older.filter(f => f.helpful).length / older.length
+      : 0
+  
   const trend = recentHelpful > olderHelpful + 0.1 ? 'improving' : 
                 recentHelpful < olderHelpful - 0.1 ? 'declining' : 'stable'
 

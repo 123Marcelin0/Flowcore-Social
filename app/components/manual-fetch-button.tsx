@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -38,9 +38,23 @@ export default function ManualFetchButton({
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle')
   const [lastFetched, setLastFetched] = useState<Date | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [])
 
   const triggerFetch = async () => {
     if (disabled || fetchStatus === 'fetching') return
+
+    // Clear any existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+    }
 
     setFetchStatus('fetching')
     setErrorMessage(null)
@@ -54,8 +68,13 @@ export default function ManualFetchButton({
         body: JSON.stringify({
           postId: postId,
           platform: platform
-        })
+        }),
+        signal: AbortSignal.timeout(30000) // 30 second timeout
       })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
 
       const data = await response.json()
 
@@ -63,29 +82,29 @@ export default function ManualFetchButton({
         setFetchStatus('success')
         setLastFetched(new Date())
         onSuccess?.(data)
-        
+
         // Reset to idle after 3 seconds
-        setTimeout(() => {
+        timeoutRef.current = setTimeout(() => {
           setFetchStatus('idle')
         }, 3000)
       } else {
         setFetchStatus('error')
         setErrorMessage(data.error || 'Failed to trigger fetch')
         onError?.(data.error || 'Failed to trigger fetch')
-        
+
         // Reset to idle after 5 seconds
-        setTimeout(() => {
+        timeoutRef.current = setTimeout(() => {
           setFetchStatus('idle')
         }, 5000)
       }
     } catch (error) {
       console.error('Error triggering fetch:', error)
-      setFetchStatus('error')
-      setErrorMessage('Network error occurred')
-      onError?.('Network error occurred')
-      
+      const errorMsg = error instanceof Error ? error.message : 'Network error occurred'
+      setErrorMessage(errorMsg)
+      onError?.(errorMsg)
+
       // Reset to idle after 5 seconds
-      setTimeout(() => {
+      timeoutRef.current = setTimeout(() => {
         setFetchStatus('idle')
       }, 5000)
     }

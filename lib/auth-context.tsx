@@ -55,7 +55,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error) {
       console.error('Error loading user profile:', error)
       setUserProfile(null)
-      setAuthError('Failed to load user profile')
+      // Don't set auth error for profile loading issues - this is not critical
+      // setAuthError('Failed to load user profile')
     }
   }, [supabaseConfigured])
 

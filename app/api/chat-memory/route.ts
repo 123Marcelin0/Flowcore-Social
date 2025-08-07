@@ -3,6 +3,51 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/openaiService'
 
+// TypeScript interfaces for chat memory data structures
+interface ChatMessage {
+  id: string
+  session_id: string
+  user_id: string
+  message_type: 'user' | 'assistant' | 'system'
+  content: string
+  context_type: string
+  embedding: number[] | null
+  metadata: Record<string, any>
+  created_at: string
+  updated_at: string
+}
+
+interface ChatMessageWithSession extends ChatMessage {
+  chat_sessions: {
+    session_title: string
+  }
+}
+
+interface MemorySearchResult extends ChatMessage {
+  similarity_score: number
+  relevance_explanation: string
+  session_title: string
+}
+
+interface ChatSession {
+  id: string
+  user_id: string
+  session_title: string
+  context_type: string
+  last_activity: string
+  message_count: number
+  metadata: Record<string, any>
+  created_at: string
+  updated_at: string
+}
+
+interface PartialChatMessage {
+  content: string
+  message_type: string
+  context_type: string
+  created_at: string
+}
+
 // POST /api/chat-memory - Store new chat message and manage sessions
 export async function POST(request: NextRequest) {
   try {
@@ -27,9 +72,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         error: 'content and message_type are required'
-      })
+      }, { status: 400 })
     }
-
     let currentSessionId = session_id
 
     // Create new session if none provided
@@ -239,23 +283,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Helper function to generate session title from first message
-function generateSessionTitle(content: string): string {
-  const words = content.split(' ').slice(0, 6).join(' ')
-  const cleanWords = words.replace(/[^\w\s]/g, '').trim()
-  return cleanWords.length > 0 ? cleanWords + '...' : 'New Conversation'
-}
-
-// Helper function to get message count for a session
-async function getSessionMessageCount(sessionId: string): Promise<number> {
-  const { count } = await supabase
-    .from('chat_messages')
-    .select('*', { count: 'exact', head: true })
-    .eq('session_id', sessionId)
-
-  return count || 0
-}
-
 // Helper function to create conversation summaries for long sessions
 async function maybeCreateConversationSummary(sessionId: string) {
   const messageCount = await getSessionMessageCount(sessionId)
@@ -318,6 +345,7 @@ async function searchChatMemory(userId: string, query: string, contextType?: str
         created_at,
         metadata,
         session_id,
+        embedding,
         chat_sessions!inner(session_title)
       `)
       .eq('user_id', userId)
@@ -336,18 +364,19 @@ async function searchChatMemory(userId: string, query: string, contextType?: str
     // Calculate similarity scores
     const scoredMessages = messages
       .map(message => {
-        if (!message.embedding) return null
+        if (!message.embedding || !Array.isArray(message.embedding)) return null
         
         const similarity = calculateCosineSimilarity(queryEmbedding, message.embedding)
+        const messageWithSession = message as unknown as ChatMessageWithSession
         return {
           ...message,
           similarity_score: similarity,
           relevance_explanation: explainRelevance(query, message.content, similarity),
-          session_title: message.chat_sessions?.session_title || 'Unknown Session'
+          session_title: messageWithSession.chat_sessions?.session_title || 'Unknown Session'
         }
       })
-      .filter(msg => msg !== null && msg.similarity_score > 0.7) // Only high similarity
-      .sort((a, b) => b.similarity_score - a.similarity_score)
+      .filter((msg): msg is NonNullable<typeof msg> => msg !== null && msg.similarity_score > 0.7) // Only high similarity
+      .sort((a, b) => (b?.similarity_score || 0) - (a?.similarity_score || 0))
       .slice(0, 10)
 
     return scoredMessages
@@ -358,7 +387,7 @@ async function searchChatMemory(userId: string, query: string, contextType?: str
 }
 
 // Helper function to calculate cosine similarity
-function calculateCosineSimilarity(embedding1: number[], embedding2: number[]): number {
+function calculateCosineSimilarity(embedding1: number[] | null, embedding2: number[] | null): number {
   if (!embedding1 || !embedding2 || embedding1.length !== embedding2.length) {
     return 0
   }
@@ -447,7 +476,7 @@ async function analyzeSessionMemory(sessionId: string) {
 }
 
 // Helper function to get session duration
-function getSessionDuration(messages: any[]): string {
+function getSessionDuration(messages: PartialChatMessage[]): string {
   if (messages.length < 2) return 'Just started'
   
   const first = new Date(messages[0].created_at)
@@ -524,15 +553,15 @@ function generateContextSuggestions(memories: any[]): string[] {
   
   const suggestions = []
   
-  if (memories.some(m => m.context_type === 'caption_request')) {
+  if (memories.some((m: any) => m.context_type === 'caption_request')) {
     suggestions.push('I remember helping you with captions before')
   }
   
-  if (memories.some(m => m.context_type === 'content_ideas')) {
+  if (memories.some((m: any) => m.context_type === 'content_ideas')) {
     suggestions.push('We\'ve discussed content strategy previously')
   }
   
-  if (memories.some(m => m.content.toLowerCase().includes('engagement'))) {
+  if (memories.some((m: any) => m.content.toLowerCase().includes('engagement'))) {
     suggestions.push('Engagement has been a recurring topic for you')
   }
 

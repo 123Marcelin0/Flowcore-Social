@@ -374,8 +374,8 @@ Bitte antworte professionell, hilfsbereit und führe den Kunden zu einer konkret
   }
 
   return (
-    <div className="h-full w-full bg-gray-50/50 overflow-y-auto">
-      <div className="max-w-[1200px] mx-auto p-6">
+    <div className="h-full w-full overflow-y-auto p-8">
+      <div className="max-w-[1200px] mx-auto">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">

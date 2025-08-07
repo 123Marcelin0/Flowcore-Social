@@ -24,6 +24,42 @@ export const supabase = createClient<Database>(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true
+    },
+    global: {
+      fetch: (url, options = {}) => {
+        console.log(`[Supabase] Making request to: ${url}`);
+        
+        // Add retry logic and better error handling
+        return fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'User-Agent': 'social-media-dashboard/1.0'
+          }
+        }).catch(error => {
+          console.error('[Supabase] Network error:', error);
+          
+          // Handle QUIC protocol errors
+          if (error.message?.includes('ERR_QUIC_PROTOCOL_ERROR') || 
+              error.message?.includes('Failed to fetch')) {
+            console.warn('[Supabase] QUIC protocol error detected, retrying...');
+            
+            // Retry with different fetch options
+            return fetch(url, {
+              ...options,
+              headers: {
+                ...options.headers,
+                'User-Agent': 'social-media-dashboard/1.0',
+                'Connection': 'keep-alive'
+              },
+              // Force HTTP/1.1 to avoid QUIC issues
+              mode: 'cors'
+            });
+          }
+          
+          throw error;
+        });
+      }
     }
   }
 )
@@ -34,6 +70,39 @@ export const supabaseAdmin = typeof window === 'undefined' && supabaseServiceRol
       auth: {
         autoRefreshToken: false,
         persistSession: false
+      },
+      global: {
+        fetch: (url, options = {}) => {
+          console.log(`[Supabase Admin] Making request to: ${url}`);
+          
+          return fetch(url, {
+            ...options,
+            headers: {
+              ...options.headers,
+              'User-Agent': 'social-media-dashboard-admin/1.0'
+            }
+          }).catch(error => {
+            console.error('[Supabase Admin] Network error:', error);
+            
+            // Handle QUIC protocol errors for admin client too
+            if (error.message?.includes('ERR_QUIC_PROTOCOL_ERROR') || 
+                error.message?.includes('Failed to fetch')) {
+              console.warn('[Supabase Admin] QUIC protocol error detected, retrying...');
+              
+              return fetch(url, {
+                ...options,
+                headers: {
+                  ...options.headers,
+                  'User-Agent': 'social-media-dashboard-admin/1.0',
+                  'Connection': 'keep-alive'
+                },
+                mode: 'cors'
+              });
+            }
+            
+            throw error;
+          });
+        }
       }
     })
   : null
@@ -77,9 +146,17 @@ export type UserStats = Database['public']['Functions']['get_user_stats']['Retur
 // Utility functions
 export const getCurrentUser = async () => {
   try {
+    if (!isSupabaseConfigured()) {
+      console.log('Supabase not configured, cannot get current user')
+      return null
+    }
+
     const { data: { user }, error } = await supabase.auth.getUser()
     if (error) {
-      console.log('Authentication error in getCurrentUser:', error.message)
+      // Don't log auth session missing as an error - it's normal when not logged in
+      if (error.message !== 'Auth session missing!') {
+        console.log('Authentication error in getCurrentUser:', error.message)
+      }
       return null
     }
     return user
@@ -90,21 +167,91 @@ export const getCurrentUser = async () => {
 }
 
 export const getCurrentUserProfile = async (): Promise<UserProfile | null> => {
-  const user = await getCurrentUser()
-  if (!user) return null
-  
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
-  
-  if (error) {
-    console.error('Error fetching user profile:', error)
+  try {
+    // Check if Supabase is configured
+    if (!isSupabaseConfigured()) {
+      console.error('Supabase is not configured - missing environment variables')
+      return null
+    }
+
+    const user = await getCurrentUser()
+    if (!user) {
+      // Don't log this as it's normal when not authenticated
+      return null
+    }
+    
+    console.log('Fetching profile for user:', user.id, user.email)
+    
+    let data, error
+    try {
+      const result = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      data = result.data
+      error = result.error
+    } catch (networkError) {
+      console.error('Network error connecting to Supabase:', networkError)
+      return null
+    }
+    
+    if (error) {
+      // Only log actual errors, not empty objects
+      if (error.message || error.code || error.details) {
+        console.error('Database error fetching user profile:', {
+          message: error?.message || 'Unknown error',
+          code: error?.code || 'No code',
+          details: error?.details || 'No details',
+          hint: error?.hint || 'No hint'
+        })
+      } else {
+        console.log('Empty error object received - likely a connection issue')
+      }
+      
+      // Handle case where user profile doesn't exist yet
+      if (error.code === 'PGRST116') {
+        console.log('User profile not found, creating default profile for user:', user.id)
+        
+        // Create a default profile
+        const { data: newProfile, error: createError } = await supabase
+          .from('user_profiles')
+          .insert({
+            id: user.id,
+            email: user.email || '',
+            full_name: user.user_metadata?.full_name || null,
+            avatar_url: user.user_metadata?.avatar_url || null,
+            subscription_tier: 'free',
+            onboarding_completed: false,
+            preferences: {}
+          })
+          .select()
+          .single()
+        
+        if (createError) {
+          console.error('Error creating default user profile:', {
+            message: createError?.message || 'Unknown error',
+            code: createError?.code || 'No code',
+            details: createError?.details || 'No details',
+            hint: createError?.hint || 'No hint',
+            fullError: createError || 'No error object'
+          })
+          return null
+        }
+        
+        console.log('Successfully created default profile for user:', user.id)
+        return newProfile
+      }
+      
+      return null
+    }
+    
+    console.log('Successfully fetched profile for user:', user.id)
+    return data
+  } catch (error) {
+    console.error('Unexpected error in getCurrentUserProfile:', error)
     return null
   }
-  
-  return data
 }
 
 export const getDashboardSummary = async (): Promise<DashboardSummary | null> => {

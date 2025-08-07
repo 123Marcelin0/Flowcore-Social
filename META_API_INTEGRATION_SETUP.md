@@ -27,31 +27,39 @@ The AI Insights Feedback Loop system automatically:
 
 ### 2. **Instagram Integration Setup**
 
-#### Step 3: Instagram Basic Display API
-1. In your Meta app dashboard, go to "Add Product"
-2. Find "Instagram Basic Display" and click "Set Up"
-3. Create Instagram Test User:
-   - Go to "Basic Display" → "Roles" → "Add Instagram Test User"
-   - Enter your Instagram username
+#### Step 3: Instagram Graph API Setup
+**⚠️ IMPORTANT: You need a Business or Creator Instagram account linked to a Facebook Page**
+
+1. **Convert to Business/Creator Account** (if not already):
+   - Go to Instagram app → Settings → Account → Switch to Professional Account
+   - Choose "Business" or "Creator" account type
+   - Link to your Facebook Page (required for Graph API access)
+
+2. **In your Meta app dashboard, go to "Add Product"**
+3. **Find "Instagram Graph API" and click "Set Up"**
+4. **Connect your Instagram Business Account**:
+   - Go to "Instagram Graph API" → "Basic Display" → "Instagram Test Users"
+   - Add your Instagram Business account username
    - Accept the invitation in Instagram app
 
-#### Step 4: Get Instagram Credentials
+#### Step 4: Get Instagram Graph API Credentials
 You'll need to provide these to the system:
 
 ```javascript
-// Instagram Credentials Needed:
+// Instagram Graph API Credentials Needed:
 {
-  "instagram_app_id": "YOUR_INSTAGRAM_APP_ID",
-  "instagram_app_secret": "YOUR_INSTAGRAM_APP_SECRET", 
+  "meta_app_id": "YOUR_META_APP_ID",
+  "meta_app_secret": "YOUR_META_APP_SECRET", 
   "instagram_redirect_uri": "https://yourdomain.com/auth/instagram/callback",
-  "instagram_user_access_token": "USER_ACCESS_TOKEN_FROM_AUTH_FLOW"
+  "instagram_user_access_token": "USER_ACCESS_TOKEN_FROM_AUTH_FLOW",
+  "instagram_business_account_id": "YOUR_INSTAGRAM_BUSINESS_ACCOUNT_ID"
 }
 ```
 
 **Where to find them:**
-- **App ID**: Meta App Dashboard → "Instagram Basic Display" → "Basic Display"
-- **App Secret**: Same location as App ID
-- **Redirect URI**: Set in "Instagram Basic Display" → "Basic Display" → "OAuth Redirect URIs"
+- **Meta App ID & Secret**: Meta App Dashboard → "Settings" → "Basic" (used for both Instagram and Facebook)
+- **Redirect URI**: Set in "Instagram Graph API" → "Basic Display" → "OAuth Redirect URIs"
+- **Business Account ID**: Use Graph API Explorer or our auth flow to get your Instagram Business Account ID
 
 ### 3. **Facebook Integration Setup**
 
@@ -66,23 +74,25 @@ You'll need:
 ```javascript
 // Facebook Credentials Needed:
 {
-  "facebook_app_id": "YOUR_FACEBOOK_APP_ID",
-  "facebook_app_secret": "YOUR_FACEBOOK_APP_SECRET",
+  "meta_app_id": "YOUR_META_APP_ID",
+  "meta_app_secret": "YOUR_META_APP_SECRET",
   "facebook_page_id": "YOUR_FACEBOOK_PAGE_ID",
   "facebook_page_access_token": "LONG_LIVED_PAGE_ACCESS_TOKEN"
 }
 ```
 
 **Where to find them:**
-- **App ID & Secret**: Meta App Dashboard → "Settings" → "Basic"
+- **Meta App ID & Secret**: Meta App Dashboard → "Settings" → "Basic" (same as Instagram)
 - **Page ID**: Go to your Facebook Page → "About" → "Page ID"
 - **Page Access Token**: Use Facebook Graph API Explorer or our auth flow
 
 ### 4. **Required Permissions**
 
-#### Instagram Permissions Needed:
-- `user_profile` - Basic profile info
-- `user_media` - Access to user's media
+#### Instagram Graph API Permissions Needed:
+- `instagram_basic` - Basic profile info and media access
+- `instagram_manage_insights` - Access to post insights and metrics
+- `pages_show_list` - List pages user manages (required for Instagram Business accounts)
+- `pages_read_engagement` - Read page insights (required for Instagram Business accounts)
 
 #### Facebook Permissions Needed:
 - `pages_show_list` - List pages user manages
@@ -92,13 +102,14 @@ You'll need:
 ### 5. **App Review Requirements**
 
 For production use, you'll need Meta app review for these permissions:
-- Instagram: `user_profile`, `user_media`
+- Instagram: `instagram_basic`, `instagram_manage_insights`
 - Facebook: `pages_show_list`, `pages_read_engagement`
 
 **App Review Tips:**
-- Clearly explain you're building a social media management tool
-- Show screenshots of your dashboard
-- Provide detailed use case descriptions
+- Clearly explain you're building a social media management tool with analytics
+- Show screenshots of your dashboard with insights and metrics
+- Provide detailed use case descriptions for performance tracking
+- Emphasize that you're only accessing data from Business/Creator accounts
 - Usually takes 7-14 days for approval
 
 ## 🔧 Technical Integration
@@ -107,33 +118,38 @@ For production use, you'll need Meta app review for these permissions:
 Add these to your `.env.local` file:
 
 ```bash
-# Meta API Credentials
+# Meta API Credentials (used for both Instagram Graph API and Facebook)
 META_APP_ID=your_meta_app_id
 META_APP_SECRET=your_meta_app_secret
 
-# Instagram
-INSTAGRAM_APP_ID=your_instagram_app_id
-INSTAGRAM_APP_SECRET=your_instagram_app_secret
+# Instagram Graph API (uses same Meta app credentials)
 INSTAGRAM_REDIRECT_URI=https://yourdomain.com/auth/instagram/callback
 
-# Facebook
-FACEBOOK_APP_ID=your_facebook_app_id
-FACEBOOK_APP_SECRET=your_facebook_app_secret
+# Facebook (uses same Meta app credentials)
+FACEBOOK_APP_ID=your_meta_app_id
+FACEBOOK_APP_SECRET=your_meta_app_secret
 
 # Webhook Settings (Optional - for real-time updates)
 META_WEBHOOK_VERIFY_TOKEN=your_random_webhook_token
 META_WEBHOOK_SECRET=your_webhook_secret
 ```
 
+**Note:** The system uses `META_APP_ID` and `META_APP_SECRET` for both Instagram and Facebook integrations. This consolidation:
+- Reduces credential rotation overhead
+- Simplifies environment management
+- Ensures consistency across Meta platform integrations
+- Eliminates duplicate credential storage
+
 ### Step 8: OAuth Flow Implementation
 The system needs to implement OAuth flows for both platforms:
 
-#### Instagram Auth Flow:
+#### Instagram Graph API Auth Flow:
 ```
-1. Redirect user to: https://api.instagram.com/oauth/authorize?client_id={app-id}&redirect_uri={redirect-uri}&scope=user_profile,user_media&response_type=code
+1. Redirect user to: https://www.facebook.com/v18.0/dialog/oauth?client_id={app-id}&redirect_uri={redirect-uri}&scope=instagram_basic,instagram_manage_insights,pages_show_list,pages_read_engagement&response_type=code
 2. Handle callback with authorization code
-3. Exchange code for access token
-4. Store access token in social_accounts table
+3. Exchange code for user access token
+4. Get Instagram Business Account ID: GET https://graph.facebook.com/v18.0/me/accounts?fields=instagram_business_account&access_token={user-access-token}
+5. Store access token and business account ID in social_accounts table
 ```
 
 #### Facebook Auth Flow:
@@ -147,9 +163,11 @@ The system needs to implement OAuth flows for both platforms:
 
 ## 📊 API Endpoints Reference
 
-### Instagram Basic Display API
-- **User Media**: `GET https://graph.instagram.com/me/media?fields=id,media_type,media_url,caption,timestamp&access_token={access-token}`
-- **Media Insights**: `GET https://graph.instagram.com/{media-id}?fields=like_count,comments_count&access_token={access-token}`
+### Instagram Graph API
+- **Business Account Info**: `GET https://graph.facebook.com/v18.0/{instagram-business-account-id}?fields=id,username,media_count&access_token={access-token}`
+- **User Media**: `GET https://graph.facebook.com/v18.0/{instagram-business-account-id}/media?fields=id,media_type,media_url,caption,timestamp,like_count,comments_count&access_token={access-token}`
+- **Media Insights**: `GET https://graph.facebook.com/v18.0/{media-id}/insights?metric=impressions,reach,engagement,saved&access_token={access-token}`
+- **Story Insights**: `GET https://graph.facebook.com/v18.0/{story-id}/insights?metric=exits,impressions,reach,replies&access_token={access-token}`
 
 ### Facebook Graph API  
 - **Page Posts**: `GET https://graph.facebook.com/v18.0/{page-id}/posts?fields=id,message,created_time,likes.summary(true),comments.summary(true)&access_token={access-token}`
@@ -243,7 +261,8 @@ Once you have all credentials:
 
 ### Support Resources:
 - [Meta Developer Documentation](https://developers.facebook.com/docs/)
-- [Instagram Basic Display API](https://developers.facebook.com/docs/instagram-basic-display-api)
+- [Instagram Graph API](https://developers.facebook.com/docs/instagram-api)
+- [Instagram Business Account Setup](https://developers.facebook.com/docs/instagram-api/getting-started)
 - [Facebook Graph API](https://developers.facebook.com/docs/graph-api)
 
 **Ready to supercharge your social media with AI-powered insights? 🚀** 

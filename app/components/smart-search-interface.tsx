@@ -79,28 +79,39 @@ export default function SmartSearchInterface() {
   const [showFilters, setShowFilters] = useState(false)
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
   const [actionMode, setActionMode] = useState<'reuse' | 'remix' | 'create' | null>(null)
+  const [remixContent, setRemixContent] = useState('')
+  const [createContent, setCreateContent] = useState('')
 
   // Load search suggestions on component mount
   useEffect(() => {
+    let isMounted = true;
+
+    const loadSuggestions = async () => {
+      try {
+        const response = await fetch('/api/smart-search')
+        const data = await response.json()
+        if (isMounted && data.success) {
+          setSuggestions(data.data)
+        }
+      } catch (error) {
+        if (isMounted) {
+          console.error('Error loading suggestions:', error)
+        }
+      }
+    }
+
     loadSuggestions()
+
+    return () => {
+      isMounted = false
+    }
   }, [])
 
-  const loadSuggestions = async () => {
-    try {
-      const response = await fetch('/api/smart-search')
-      const data = await response.json()
-      if (data.success) {
-        setSuggestions(data.data)
-      }
-    } catch (error) {
-      console.error('Error loading suggestions:', error)
-    }
-  }
-
-  const performSearch = async () => {
+  const performSearch = async (searchLimit = 10) => {
     if (!query.trim()) return
 
     setLoading(true)
+    setResults([]) // Clear previous results
     try {
       const response = await fetch('/api/smart-search', {
         method: 'POST',
@@ -110,7 +121,7 @@ export default function SmartSearchInterface() {
         body: JSON.stringify({
           query: query.trim(),
           filters: filters,
-          limit: 5
+          limit: searchLimit
         })
       })
 
@@ -119,9 +130,11 @@ export default function SmartSearchInterface() {
         setResults(data.data.results || [])
       } else {
         console.error('Search failed:', data.error)
+        // Add user-facing error state/notification here
       }
     } catch (error) {
       console.error('Search error:', error)
+      // Add user-facing error state/notification here
     } finally {
       setLoading(false)
     }
@@ -130,14 +143,39 @@ export default function SmartSearchInterface() {
   const handleQuickSearch = (searchQuery: string) => {
     setQuery(searchQuery)
     setFilters({}) // Reset filters for quick searches
-    // Perform search after state update
-    setTimeout(() => performSearch(), 100)
   }
 
   const handleActionSelect = (result: SearchResult, action: 'reuse' | 'remix' | 'create') => {
     setSelectedResult(result)
     setActionMode(action)
+    // Initialize content based on action mode
+    if (action === 'remix') {
+      setRemixContent(result.content)
+    } else if (action === 'create') {
+      setCreateContent('')
+    }
   }
+
+  const closeModal = () => {
+    setSelectedResult(null)
+    setActionMode(null)
+    setRemixContent('')
+    setCreateContent('')
+  }
+
+  // Handle escape key to close modal
+  useEffect(() => {
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selectedResult && actionMode) {
+        closeModal()
+      }
+    }
+
+    document.addEventListener('keydown', handleEscapeKey)
+    return () => {
+      document.removeEventListener('keydown', handleEscapeKey)
+    }
+  }, [selectedResult, actionMode])
 
   const executeAction = () => {
     if (!selectedResult || !actionMode) return
@@ -146,21 +184,43 @@ export default function SmartSearchInterface() {
       case 'reuse':
         // Copy exact content
         navigator.clipboard.writeText(selectedResult.content)
-        console.log('📋 Content copied to clipboard')
+          .then(() => {
+            console.log('📋 Content copied to clipboard')
+            // Add success notification to user
+          })
+          .catch((err) => {
+            console.error('Failed to copy to clipboard:', err)
+            // Add error notification to user
+          })
         break
       case 'remix':
-        // Open content for editing
-        console.log('✏️ Opening content for remixing:', selectedResult)
+        // Use the edited content from remixContent state
+        navigator.clipboard.writeText(remixContent)
+          .then(() => {
+            console.log('✏️ Remixed content copied to clipboard:', remixContent)
+            // Add success notification to user
+          })
+          .catch((err) => {
+            console.error('Failed to copy remixed content to clipboard:', err)
+            // Add error notification to user
+          })
         break
       case 'create':
-        // Use as inspiration for new content
-        console.log('🎯 Using as inspiration for new content:', selectedResult)
+        // Use the new content from createContent state
+        navigator.clipboard.writeText(createContent)
+          .then(() => {
+            console.log('🎯 New content copied to clipboard:', createContent)
+            // Add success notification to user
+          })
+          .catch((err) => {
+            console.error('Failed to copy new content to clipboard:', err)
+            // Add error notification to user
+          })
         break
     }
 
     // Reset selection
-    setSelectedResult(null)
-    setActionMode(null)
+    closeModal()
   }
 
   const formatDate = (dateString: string) => {
@@ -230,7 +290,7 @@ export default function SmartSearchInterface() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
               <div>
                 <Label>Content Type</Label>
-                <Select value={filters.type} onValueChange={(value) => setFilters({...filters, type: value})}>
+                <Select value={filters.type || ""} onValueChange={(value) => setFilters({...filters, type: value})}>
                   <SelectTrigger>
                     <SelectValue placeholder="Any type" />
                   </SelectTrigger>
@@ -245,7 +305,7 @@ export default function SmartSearchInterface() {
 
               <div>
                 <Label>Platform</Label>
-                <Select value={filters.platform} onValueChange={(value) => setFilters({...filters, platform: value})}>
+                <Select value={filters.platform || ""} onValueChange={(value) => setFilters({...filters, platform: value})}>
                   <SelectTrigger>
                     <SelectValue placeholder="Any platform" />
                   </SelectTrigger>
@@ -260,7 +320,7 @@ export default function SmartSearchInterface() {
 
               <div>
                 <Label>Performance</Label>
-                <Select value={filters.performanceCategory} onValueChange={(value) => setFilters({...filters, performanceCategory: value})}>
+                <Select value={filters.performanceCategory || ""} onValueChange={(value) => setFilters({...filters, performanceCategory: value})}>
                   <SelectTrigger>
                     <SelectValue placeholder="Any performance" />
                   </SelectTrigger>
@@ -398,7 +458,7 @@ export default function SmartSearchInterface() {
                     </div>
 
                     {/* Performance Metrics */}
-                    {result.ai_insights && result.ai_insights[0] && (
+                    {result.ai_insights && result.ai_insights.length > 0 && result.ai_insights[0] && (
                       <div className="flex items-center gap-4 text-sm mb-3">
                         <span className="flex items-center gap-1">
                           <Heart className="w-3 h-3" />
@@ -480,8 +540,14 @@ export default function SmartSearchInterface() {
 
       {/* Action Modal */}
       {selectedResult && actionMode && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-2xl mx-4">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={closeModal}
+        >
+          <Card 
+            className="w-full max-w-2xl mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 {actionMode === 'reuse' && (
@@ -522,7 +588,8 @@ export default function SmartSearchInterface() {
                   <Textarea
                     placeholder="Edit the content to match your current needs..."
                     className="min-h-32"
-                    defaultValue={selectedResult.content}
+                    value={remixContent}
+                    onChange={(e) => setRemixContent(e.target.value)}
                   />
                 </div>
               )}
@@ -533,12 +600,14 @@ export default function SmartSearchInterface() {
                   <Textarea
                     placeholder="Create new content inspired by this post..."
                     className="min-h-32"
+                    value={createContent}
+                    onChange={(e) => setCreateContent(e.target.value)}
                   />
                 </div>
               )}
 
               <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => { setSelectedResult(null); setActionMode(null) }}>
+                <Button variant="outline" onClick={closeModal}>
                   Cancel
                 </Button>
                 <Button onClick={executeAction}>

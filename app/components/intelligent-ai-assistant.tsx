@@ -23,13 +23,30 @@ import {
   Archive
 } from 'lucide-react'
 
+interface MessageMetadata {
+  // User message metadata
+  user_input?: boolean
+  length?: number
+  
+  // Assistant message metadata
+  generated_response?: boolean
+  memory_context_used?: boolean
+  similar_conversations_found?: number
+  
+  // General metadata
+  context_type?: string
+  session_id?: string
+  timestamp?: string
+  [key: string]: any // Allow for future extensibility
+}
+
 interface ChatMessage {
   id: string
   message_type: 'user' | 'assistant' | 'system'
   content: string
   context_type: string
   created_at: string
-  metadata?: any
+  metadata?: MessageMetadata
   similarity_score?: number
   session_title?: string
 }
@@ -84,7 +101,7 @@ export default function IntelligentAIAssistant() {
     }
   }
 
-  const storeMessage = async (content: string, messageType: 'user' | 'assistant', contextType = 'chat', metadata = {}) => {
+  const storeMessage = async (content: string, messageType: 'user' | 'assistant', contextType = 'chat', metadata: MessageMetadata = {}) => {
     try {
       const response = await fetch('/api/chat-memory', {
         method: 'POST',

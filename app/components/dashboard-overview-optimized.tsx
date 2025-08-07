@@ -179,13 +179,17 @@ interface DashboardPost {
 interface Post {
   id: string
   media: string
-  mediaType: "image" | "video"
+  mediaUrls: string[]
+  mediaType: "image" | "video" | "carousel" | "text"
   text: string
   platforms: ("instagram" | "facebook" | "twitter" | "linkedin" | "tiktok")[]
   status: "scheduled" | "published" | "draft" | "failed"
   date: string
   likes?: number
   comments?: number
+  views?: number
+  shares?: number
+  reach?: number
 }
 
 interface TimeInterval {
@@ -203,14 +207,28 @@ const convertPostContextToComponentPost = (post: any): DashboardPost => {
   let displayDate = post.createdAt;
   
   if (post.scheduledDate && post.scheduledTime) {
-    const [year, month, day] = post.scheduledDate.split('-').map(Number);
-    const [hours, minutes] = post.scheduledTime.split(':').map(Number);
-    const scheduledDateTime = new Date(year, month - 1, day, hours, minutes, 0, 0);
-    displayDate = scheduledDateTime.toISOString();
+  if (post.scheduledDate && post.scheduledTime) {
+    try {
+      const [year, month, day] = post.scheduledDate.split('-').map(Number);
+      const [hours, minutes] = post.scheduledTime.split(':').map(Number);
+      const scheduledDateTime = new Date(year, month - 1, day, hours, minutes, 0, 0);
+      if (!isNaN(scheduledDateTime.getTime())) {
+        displayDate = scheduledDateTime.toISOString();
+      }
+    } catch (error) {
+      console.error('Error parsing scheduled date:', error);
+    }
   } else if (post.scheduledDate) {
-    const [year, month, day] = post.scheduledDate.split('-').map(Number);
-    const dateOnly = new Date(year, month - 1, day, 12, 0, 0, 0);
-    displayDate = dateOnly.toISOString();
+    try {
+      const [year, month, day] = post.scheduledDate.split('-').map(Number);
+      const dateOnly = new Date(year, month - 1, day, 12, 0, 0, 0);
+      if (!isNaN(dateOnly.getTime())) {
+        displayDate = dateOnly.toISOString();
+      }
+    } catch (error) {
+      console.error('Error parsing scheduled date:', error);
+    }
+  }
   } else if (post.published_at) {
     displayDate = post.published_at;
   } else if (post.created_at) {
@@ -385,15 +403,17 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
     const convertToPopupPost = (dashboardPost: DashboardPost): Post => ({
       id: dashboardPost.id,
       media: dashboardPost.media,
-      mediaType: dashboardPost.mediaType === 'carousel' ? 'image' : 
-                 dashboardPost.mediaType === 'text' ? 'image' : 
-                 dashboardPost.mediaType as "image" | "video",
+      mediaUrls: dashboardPost.mediaUrls,
+      mediaType: dashboardPost.mediaType,
       text: dashboardPost.text,
       platforms: dashboardPost.platforms,
       status: dashboardPost.status,
       date: dashboardPost.date,
       likes: dashboardPost.likes,
-      comments: dashboardPost.comments
+      comments: dashboardPost.comments,
+      views: dashboardPost.views,
+      shares: dashboardPost.shares,
+      reach: dashboardPost.reach
     })
     
     setSelectedPost(convertToPopupPost(post))
@@ -402,7 +422,7 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
 
   if (state.loading) {
     return (
-      <div className="h-full w-full bg-gray-50/50 flex items-center justify-center">
+      <div className="h-full w-full flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-teal-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading posts...</p>
@@ -412,9 +432,9 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
   }
 
   return (
-    <div className="h-full w-full bg-gray-50/50 overflow-y-auto">
+    <div className="h-full w-full overflow-y-auto p-8">
       {/* Top Header Section */}
-      <div className="max-w-[1400px] mx-auto pl-4 pb-4">
+      <div className="max-w-[1400px] mx-auto pb-4">
         <div className="mb-4">
           {/* Status Filter and Actions */}
           <div className="w-full flex items-center justify-between mb-4">
@@ -727,9 +747,12 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
         isOpen={isPostDetailOpen}
         onClose={() => setIsPostDetailOpen(false)}
         onSave={async (updatedPost: Post) => {
-          // Handle post save
           try {
             const postDate = new Date(updatedPost.date);
+            if (isNaN(postDate.getTime())) {
+              throw new Error('Invalid date format');
+            }
+
             const scheduledDate = `${postDate.getFullYear()}-${String(postDate.getMonth() + 1).padStart(2, '0')}-${String(postDate.getDate()).padStart(2, '0')}`;
             const scheduledTime = `${String(postDate.getHours()).padStart(2, '0')}:${String(postDate.getMinutes()).padStart(2, '0')}`;
             
@@ -739,8 +762,8 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
               platforms: updatedPost.platforms,
               image: updatedPost.media,
               status: updatedPost.status,
-              scheduledDate: scheduledDate,
-              scheduledTime: scheduledTime,
+              scheduledDate,
+              scheduledTime,
               likes: updatedPost.likes || 0,
               comments: updatedPost.comments || 0,
               shares: 0
@@ -752,7 +775,11 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
             toast.success('Beitrag erfolgreich aktualisiert!');
           } catch (error) {
             console.error('Error updating post:', error);
-            toast.error('Fehler beim Aktualisieren des Beitrags');
+            if (error instanceof Error && error.message === 'Invalid date format') {
+              toast.error('Ungültiges Datumsformat');
+            } else {
+              toast.error('Fehler beim Aktualisieren des Beitrags');
+            }
           }
         }}
         onDelete={async (postId: string) => {

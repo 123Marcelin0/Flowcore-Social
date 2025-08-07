@@ -180,8 +180,16 @@ export function AIStudioCard({ card, onClick, isSelected = false, showFullFeatur
         isSelected ? 'ring-2 ring-teal-500 shadow-lg' : ''
       }`}
       onClick={handleClick}
-    >
-      <CardContent className="p-8">
+      role="button"
+      tabIndex={0}
+      aria-label={`Select ${card.title} - ${card.description}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          handleClick()
+        }
+      }}
+    >      <CardContent className="p-8">
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-start justify-between">
@@ -323,6 +331,17 @@ interface FeatureComparisonProps {
 export function FeatureComparison({ showComparison = false }: FeatureComparisonProps) {
   if (!showComparison) return null
 
+  // Dynamically extract all unique features from aiStudioCards
+  const allFeatures = new Set<string>()
+  aiStudioCards.forEach(card => {
+    card.features.forEach(feature => {
+      allFeatures.add(feature.name)
+    })
+  })
+  
+  // Convert to array and sort for consistent display
+  const dynamicFeatures = Array.from(allFeatures).sort()
+
   return (
     <Card className="border-2 border-gray-200">
       <CardContent className="p-8">
@@ -347,14 +366,21 @@ export function FeatureComparison({ showComparison = false }: FeatureComparisonP
               </tr>
             </thead>
             <tbody>
-              {['AI Processing', 'Batch Upload', 'HD Export', 'Cloud Storage', 'API Access'].map((feature) => (
+              {dynamicFeatures.map((feature) => (
                 <tr key={feature} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="p-4 font-medium text-gray-900">{feature}</td>
-                  {aiStudioCards.map((card) => (
-                    <td key={`${card.id}-${feature}`} className="text-center p-4">
-                      <CheckCircle className="w-5 h-5 text-green-500 mx-auto" />
-                    </td>
-                  ))}
+                  {aiStudioCards.map((card) => {
+                    const hasFeature = card.features.some(f => f.name === feature)
+                    return (
+                      <td key={`${card.id}-${feature}`} className="text-center p-4">
+                        {hasFeature ? (
+                          <CheckCircle className="w-5 h-5 text-green-500 mx-auto" />
+                        ) : (
+                          <div className="w-5 h-5 mx-auto"></div>
+                        )}
+                      </td>
+                    )
+                  })}
                 </tr>
               ))}
             </tbody>

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,6 +52,15 @@ export function AIStudioClean() {
   const [isChatLoading, setIsChatLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatInputRef = useRef<HTMLInputElement>(null)
+
+  // Cleanup object URLs on component unmount
+  useEffect(() => {
+    return () => {
+      uploadedFiles.forEach(file => {
+        URL.revokeObjectURL(file.url)
+      })
+    }
+  }, [uploadedFiles])
 
   // Tool definitions
   const tools = [
@@ -203,9 +212,9 @@ export function AIStudioClean() {
   }, [])
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       {/* Action Toolbar Sidebar */}
-      <div className="w-20 bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-20 backdrop-blur-xl bg-white/60 border-r border-white/20 flex flex-col shadow-xl">
         {/* Tools */}
         <div className="flex-1 py-6">
           <div className="space-y-2 px-3">
@@ -214,15 +223,15 @@ export function AIStudioClean() {
                 key={tool.id}
                 variant="ghost"
                 size="sm"
-                className={`w-14 h-14 flex flex-col gap-1 rounded-xl transition-all ${
+                className={`w-14 h-14 flex flex-col gap-1 rounded-xl transition-all duration-200 ${
                   activeTool === tool.id 
-                    ? 'bg-gray-100 shadow-sm' 
-                    : tool.color
-                }`}
+                    ? 'backdrop-blur-xl bg-white/90 shadow-lg border border-white/30' 
+                    : 'backdrop-blur-xl bg-white/40 hover:bg-white/80 border border-white/20'
+                } active:scale-95`}
                 onClick={() => setActiveTool(tool.id)}
               >
-                <tool.icon className="w-5 h-5" />
-                <span className="text-xs font-medium">{tool.label}</span>
+                <tool.icon className="w-4 h-4 text-slate-700" />
+                <span className="text-xs font-medium text-slate-700">{tool.label}</span>
               </Button>
             ))}
           </div>
@@ -233,15 +242,19 @@ export function AIStudioClean() {
               <Button
                 onClick={handleProcess}
                 disabled={isProcessing}
-                className="w-14 h-14 rounded-xl bg-black text-white hover:bg-gray-800 flex flex-col gap-1"
+                className={`w-14 h-14 rounded-xl flex flex-col gap-1 transition-all duration-200 active:scale-95 ${
+                  isProcessing 
+                    ? 'backdrop-blur-xl bg-slate-200 text-slate-500 cursor-not-allowed opacity-50' 
+                    : 'backdrop-blur-xl bg-slate-800 text-white hover:bg-slate-700 shadow-lg'
+                }`}
               >
                 {isProcessing ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Wand2 className="w-5 h-5" />
+                  <Wand2 className="w-4 h-4" />
                 )}
                 <span className="text-xs">
-                  {isProcessing ? 'Process' : 'Start'}
+                  {isProcessing ? 'Processing' : 'Start'}
                 </span>
               </Button>
             </div>
@@ -249,14 +262,14 @@ export function AIStudioClean() {
         </div>
 
         {/* Settings */}
-        <div className="p-3 border-t border-gray-200">
+        <div className="p-3 border-t border-white/20">
           <Button
             variant="ghost"
             size="sm"
-            className="w-14 h-14 flex flex-col gap-1 rounded-xl text-gray-600 hover:bg-gray-50"
+            className="w-14 h-14 flex flex-col gap-1 rounded-xl backdrop-blur-xl bg-white/40 hover:bg-white/80 border border-white/20 transition-all duration-200 active:scale-95"
           >
-            <Settings className="w-5 h-5" />
-            <span className="text-xs">Settings</span>
+            <Settings className="w-4 h-4 text-slate-700" />
+            <span className="text-xs font-medium text-slate-700">Settings</span>
           </Button>
         </div>
       </div>
@@ -266,12 +279,12 @@ export function AIStudioClean() {
         {/* Upload Area */}
         <div className="flex-1 p-8">
           <div
-            className={`h-full border-2 border-dashed rounded-2xl transition-all cursor-pointer ${
+            className={`h-full rounded-2xl transition-all duration-200 cursor-pointer ${
               isDragging 
-                ? 'border-blue-500 bg-blue-50' 
+                ? 'backdrop-blur-xl bg-blue-100/80 border-2 border-dashed border-blue-400 shadow-lg' 
                 : uploadedFiles.length > 0
-                ? 'border-gray-300 bg-white'
-                : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+                ? 'backdrop-blur-xl bg-white/60 border border-white/20 shadow-xl'
+                : 'backdrop-blur-xl bg-white/40 border-2 border-dashed border-white/30 hover:bg-white/60 hover:border-slate-300/60 shadow-lg'
             }`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -284,7 +297,7 @@ export function AIStudioClean() {
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                   {uploadedFiles.map((file) => (
                     <div key={file.id} className="relative group">
-                      <div className="aspect-square rounded-lg overflow-hidden bg-gray-100 border">
+                      <div className="aspect-square rounded-xl overflow-hidden backdrop-blur-xl bg-white/40 border border-white/20 shadow-lg transition-all duration-200 hover:bg-white/60">
                         {file.type === 'image' ? (
                           <img
                             src={file.url}
@@ -293,7 +306,7 @@ export function AIStudioClean() {
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <Play className="w-8 h-8 text-gray-400" />
+                            <Play className="w-6 h-6 text-slate-500" />
                           </div>
                         )}
                       </div>
@@ -302,25 +315,26 @@ export function AIStudioClean() {
                           e.stopPropagation()
                           removeFile(file.id)
                         }}
-                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                        aria-label={`Remove ${file.name}`}
                       >
                         <X className="w-3 h-3 text-white" />
                       </button>
-                      <p className="text-xs text-gray-600 mt-2 truncate">{file.name}</p>
+                      <p className="text-xs text-slate-600 mt-2 truncate">{file.name}</p>
                     </div>
                   ))}
                   
                   {/* Add More Button */}
                   <div 
-                    className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center hover:border-gray-400 transition-colors cursor-pointer"
+                    className="aspect-square rounded-xl border-2 border-dashed border-white/30 flex items-center justify-center backdrop-blur-xl bg-white/30 hover:bg-white/60 hover:border-slate-300/60 transition-all duration-200 cursor-pointer active:scale-95"
                     onClick={(e) => {
                       e.stopPropagation()
                       fileInputRef.current?.click()
                     }}
                   >
                     <div className="text-center">
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                      <span className="text-xs text-gray-500">Add More</span>
+                      <Upload className="w-5 h-5 text-slate-500 mx-auto mb-2" />
+                      <span className="text-xs text-slate-600 font-medium">Add More</span>
                     </div>
                   </div>
                 </div>
@@ -329,16 +343,16 @@ export function AIStudioClean() {
               // Empty State
               <div className="h-full flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Upload className="w-12 h-12 text-gray-400" />
+                  <div className="w-24 h-24 backdrop-blur-xl bg-white/60 border border-white/20 shadow-lg rounded-3xl flex items-center justify-center mx-auto mb-6 transition-all duration-200 hover:bg-white/80">
+                    <Upload className="w-10 h-10 text-slate-600" />
                   </div>
-                  <h3 className="text-xl font-medium text-gray-900 mb-2">
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">
                     {isDragging ? 'Drop your files here' : 'Upload your files'}
                   </h3>
-                  <p className="text-gray-500 mb-6">
+                  <p className="text-slate-600 mb-6">
                     Drag and drop images or videos, or click to browse
                   </p>
-                  <div className="flex items-center justify-center gap-4 text-sm text-gray-400">
+                  <div className="flex items-center justify-center gap-4 text-sm text-slate-500">
                     <span>Images: JPG, PNG, WebP</span>
                     <span>•</span>
                     <span>Videos: MP4, MOV</span>
@@ -361,7 +375,7 @@ export function AIStudioClean() {
         </div>
 
         {/* Chat Interface */}
-        <div className="border-t border-gray-200 bg-white">
+        <div className="border-t border-white/20 backdrop-blur-xl bg-white/60">
           {/* Chat Messages */}
           {chatMessages.length > 0 && (
             <div className="max-h-40 overflow-y-auto p-4 space-y-3">
@@ -371,10 +385,10 @@ export function AIStudioClean() {
                   className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                    className={`max-w-xs px-3 py-2 rounded-xl text-sm transition-all duration-200 ${
                       message.sender === 'user'
-                        ? 'bg-black text-white'
-                        : 'bg-gray-100 text-gray-900'
+                        ? 'backdrop-blur-xl bg-slate-800 text-white shadow-lg'
+                        : 'backdrop-blur-xl bg-white/60 text-slate-800 border border-white/20 shadow-lg'
                     }`}
                   >
                     {message.content}
@@ -383,8 +397,8 @@ export function AIStudioClean() {
               ))}
               {isChatLoading && (
                 <div className="flex justify-start">
-                  <div className="bg-gray-100 px-3 py-2 rounded-lg">
-                    <Loader2 className="w-4 h-4 animate-spin text-gray-600" />
+                  <div className="backdrop-blur-xl bg-white/60 border border-white/20 shadow-lg px-3 py-2 rounded-xl">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
                   </div>
                 </div>
               )}
@@ -392,12 +406,12 @@ export function AIStudioClean() {
           )}
 
           {/* Chat Input */}
-          <div className="p-4 border-t border-gray-100">
+          <div className="p-4 border-t border-white/20">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-gray-400 hover:text-gray-600"
+                className="text-slate-500 hover:text-slate-700 backdrop-blur-xl bg-white/40 hover:bg-white/80 border border-white/20 transition-all duration-200 active:scale-95 h-10 w-10 rounded-xl"
               >
                 <Paperclip className="w-4 h-4" />
               </Button>
@@ -407,13 +421,17 @@ export function AIStudioClean() {
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleChatSend()}
                 placeholder="Ask AI anything about your files..."
-                className="flex-1 border-0 bg-gray-50 focus:bg-white transition-colors"
+                className="flex-1 border-0 backdrop-blur-xl bg-white/40 focus:bg-white/80 transition-all duration-200 h-10 rounded-xl text-slate-800 placeholder:text-slate-500"
               />
               <Button
                 onClick={handleChatSend}
                 disabled={!chatInput.trim() || isChatLoading}
                 size="sm"
-                className="bg-black text-white hover:bg-gray-800"
+                className={`h-10 w-10 rounded-xl transition-all duration-200 active:scale-95 ${
+                  !chatInput.trim() || isChatLoading
+                    ? 'backdrop-blur-xl bg-slate-200 text-slate-500 cursor-not-allowed opacity-50'
+                    : 'backdrop-blur-xl bg-slate-800 text-white hover:bg-slate-700 shadow-lg'
+                }`}
               >
                 <Send className="w-4 h-4" />
               </Button>

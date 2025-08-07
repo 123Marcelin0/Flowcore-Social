@@ -1446,9 +1446,9 @@ export function ContentHub() {
   }
 
   return (
-    <div className="h-full w-full bg-gray-50/50 overflow-y-auto">
+    <div className="h-full w-full overflow-y-auto p-8">
       {/* Top Header Section */}
-      <div className="max-w-[1400px] mx-auto p-6">
+      <div className="max-w-[1400px] mx-auto">
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div>

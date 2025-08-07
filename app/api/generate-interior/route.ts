@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 // Initialize Supabase client
+// Validate required environment variables
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('Missing required Supabase environment variables')
+}
+
+// Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -13,41 +19,67 @@ const supabase = createClient(
   }
 )
 
+// Helper function to verify authentication
+async function verifyAuth(request: NextRequest) {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { authenticated: false, user: null, error: 'Missing or invalid authorization header' }
+  }
+
+  const token = authHeader.replace('Bearer ', '')
+  
+  try {
+    const anonClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    const { data: { user }, error } = await anonClient.auth.getUser(token)
+    
+    if (error || !user) {
+      console.error('Auth verification error:', error?.message)
+      return { authenticated: false, user: null, error: 'Invalid or expired token' }
+    }
+
+    return { authenticated: true, user, error: null }
+  } catch (error) {
+    console.error('Auth verification exception:', error)
+    return { authenticated: false, user: null, error: 'Authentication verification failed' }
+  }
+}
+
 interface InteriorDesignRequest {
   apiProvider: 'decor8ai' | 'aihomedesign'
   service: string
   roomType: string
   designStyle: string
-  colorScheme?: string
-  specialityDecor?: string
-  numImages: number
-  scaleFactor?: number
-  matchStyling?: boolean
-  seed?: number | null
+  numImages?: number
+  seed?: number
   guidanceScale?: number
   designCreativity?: number
+  colorScheme?: string
+  specialityDecor?: string
+  scaleFactor?: number
   wallColorHex?: string
+  skyType?: string
   yardType?: string
   gardenStyle?: string
-  skyType?: string
 }
 
 interface InteriorDesignResponse {
   success: boolean
   imageUrl?: string
   images?: string[]
-  error?: string
-  seed?: number
   taskId?: string
+  seed?: number
+  error?: string
 }
 
-// Decor8AI API Configuration
-const DECOR8AI_API_URL = 'https://api.decor8.ai'
+// Environment variables for APIs
 const DECOR8AI_API_KEY = process.env.DECOR8AI_API_KEY
-
-// AI HomeDesign API Configuration
-const AIHOMEDESIGN_API_URL = 'https://api.aihomedesign.com/v1'
+const DECOR8AI_API_URL = process.env.DECOR8AI_API_URL || 'https://api.decor8.ai'
 const AIHOMEDESIGN_API_KEY = process.env.AIHOMEDESIGN_API_KEY
+const AIHOMEDESIGN_API_URL = process.env.AIHOMEDESIGN_API_URL || 'https://api.aihomedesign.com'
 
 // Upload image to external service and get URL
 async function uploadImageToService(imageFile: File, apiProvider: string): Promise<string> {
@@ -62,6 +94,9 @@ async function uploadImageToService(imageFile: File, apiProvider: string): Promi
       // Decor8AI accepts data URLs directly
       return dataUrl
     } else {
+      if (!AIHOMEDESIGN_API_KEY) {
+        throw new Error('AI HomeDesign API key not configured')
+      }
       // AI HomeDesign requires actual file upload
       const formData = new FormData()
       formData.append('image', imageFile)
@@ -69,7 +104,7 @@ async function uploadImageToService(imageFile: File, apiProvider: string): Promi
       const response = await fetch(`${AIHOMEDESIGN_API_URL}/order/image`, {
         method: 'POST',
         headers: {
-          'x-api-key': AIHOMEDESIGN_API_KEY!
+          'x-api-key': AIHOMEDESIGN_API_KEY
         },
         body: formData
       })
@@ -374,7 +409,11 @@ async function simulateInteriorProcessing(settings: InteriorDesignRequest): Prom
     'remove-objects': 'https://images.unsplash.com/photo-1560185007-5f0bb1866cab?w=512&h=512&fit=crop',
     'change-wall-color': 'https://images.unsplash.com/photo-1588471980401-6d0a1a1de0b0?w=512&h=512&fit=crop',
     'replace-sky': 'https://images.unsplash.com/photo-1591367334295-e4585c128071?w=512&h=512&fit=crop',
-    'landscaping': 'https://images.unsplash.com/photo-1558618666-7bd1c4a05c83?w=512&h=512&fit=crop'
+    'landscaping': 'https://images.unsplash.com/photo-1558618666-7bd1c4a05c83?w=512&h=512&fit=crop',
+    'prime-walls': 'https://images.unsplash.com/photo-1560185007-5f0bb1866cab?w=512&h=512&fit=crop',
+    'day-to-dusk': 'https://images.unsplash.com/photo-1591367334295-e4585c128071?w=512&h=512&fit=crop',
+    'image-enhancement': 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=512&h=512&fit=crop',
+    'item-removal': 'https://images.unsplash.com/photo-1560185007-5f0bb1866cab?w=512&h=512&fit=crop'
   }
 
   const mockImageUrl = mockImages[settings.service as keyof typeof mockImages] || mockImages['virtual-staging']
@@ -389,6 +428,15 @@ async function simulateInteriorProcessing(settings: InteriorDesignRequest): Prom
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await verifyAuth(request)
+    if (!authResult.authenticated) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || 'Authentication failed' },
+        { status: 401 }
+      )
+    }
+
     // Parse form data
     const formData = await request.formData()
     const imageFile = formData.get('image') as File
@@ -462,7 +510,7 @@ export async function POST(request: NextRequest) {
       await supabase
         .from('content_generations')
         .insert({
-          user_id: 'system', // TODO: Extract from auth
+          user_id: authResult.user?.id || 'system', // Use authenticated user ID
           type: 'interior',
           prompt: `${settings.service} for ${settings.roomType} in ${settings.designStyle} style`,
           settings: settings,
@@ -471,7 +519,7 @@ export async function POST(request: NextRequest) {
           task_id: result.taskId
         })
     } catch (dbError) {
-      console.error('Failed to log generation:', dbError)
+      console.error('Failed to log generation to database:', dbError)
       // Don't fail the request if logging fails
     }
 
@@ -479,8 +527,8 @@ export async function POST(request: NextRequest) {
       success: true,
       imageUrl: result.imageUrl,
       images: result.images,
-      seed: result.seed,
-      taskId: result.taskId
+      taskId: result.taskId,
+      seed: result.seed
     })
 
   } catch (error) {
@@ -498,6 +546,15 @@ export async function POST(request: NextRequest) {
 // GET endpoint to check processing status (for async processing)
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const authResult = await verifyAuth(request)
+    if (!authResult.authenticated) {
+      return NextResponse.json(
+        { success: false, error: authResult.error || 'Authentication failed' },
+        { status: 401 }
+      )
+    }
+
     const url = new URL(request.url)
     const taskId = url.searchParams.get('taskId')
     const apiProvider = url.searchParams.get('apiProvider') || 'decor8ai'
@@ -519,6 +576,22 @@ export async function GET(request: NextRequest) {
 
       if (response.ok) {
         const result = await response.json()
+        
+        // Update database if completed
+        if (result.status === 'completed' && result.result_url) {
+          try {
+            await supabase
+              .from('content_generations')
+              .update({
+                status: 'completed',
+                result_url: result.result_url,
+                updated_at: new Date().toISOString()
+              })
+              .eq('task_id', taskId)
+          } catch (dbError) {
+            console.error('Failed to update generation status:', dbError)
+          }
+        }
         
         return NextResponse.json({
           success: true,

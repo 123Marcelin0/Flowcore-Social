@@ -1,9 +1,8 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { 
   ThumbsUp, 
@@ -16,15 +15,29 @@ import {
   CheckCircle
 } from 'lucide-react'
 
+interface SuggestionData {
+  content: string
+  confidence?: number
+  metadata?: Record<string, unknown>
+}
+
+interface FeedbackResult {
+  id: string
+  timestamp: string
+  // add other expected response fields
+}
+
 interface FeedbackCollectorProps {
   actionType: 'caption' | 'idea' | 'sentence' | 'insight' | 'search_result'
   actionId: string
-  suggestionData: any
+  suggestionData: SuggestionData
   context?: string
-  onFeedbackSubmitted?: (feedback: any) => void
+  onFeedbackSubmitted?: (feedback: FeedbackResult) => void
   onClose?: () => void
   autoShow?: boolean
   compact?: boolean
+  apiEndpoint?: string
+  onError?: (error: Error) => void
 }
 
 export default function AIFeedbackCollector({
@@ -35,7 +48,9 @@ export default function AIFeedbackCollector({
   onFeedbackSubmitted,
   onClose,
   autoShow = true,
-  compact = false
+  compact = false,
+  apiEndpoint = '/api/ai-feedback',
+  onError
 }: FeedbackCollectorProps) {
   const [showFeedback, setShowFeedback] = useState(autoShow)
   const [feedbackStep, setFeedbackStep] = useState<'initial' | 'detailed' | 'submitted'>('initial')
@@ -43,20 +58,11 @@ export default function AIFeedbackCollector({
   const [helpful, setHelpful] = useState<boolean | null>(null)
   const [improvementNotes, setImprovementNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
-
-  // Auto-show feedback after a delay for better UX
-  useEffect(() => {
-    if (autoShow) {
-      const timer = setTimeout(() => {
-        setShowFeedback(true)
-      }, 2000) // Show after 2 seconds
-      
-      return () => clearTimeout(timer)
-    }
-  }, [autoShow])
+  const [error, setError] = useState<string | null>(null)
 
   const submitFeedback = async (feedbackType: 'thumbs_up' | 'thumbs_down' | 'rating' | 'detailed') => {
     setSubmitting(true)
+    setError(null)
     
     try {
       const feedbackData = {
@@ -70,7 +76,7 @@ export default function AIFeedbackCollector({
         suggestion_data: suggestionData
       }
 
-      const response = await fetch('/api/ai-feedback', {
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -90,10 +96,14 @@ export default function AIFeedbackCollector({
           onClose?.()
         }, 3000)
       } else {
-        console.error('Failed to submit feedback:', result.error)
+        const errorMsg = result.error || 'Failed to submit feedback'
+        setError(errorMsg)
+        onError?.(new Error(errorMsg))
       }
     } catch (error) {
-      console.error('Error submitting feedback:', error)
+      const errorMsg = 'Network error occurred'
+      setError(errorMsg)
+      onError?.(error as Error)
     } finally {
       setSubmitting(false)
     }
@@ -303,14 +313,20 @@ export default function AIFeedbackCollector({
         )}
 
         {feedbackStep === 'submitted' && (
-          <div className="text-center">
-            <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
-            <p className="text-sm font-medium text-green-900 mb-1">
-              Thank you for your feedback!
+          <div className="text-center py-4">
+            <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
+            <p className="text-sm text-green-700 font-medium">
+              Thank you for your feedback! 🎉
             </p>
-            <p className="text-xs text-green-700">
-              This helps me learn your preferences and improve future suggestions.
+            <p className="text-xs text-gray-600 mt-1">
+              This helps me learn and improve.
             </p>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+            {error}
           </div>
         )}
       </CardContent>
@@ -318,44 +334,30 @@ export default function AIFeedbackCollector({
   )
 }
 
-// Compact version for inline use
-export function CompactFeedbackCollector({
-  actionType,
-  actionId,
-  suggestionData,
-  context,
-  onFeedbackSubmitted
-}: Omit<FeedbackCollectorProps, 'compact'>) {
-  return (
-    <AIFeedbackCollector
-      actionType={actionType}
-      actionId={actionId}
-      suggestionData={suggestionData}
-      context={context}
-      onFeedbackSubmitted={onFeedbackSubmitted}
-      compact={true}
-      autoShow={true}
-    />
-  )
-}
+type ActionType = 'caption' | 'idea' | 'sentence' | 'insight' | 'search_result'
 
-// Hook for easy integration with AI actions
 export function useAIFeedback() {
-  const [feedbackData, setFeedbackData] = useState<any>(null)
+  const [feedbackData, setFeedbackData] = useState<{
+    actionType: ActionType
+    actionId: string
+    suggestionData: SuggestionData
+    context?: string
+    onSubmit: (feedback: FeedbackResult) => void
+  } | null>(null)
 
   const collectFeedback = (
-    actionType: string,
+    actionType: ActionType,
     actionId: string,
-    suggestionData: any,
+    suggestionData: SuggestionData,
     context?: string
-  ) => {
-    return new Promise((resolve) => {
+  ): Promise<FeedbackResult> => {
+    return new Promise<FeedbackResult>((resolve) => {
       setFeedbackData({
         actionType,
         actionId,
         suggestionData,
         context,
-        onSubmit: (feedback: any) => {
+        onSubmit: (feedback: FeedbackResult) => {
           setFeedbackData(null)
           resolve(feedback)
         }

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/supabase'
-
+import { supabase, getCurrentUser } from '@/lib/supabase'
 // Types for Meta API responses
 interface InstagramInsights {
   data: Array<{
@@ -213,6 +211,8 @@ export async function GET(request: NextRequest) {
 
 async function checkSyncStatus(userId: string, platform: string, forceSync: boolean) {
   if (forceSync) return { needsSync: true }
+async function checkSyncStatus(userId: string, platform: string, forceSync: boolean) {
+  if (forceSync) return { needsSync: true }
 
   const { data: status } = await supabase
     .from('platform_sync_status')
@@ -223,7 +223,7 @@ async function checkSyncStatus(userId: string, platform: string, forceSync: bool
 
   if (!status) {
     // First time sync
-    await supabase
+    const { error } = await supabase
       .from('platform_sync_status')
       .insert({
         user_id: userId,
@@ -231,6 +231,12 @@ async function checkSyncStatus(userId: string, platform: string, forceSync: bool
         sync_enabled: true,
         next_sync_at: new Date().toISOString()
       })
+
+    if (error) {
+      console.error('Error creating sync status:', error)
+      throw new Error('Failed to initialize sync status')
+    }
+
     return { needsSync: true }
   }
 
@@ -241,10 +247,7 @@ async function checkSyncStatus(userId: string, platform: string, forceSync: bool
     needsSync: now >= nextSync && status.sync_enabled,
     nextSync: status.next_sync_at
   }
-}
-
-async function getPostsNeedingSync(userId: string, platform: string) {
-  // Get published posts from the last 30 days that haven't been synced recently
+}  // Get published posts from the last 30 days that haven't been synced recently
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
@@ -470,7 +473,18 @@ async function updateSyncStatus(userId: string, platform: string, success: boole
     updateData.api_error_message = null
   } else {
     updateData.api_error_message = errorMessage
-    updateData.failed_syncs = 'failed_syncs + 1' // SQL increment
+    
+    // Query current failed_syncs count to safely increment it
+    const { data: currentStatus } = await supabase
+      .from('platform_sync_status')
+      .select('failed_syncs')
+      .eq('user_id', userId)
+      .eq('platform', platform)
+      .single()
+    
+    // Increment the failed_syncs count, defaulting to 0 if no record exists
+    const currentFailedSyncs = currentStatus?.failed_syncs || 0
+    updateData.failed_syncs = currentFailedSyncs + 1
   }
 
   await supabase

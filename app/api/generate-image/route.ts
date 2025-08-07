@@ -2,22 +2,57 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Validate required environment variables
+function validateEnvironmentVariables() {
+  const requiredVars = {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  }
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
+  const missingVars = Object.entries(requiredVars)
+    .filter(([_, value]) => !value)
+    .map(([key]) => key)
+
+  if (missingVars.length > 0) {
+    throw new Error(
+      `Missing required environment variables: ${missingVars.join(', ')}. ` +
+      'Please check your .env.local file and ensure all required variables are set.'
+    )
+  }
+}
+
+// Initialize environment variables validation
+let supabase: ReturnType<typeof createClient>
+
+try {
+  validateEnvironmentVariables()
+  
+  // Initialize Supabase client
+  supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
+  )
+} catch (error) {
+  console.error('Environment validation failed:', error)
+  // Create a mock client for development that will fail gracefully
+  supabase = createClient('http://localhost:54321', 'mock-key', {
     auth: {
       autoRefreshToken: false,
       persistSession: false
     }
-  }
-)
+  })
+}
+
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+})
 
 interface ImageGenerationRequest {
   prompt: string
@@ -35,12 +70,9 @@ interface ImageGenerationResponse {
   error?: string
 }
 
+// Generate image using OpenAI DALL-E
 async function generateImageWithDALLE(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OpenAI API key not configured')
-    }
-
     // Validate model-specific constraints
     if (request.model === 'dall-e-3') {
       // DALL-E 3 constraints
@@ -128,17 +160,9 @@ async function simulateImageGeneration(request: ImageGenerationRequest): Promise
   }
 }
 
+// POST endpoint for image generation
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication (optional for now, can be added later)
-    // const authHeader = request.headers.get('authorization')
-    // if (!authHeader?.startsWith('Bearer ')) {
-    //   return NextResponse.json(
-    //     { success: false, error: 'Authentication required' },
-    //     { status: 401 }
-    //   )
-    // }
-
     const body = await request.json() as ImageGenerationRequest
 
     // Validate required fields
@@ -160,9 +184,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate count
-    if (imageRequest.count < 1 || imageRequest.count > 10) {
+    const maxCount = imageRequest.model === 'dall-e-3' ? 1 : 10
+    if (imageRequest.count < 1 || imageRequest.count > maxCount) {
       return NextResponse.json(
-        { success: false, error: 'Count must be between 1 and 10' },
+        { success: false, error: `Count must be between 1 and ${maxCount} for ${imageRequest.model}` },
         { status: 400 }
       )
     }
@@ -177,7 +202,7 @@ export async function POST(request: NextRequest) {
     // Try OpenAI DALL-E first, fallback to simulation
     let result: ImageGenerationResponse
     
-    if (process.env.OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
+    if (process.env.OPENAI_API_KEY) {
       result = await generateImageWithDALLE(imageRequest)
       
       // If DALL-E fails, try simulation as fallback
@@ -186,7 +211,7 @@ export async function POST(request: NextRequest) {
         result = await simulateImageGeneration(imageRequest)
       }
     } else {
-      console.log('Using image simulation (development mode or missing API key)')
+      console.log('Using image simulation (missing API key)')
       result = await simulateImageGeneration(imageRequest)
     }
 
@@ -199,22 +224,25 @@ export async function POST(request: NextRequest) {
 
     // Log successful generation
     try {
-      await supabase
-        .from('content_generations')
-        .insert({
-          user_id: 'system', // TODO: Extract from auth
-          type: 'image',
-          prompt: imageRequest.prompt,
-          settings: {
+      // Check if Supabase is properly configured before attempting database operations
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        const { error: dbError } = await supabase
+          .from('content_generations')
+          .insert({
+            user_id: 'system', // TODO: Extract from auth
+            type: 'image',
+            prompt: imageRequest.prompt,
             model: imageRequest.model,
             size: imageRequest.size,
-            quality: imageRequest.quality,
-            style: imageRequest.style,
-            count: imageRequest.count
-          },
-          result_url: result.imageUrl,
-          status: 'completed'
-        })
+            status: 'completed'
+          })
+        
+        if (dbError) {
+          console.error('Failed to log generation to database:', dbError)
+        }
+      } else {
+        console.warn('Skipping database logging - Supabase not properly configured')
+      }
     } catch (dbError) {
       console.error('Failed to log generation:', dbError)
       // Don't fail the request if logging fails
@@ -241,9 +269,34 @@ export async function POST(request: NextRequest) {
 // GET endpoint to retrieve generation history
 export async function GET(request: NextRequest) {
   try {
+    // Check if Supabase is properly configured
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Database not configured. Please check environment variables.' 
+        },
+        { status: 503 }
+      )
+    }
+
     const url = new URL(request.url)
     const limit = parseInt(url.searchParams.get('limit') || '10')
     const offset = parseInt(url.searchParams.get('offset') || '0')
+
+    // Validate pagination parameters
+    if (isNaN(limit) || limit < 1 || limit > 100) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid limit parameter (must be 1-100)' },
+        { status: 400 }
+      )
+    }
+    if (isNaN(offset) || offset < 0) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid offset parameter (must be >= 0)' },
+        { status: 400 }
+      )
+    }
 
     // Fetch recent image generations
     const { data: generations, error } = await supabase
@@ -254,13 +307,25 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1)
 
     if (error) {
-      throw error
+      console.error('Database query error:', error)
+      return NextResponse.json(
+        { success: false, error: 'Failed to fetch history from database' },
+        { status: 500 }
+      )
     }
+
+    // Get total count
+    const { count: totalCount } = await supabase
+      .from('content_generations')
+      .select('*', { count: 'exact', head: true })
+      .eq('type', 'image')
 
     return NextResponse.json({
       success: true,
       generations: generations || [],
-      total: generations?.length || 0
+      total: totalCount || 0,
+      limit,
+      offset
     })
 
   } catch (error) {

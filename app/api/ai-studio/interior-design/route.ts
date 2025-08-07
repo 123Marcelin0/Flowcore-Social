@@ -2,10 +2,52 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
-// Initialize Supabase client for API routes (backend)
+// Environment variable validation
+const requiredEnvVars = {
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  APPLYDESIGN_API_KEY: process.env.APPLYDESIGN_API_KEY,
+  REIMAGINEHOME_API_KEY: process.env.REIMAGINEHOME_API_KEY || null, // Make optional
+} as const;
+
+// Check for missing required environment variables (excluding optional ones)
+const missingEnvVars = Object.entries(requiredEnvVars)
+  .filter(([key, value]) => !value && key !== 'REIMAGINEHOME_API_KEY') // Exclude optional keys
+  .map(([key, _]) => key);
+
+if (missingEnvVars.length > 0) {
+  throw new Error(
+    `Missing required environment variables: ${missingEnvVars.join(', ')}. ` +
+    'Please ensure all required environment variables are properly configured.'
+  );
+}
+
+// Type-safe environment variables after validation
+const env = {
+  NEXT_PUBLIC_SUPABASE_URL: requiredEnvVars.NEXT_PUBLIC_SUPABASE_URL!,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: requiredEnvVars.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  SUPABASE_SERVICE_ROLE_KEY: requiredEnvVars.SUPABASE_SERVICE_ROLE_KEY!,
+  APPLYDESIGN_API_KEY: requiredEnvVars.APPLYDESIGN_API_KEY!,
+  REIMAGINEHOME_API_KEY: requiredEnvVars.REIMAGINEHOME_API_KEY,
+};
+
+// Initialize Supabase clients
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  env.NEXT_PUBLIC_SUPABASE_URL,
+  env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
+
+// Initialize Supabase anon client for authentication (created once at module level)
+const supabaseAnon = createClient(
+  env.NEXT_PUBLIC_SUPABASE_URL,
+  env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   {
     auth: {
       autoRefreshToken: false,
@@ -20,8 +62,8 @@ const openai = new OpenAI({
 });
 
 // Environment variables for external APIs
-const APPLYDESIGN_API_KEY = process.env.APPLYDESIGN_API_KEY;
-const REIMAGINEHOME_API_KEY = process.env.REIMAGINEHOME_API_KEY;
+const APPLYDESIGN_API_KEY = env.APPLYDESIGN_API_KEY;
+const REIMAGINEHOME_API_KEY = env.REIMAGINEHOME_API_KEY;
 
 // TypeScript interfaces
 interface InteriorDesignRequest {
@@ -52,6 +94,25 @@ interface StylesResponse {
   roomTypes: Array<{ id: string; name: string }>;
 }
 
+// Default styles and room types constants to avoid duplication
+const DEFAULT_STYLES = [
+  { id: 'modern', name: 'Modern', preview_url: null },
+  { id: 'scandinavian', name: 'Scandinavian', preview_url: null },
+  { id: 'minimalist', name: 'Minimalist', preview_url: null },
+  { id: 'industrial', name: 'Industrial', preview_url: null },
+  { id: 'bohemian', name: 'Bohemian', preview_url: null },
+  { id: 'traditional', name: 'Traditional', preview_url: null }
+];
+
+const DEFAULT_ROOM_TYPES = [
+  { id: 'living_room', name: 'Living Room' },
+  { id: 'bedroom', name: 'Bedroom' },
+  { id: 'kitchen', name: 'Kitchen' },
+  { id: 'bathroom', name: 'Bathroom' },
+  { id: 'dining_room', name: 'Dining Room' },
+  { id: 'office', name: 'Home Office' }
+];
+
 // Helper function to verify authentication
 async function verifyAuth(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -62,12 +123,7 @@ async function verifyAuth(request: NextRequest) {
   const token = authHeader.replace('Bearer ', '');
   
   try {
-    const anonClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    
-    const { data: { user }, error } = await anonClient.auth.getUser(token);
+    const { data: { user }, error } = await supabaseAnon.auth.getUser(token);
     
     if (error || !user) {
       console.error('Auth verification error:', error?.message);
@@ -94,6 +150,16 @@ function isValidUrl(url: string): boolean {
 // Rate limiting cache (simple in-memory store)
 const rateLimitCache = new Map<string, { count: number; resetTime: number }>();
 
+// Clean up expired entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, limit] of rateLimitCache.entries()) {
+    if (now > limit.resetTime) {
+      rateLimitCache.delete(userId);
+    }
+  }
+}, 5 * 60 * 1000);
+
 function checkRateLimit(userId: string, limit: number = 10, windowMs: number = 60000): boolean {
   const now = Date.now();
   const userLimit = rateLimitCache.get(userId);
@@ -110,7 +176,6 @@ function checkRateLimit(userId: string, limit: number = 10, windowMs: number = 6
   userLimit.count++;
   return true;
 }
-
 // ApplyDesign.io API integration
 async function callApplyDesignAPI(request: InteriorDesignRequest): Promise<{ jobId?: string; imageUrl?: string; error?: string }> {
   if (!APPLYDESIGN_API_KEY) {
@@ -145,30 +210,51 @@ async function callApplyDesignAPI(request: InteriorDesignRequest): Promise<{ job
         break;
     }
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'X-API-Key': APPLYDESIGN_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('ApplyDesign API error:', response.status, errorText);
-      return { error: `ApplyDesign API error: ${response.status}` };
-    }
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': APPLYDESIGN_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
 
-    const result = await response.json();
-    
-    // Check if we get immediate result or job ID
-    if (result.result_image_url || result.output_image_url) {
-      return { imageUrl: result.result_image_url || result.output_image_url };
-    } else if (result.job_id || result.task_id) {
-      return { jobId: result.job_id || result.task_id };
-    } else {
-      return { error: 'Unexpected response format from ApplyDesign API' };
+      // Clear timeout since fetch completed successfully
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('ApplyDesign API error:', response.status, errorText);
+        return { error: `ApplyDesign API error: ${response.status}` };
+      }
+
+      const result = await response.json();
+      
+      // Check if we get immediate result or job ID
+      if (result.result_image_url || result.output_image_url) {
+        return { imageUrl: result.result_image_url || result.output_image_url };
+      } else if (result.job_id || result.task_id) {
+        return { jobId: result.job_id || result.task_id };
+      } else {
+        return { error: 'Unexpected response format from ApplyDesign API' };
+      }
+    } catch (error) {
+      // Clear timeout in case of error
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error('ApplyDesign API call timed out');
+        return { error: 'ApplyDesign API call timed out' };
+      }
+      
+      console.error('ApplyDesign API call failed:', error);
+      return { error: 'Failed to call ApplyDesign API' };
     }
   } catch (error) {
     console.error('ApplyDesign API call failed:', error);
@@ -202,14 +288,23 @@ async function callReimaginehomeAPI(request: InteriorDesignRequest): Promise<{ j
         break;
     }
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'x-api-key': REIMAGINEHOME_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'x-api-key': REIMAGINEHOME_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+
+      // Clear timeout since fetch completed successfully
+      clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -226,6 +321,18 @@ async function callReimaginehomeAPI(request: InteriorDesignRequest): Promise<{ j
       return { jobId: result.job_id };
     } else {
       return { error: 'Unexpected response format from ReimaginehHome API' };
+    }
+    } catch (error) {
+      // Clear timeout in case of error
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error('ReimaginehHome API call timed out');
+        return { error: 'ReimaginehHome API call timed out' };
+      }
+      
+      console.error('ReimaginehHome API call failed:', error);
+      return { error: 'Failed to call ReimaginehHome API' };
     }
   } catch (error) {
     console.error('ReimaginehHome API call failed:', error);
@@ -447,19 +554,57 @@ async function handleStatusCheck(jobId: string, userId: string) {
     let externalStatus;
     try {
       if (job.external_api_name === 'applydesign') {
-        const response = await fetch(`https://api.applydesign.io/v1/staging/status?job_id=${job.external_job_id}`, {
-          headers: {
-            'X-API-Key': APPLYDESIGN_API_KEY!
+        // Create AbortController for timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for status checks
+
+        try {
+          const response = await fetch(`https://api.applydesign.io/v1/staging/status?job_id=${job.external_job_id}`, {
+            headers: {
+              'X-API-Key': APPLYDESIGN_API_KEY!
+            },
+            signal: controller.signal
+          });
+          
+          // Clear timeout since fetch completed successfully
+          clearTimeout(timeoutId);
+          externalStatus = await response.json();
+        } catch (error) {
+          // Clear timeout in case of error
+          clearTimeout(timeoutId);
+          
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.error('ApplyDesign status check timed out');
+            throw new Error('Status check timed out');
           }
-        });
-        externalStatus = await response.json();
+          throw error;
+        }
       } else {
-        const response = await fetch(`https://api.reimaginehome.ai/v1/get_job_status?job_id=${job.external_job_id}`, {
-          headers: {
-            'x-api-key': REIMAGINEHOME_API_KEY!
+        // Create AbortController for timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for status checks
+
+        try {
+          const response = await fetch(`https://api.reimaginehome.ai/v1/get_job_status?job_id=${job.external_job_id}`, {
+            headers: {
+              'x-api-key': REIMAGINEHOME_API_KEY!
+            },
+            signal: controller.signal
+          });
+          
+          // Clear timeout since fetch completed successfully
+          clearTimeout(timeoutId);
+          externalStatus = await response.json();
+        } catch (error) {
+          // Clear timeout in case of error
+          clearTimeout(timeoutId);
+          
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.error('ReimaginehHome status check timed out');
+            throw new Error('Status check timed out');
           }
-        });
-        externalStatus = await response.json();
+          throw error;
+        }
       }
 
       // Update job status in database
@@ -520,38 +665,36 @@ async function handleStylesFetch(): Promise<NextResponse> {
     if (!REIMAGINEHOME_API_KEY) {
       // Return hardcoded styles if API key not available
       return NextResponse.json({
-        styles: [
-          { id: 'modern', name: 'Modern', preview_url: null },
-          { id: 'scandinavian', name: 'Scandinavian', preview_url: null },
-          { id: 'minimalist', name: 'Minimalist', preview_url: null },
-          { id: 'industrial', name: 'Industrial', preview_url: null },
-          { id: 'bohemian', name: 'Bohemian', preview_url: null },
-          { id: 'traditional', name: 'Traditional', preview_url: null }
-        ],
-        roomTypes: [
-          { id: 'living_room', name: 'Living Room' },
-          { id: 'bedroom', name: 'Bedroom' },
-          { id: 'kitchen', name: 'Kitchen' },
-          { id: 'bathroom', name: 'Bathroom' },
-          { id: 'dining_room', name: 'Dining Room' },
-          { id: 'office', name: 'Home Office' }
-        ]
+        styles: DEFAULT_STYLES,
+        roomTypes: DEFAULT_ROOM_TYPES
       });
     }
 
-    // Fetch styles from ReimaginehHome API
-    const [stylesResponse, roomTypesResponse] = await Promise.all([
-      fetch('https://api.reimaginehome.ai/v1/get_styles', {
-        headers: {
-          'x-api-key': REIMAGINEHOME_API_KEY
-        }
-      }),
-      fetch('https://api.reimaginehome.ai/v1/get_room_types', {
-        headers: {
-          'x-api-key': REIMAGINEHOME_API_KEY
-        }
-      })
-    ]);
+    // Fetch styles from ReimaginehHome API with timeout handling
+    const controller1 = new AbortController();
+    const controller2 = new AbortController();
+    const timeoutId1 = setTimeout(() => controller1.abort(), 10000); // 10 second timeout for styles
+    const timeoutId2 = setTimeout(() => controller2.abort(), 10000); // 10 second timeout for room types
+
+    try {
+      const [stylesResponse, roomTypesResponse] = await Promise.all([
+        fetch('https://api.reimaginehome.ai/v1/get_styles', {
+          headers: {
+            'x-api-key': REIMAGINEHOME_API_KEY
+          },
+          signal: controller1.signal
+        }),
+        fetch('https://api.reimaginehome.ai/v1/get_room_types', {
+          headers: {
+            'x-api-key': REIMAGINEHOME_API_KEY
+          },
+          signal: controller2.signal
+        })
+      ]);
+
+      // Clear timeouts since fetches completed successfully
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
 
     let styles = [];
     let roomTypes = [];
@@ -568,26 +711,33 @@ async function handleStylesFetch(): Promise<NextResponse> {
 
     // Fallback to hardcoded values if API calls failed
     if (styles.length === 0) {
-      styles = [
-        { id: 'modern', name: 'Modern', preview_url: null },
-        { id: 'scandinavian', name: 'Scandinavian', preview_url: null },
-        { id: 'minimalist', name: 'Minimalist', preview_url: null },
-        { id: 'industrial', name: 'Industrial', preview_url: null },
-        { id: 'bohemian', name: 'Bohemian', preview_url: null },
-        { id: 'traditional', name: 'Traditional', preview_url: null }
-      ];
+      styles = DEFAULT_STYLES;
     }
 
     if (roomTypes.length === 0) {
-      roomTypes = [
-        { id: 'living_room', name: 'Living Room' },
-        { id: 'bedroom', name: 'Bedroom' },
-        { id: 'kitchen', name: 'Kitchen' },
-        { id: 'bathroom', name: 'Bathroom' },
-        { id: 'dining_room', name: 'Dining Room' },
-        { id: 'office', name: 'Home Office' }
-      ];
+      roomTypes = DEFAULT_ROOM_TYPES;
     }
+
+    return NextResponse.json({
+      styles,
+      roomTypes
+    });
+    } catch (error) {
+      // Clear timeouts in case of error
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error('Styles fetching timed out');
+        // Continue with fallback data
+      } else {
+        console.error('Failed to fetch styles:', error);
+      }
+    }
+
+    // Fallback to hardcoded values if API calls failed or timed out
+    let styles = DEFAULT_STYLES;
+    let roomTypes = DEFAULT_ROOM_TYPES;
 
     return NextResponse.json({
       styles,
@@ -599,22 +749,8 @@ async function handleStylesFetch(): Promise<NextResponse> {
     
     // Return fallback data
     return NextResponse.json({
-      styles: [
-        { id: 'modern', name: 'Modern', preview_url: null },
-        { id: 'scandinavian', name: 'Scandinavian', preview_url: null },
-        { id: 'minimalist', name: 'Minimalist', preview_url: null },
-        { id: 'industrial', name: 'Industrial', preview_url: null },
-        { id: 'bohemian', name: 'Bohemian', preview_url: null },
-        { id: 'traditional', name: 'Traditional', preview_url: null }
-      ],
-      roomTypes: [
-        { id: 'living_room', name: 'Living Room' },
-        { id: 'bedroom', name: 'Bedroom' },
-        { id: 'kitchen', name: 'Kitchen' },
-        { id: 'bathroom', name: 'Bathroom' },
-        { id: 'dining_room', name: 'Dining Room' },
-        { id: 'office', name: 'Home Office' }
-      ]
+      styles: DEFAULT_STYLES,
+      roomTypes: DEFAULT_ROOM_TYPES
     });
   }
 } 

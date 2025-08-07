@@ -1,0 +1,909 @@
+"use client"
+
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Separator } from '@/components/ui/separator'
+import { Input } from '@/components/ui/input'
+import { 
+  Upload, 
+  X, 
+  ImageIcon, 
+  VideoIcon, 
+  FileIcon, 
+  Loader2, 
+  CheckCircle, 
+  AlertCircle, 
+  Trash2, 
+  Download, 
+  Eye, 
+  Wand2, 
+  Sparkles, 
+  Crown, 
+  Layers, 
+  Star, 
+  Zap, 
+  Gem, 
+  Plus, 
+  ArrowLeft, 
+  Home, 
+  MessageSquare, 
+  Lightbulb, 
+  Settings, 
+  Bell, 
+  ChevronDown, 
+  User, 
+  CreditCard, 
+  LogOut, 
+  Mail, 
+  Shield, 
+  Calendar, 
+  FileText, 
+  Play, 
+  Send, 
+  Paperclip, 
+  RefreshCw 
+} from 'lucide-react'
+import { useAuth } from '@/lib/auth-context'
+import { toast } from 'sonner'
+
+interface UploadedImage {
+  id: string
+  file: File
+  url: string
+  name: string
+  roomType: string
+}
+
+interface ProcessedResult {
+  id: string
+  originalImage: UploadedImage
+  resultUrl: string
+  style: string
+  roomType: string
+}
+
+export function AIInteriorDesigner() {
+  const { user } = useAuth()
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
+  const [results, setResults] = useState<ProcessedResult[]>([])
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [processingImages, setProcessingImages] = useState<Set<string>>(new Set())
+  const [selectedStyle, setSelectedStyle] = useState('modern')
+  const [isPremium, setIsPremium] = useState(false)
+  const [batchMode, setBatchMode] = useState(false)
+  const [isPageLoaded, setIsPageLoaded] = useState(false)
+  const [isFlipped, setIsFlipped] = useState(false)
+  const [interiorStyle, setInteriorStyle] = useState('modern')
+  const [sameHouseImages, setSameHouseImages] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<ProcessedResult | null>(null)
+  const [showImagePopup, setShowImagePopup] = useState(false)
+  const [sliderPosition, setSliderPosition] = useState(50)
+  const [isSliderActive, setIsSliderActive] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const styles = [
+    { id: 'modern', name: 'Modern' },
+    { id: 'industrial', name: 'Industrial' },
+    { id: 'scandinavian', name: 'Scandinavian' },
+    { id: 'bohemian', name: 'Bohemian' },
+    { id: 'minimalist', name: 'Minimalist' }
+  ]
+
+  useEffect(() => {
+    setIsPageLoaded(true)
+  }, [])
+
+  const handleFileUpload = async (files: FileList) => {
+    const maxFiles = isPremium ? 1 : 10
+    const filesToProcess = Array.from(files).slice(0, maxFiles)
+    
+    if (isPremium && uploadedImages.length >= 1) {
+      toast.error('Premium mode allows only one image at a time.')
+      return
+    }
+
+    // Trigger flip animation when images are uploaded
+    if (uploadedImages.length === 0 && filesToProcess.length > 0) {
+      setTimeout(() => setIsFlipped(true), 1200)
+    }
+
+    for (const file of filesToProcess) {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} is not an image file.`)
+        continue
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is too large. Maximum size is 10MB.`)
+        continue
+      }
+
+      const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const imageUrl = URL.createObjectURL(file)
+      
+      const newImage: UploadedImage = {
+        id: imageId,
+        file,
+        url: imageUrl,
+        name: file.name,
+        roomType: 'living-room'
+      }
+
+      setUploadedImages(prev => [...prev, newImage])
+    }
+  }
+
+  const uploadImageToStorage = async (file: File, imageId: string): Promise<string | null> => {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('imageId', imageId)
+
+      const response = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to upload image')
+      }
+
+      const data = await response.json()
+      return data.url
+    } catch (error) {
+      console.error('Error uploading image:', error)
+      return null
+    }
+  }
+
+  const processImages = async () => {
+    if (uploadedImages.length === 0) {
+      toast.error('Please upload at least one image.')
+      return
+    }
+
+    // Set processing state for each image individually
+    const processingImages = new Set<string>()
+    setProcessingImages(processingImages)
+
+    try {
+      const newResults: ProcessedResult[] = []
+
+      for (const image of uploadedImages) {
+        // Add this image to processing set
+        processingImages.add(image.id)
+        setProcessingImages(new Set(processingImages))
+
+        // Simulate AI processing with demo images
+        await new Promise(resolve => setTimeout(resolve, 2000)) // 2 second delay per image
+        
+        // Use demo images for demonstration
+        const demoResultUrl = getDemoResultUrl(image.roomType, selectedStyle)
+        
+        newResults.push({
+          id: `result_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          originalImage: image,
+          resultUrl: demoResultUrl,
+          style: selectedStyle,
+          roomType: image.roomType
+        })
+
+        // Remove this image from processing set
+        processingImages.delete(image.id)
+        setProcessingImages(new Set(processingImages))
+      }
+
+      setResults(newResults)
+      toast.success(`Successfully processed ${newResults.length} image(s)!`)
+    } catch (error) {
+      console.error('Error processing images:', error)
+      toast.error('Failed to process images. Please try again.')
+    } finally {
+      setProcessingImages(new Set())
+    }
+  }
+
+  // Demo image URLs for different room types and styles
+  const getDemoResultUrl = (roomType: string, style: string) => {
+    const demoImages: Record<string, Record<string, string>> = {
+      'living-room': {
+        'modern': 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&h=600&fit=crop',
+        'industrial': 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=600&fit=crop',
+        'scandinavian': 'https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?w=800&h=600&fit=crop',
+        'bohemian': 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&h=600&fit=crop',
+        'minimalist': 'https://images.unsplash.com/photo-1618220179428-22790b461013?w=800&h=600&fit=crop'
+      },
+      'bedroom': {
+        'modern': 'https://images.unsplash.com/photo-1616594039964-ae9021a400a0?w=800&h=600&fit=crop',
+        'industrial': 'https://images.unsplash.com/photo-1600585154526-990dced4db0d?w=800&h=600&fit=crop',
+        'scandinavian': 'https://images.unsplash.com/photo-1616594039964-ae9021a400a0?w=800&h=600&fit=crop',
+        'bohemian': 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&h=600&fit=crop',
+        'minimalist': 'https://images.unsplash.com/photo-1618220179428-22790b461013?w=800&h=600&fit=crop'
+      },
+      'kitchen': {
+        'modern': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800&h=600&fit=crop',
+        'industrial': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800&h=600&fit=crop',
+        'scandinavian': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800&h=600&fit=crop',
+        'bohemian': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800&h=600&fit=crop',
+        'minimalist': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800&h=600&fit=crop'
+      },
+      'bathroom': {
+        'modern': 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=800&h=600&fit=crop',
+        'industrial': 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=800&h=600&fit=crop',
+        'scandinavian': 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=800&h=600&fit=crop',
+        'bohemian': 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=800&h=600&fit=crop',
+        'minimalist': 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=800&h=600&fit=crop'
+      },
+      'office': {
+        'modern': 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&h=600&fit=crop',
+        'industrial': 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&h=600&fit=crop',
+        'scandinavian': 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&h=600&fit=crop',
+        'bohemian': 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&h=600&fit=crop',
+        'minimalist': 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&h=600&fit=crop'
+      }
+    }
+
+    return demoImages[roomType]?.[style] || 
+           'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&h=600&fit=crop'
+  }
+
+  const updateImageRoomType = (imageId: string, roomType: string) => {
+    setUploadedImages(prev => 
+      prev.map(img => 
+        img.id === imageId ? { ...img, roomType } : img
+      )
+    )
+  }
+
+  const removeImage = (imageId: string) => {
+    setUploadedImages(prev => {
+      const image = prev.find(img => img.id === imageId)
+      if (image) {
+        URL.revokeObjectURL(image.url)
+      }
+      return prev.filter(img => img.id !== imageId)
+    })
+  }
+
+  const downloadResult = (result: ProcessedResult) => {
+    const link = document.createElement('a')
+    link.href = result.resultUrl
+    link.download = `interior-design-${result.style}-${Date.now()}.jpg`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const startOver = () => {
+    setUploadedImages([])
+    setResults([])
+    setIsFlipped(false)
+    setSelectedStyle('modern')
+    setBatchMode(false)
+  }
+
+  const addEmptyRoom = () => {
+    // Show loading animation for empty room processing
+    setIsProcessing(true)
+    
+    // Simulate processing time
+    setTimeout(() => {
+      const emptyRoom: UploadedImage = {
+        id: `empty_${Date.now()}`,
+        file: new File([''], 'empty-room.jpg', { type: 'image/jpeg' }),
+        url: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&h=600&fit=crop',
+        name: 'Empty Room Template',
+        roomType: 'living-room'
+      }
+      
+      if (isPremium && uploadedImages.length >= 1) {
+        toast.error('Premium mode allows only one image at a time.')
+      } else {
+        setUploadedImages(prev => [...prev, emptyRoom])
+      }
+      
+      setIsProcessing(false)
+    }, 3000) // 3 second loading animation
+  }
+
+  // Slider functionality
+  useEffect(() => {
+    if (!isDragging) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isSliderActive) {
+        const sliderContainer = document.querySelector('.slider-container')
+        if (sliderContainer) {
+          const rect = sliderContainer.getBoundingClientRect()
+          const x = e.clientX - rect.left
+          const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100))
+          setSliderPosition(percentage)
+        }
+      }
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isSliderActive) {
+        e.preventDefault()
+        const sliderContainer = document.querySelector('.slider-container')
+        if (sliderContainer) {
+          const rect = sliderContainer.getBoundingClientRect()
+          const x = e.touches[0].clientX - rect.left
+          const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100))
+          setSliderPosition(percentage)
+        }
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    const handleTouchEnd = () => {
+      setIsDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    document.addEventListener('mouseup', handleMouseUp)
+    document.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [isDragging, isSliderActive, setSliderPosition])
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Flip Container for Header */}
+        <div className={`relative w-full h-32 transition-all duration-1500 ${
+          isPageLoaded 
+            ? 'opacity-100 translate-y-0 scale-100' 
+            : 'opacity-0 translate-y-8 scale-95'
+        }`} style={{ transitionDelay: '300ms' }}>
+          <div 
+            className="relative w-full h-full transition-transform duration-6000 ease-out"
+            style={{
+              transformStyle: 'preserve-3d',
+              transform: isFlipped ? 'rotateX(180deg)' : 'rotateX(0deg)'
+            }}
+          >
+            {/* Front Side - AI Studio Header */}
+            <div 
+              className="absolute inset-0 w-full h-full bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl p-8 shadow-2xl"
+              style={{ 
+                backfaceVisibility: 'hidden',
+                transform: 'translateZ(0px)'
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  {/* AI Studio Button - Clean Design */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-14 px-10 text-lg font-bold text-gray-800 bg-white/40 backdrop-blur-xl hover:bg-white/60 border border-white/50 shadow-2xl transition-all duration-300 rounded-full hover:scale-105 active:scale-95"
+                    style={{ transform: 'translateZ(20px)' }}
+                  >
+                    AI Studio
+                  </Button>
+                </div>
+
+                {/* Premium Toggle - Clean Design */}
+                <div className="transition-all duration-1000" style={{ transitionDelay: '600ms', transform: 'translateZ(15px)' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsPremium(!isPremium)}
+                    className={`h-10 px-8 text-sm font-medium gap-2 transition-all duration-300 rounded-full hover:scale-105 active:scale-95 ${
+                      isPremium 
+                        ? 'bg-white/40 backdrop-blur-xl text-gray-800 border border-white/50 hover:bg-white/60 shadow-2xl' 
+                        : 'bg-white/40 backdrop-blur-xl text-gray-800 border border-white/50 hover:bg-white/60 shadow-2xl'
+                    }`}
+                  >
+                    {isPremium ? (
+                      <>
+                        <Crown className="w-4 h-4" />
+                        <span className="font-semibold">Premium</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-4 h-4 rounded-full bg-gray-400" />
+                        <span className="font-semibold">Standard</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Batch Mode Controls - Enhanced Glass Design with Round Borders */}
+              {uploadedImages.length > 1 && !isPremium && (
+                <div className="flex items-center gap-3 mt-6 pt-6 border-t border-white/20 transition-all duration-1000" style={{ transitionDelay: '800ms' }}>
+                  <Button
+                    variant={batchMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setBatchMode(!batchMode)}
+                    className={`h-10 px-6 text-sm font-medium transition-all duration-300 rounded-full ${
+                      batchMode 
+                        ? 'bg-white/40 backdrop-blur-xl text-gray-800 border-white/50 hover:bg-white/60 shadow-xl' 
+                        : 'text-gray-700 bg-white/15 backdrop-blur-xl border-white/30 hover:bg-white/25'
+                    }`}
+                  >
+                    <Layers className="w-4 h-4 mr-2" />
+                    Stapelmodus
+                  </Button>
+                  
+                  {batchMode && (
+                    <Select value={selectedStyle} onValueChange={setSelectedStyle}>
+                      <SelectTrigger className="h-10 w-48 text-sm bg-white/20 backdrop-blur-3xl border-white/30 hover:bg-white/30 transition-all duration-300 rounded-full shadow-[0_4px_20px_rgba(255,255,255,0.15),inset_0_1px_2px_rgba(255,255,255,0.1)]">
+                        <SelectValue placeholder="Stil für alle auswählen" />
+                      </SelectTrigger>
+                                              <SelectContent className="bg-white/10 backdrop-blur-3xl border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.1),inset_0_1px_3px_rgba(255,255,255,0.05)]">
+                          {styles.map((style) => (
+                            <SelectItem key={style.id} value={style.id} className="hover:bg-white/10 focus:bg-white/10">
+                              {style.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Back Side - Settings Toolbar */}
+            <div 
+              className="absolute inset-0 w-full h-full bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl p-8 shadow-2xl"
+              style={{ 
+                backfaceVisibility: 'hidden',
+                transform: 'rotateX(180deg) translateZ(0px)'
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsFlipped(false)}
+                    className="h-14 px-10 text-lg font-bold text-gray-800 bg-white/40 backdrop-blur-xl hover:bg-white/60 border border-white/50 shadow-2xl transition-all duration-300 rounded-full hover:scale-105 active:scale-95"
+                    style={{ transform: 'translateZ(20px)' }}
+                  >
+                    ← Zurück
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-4" style={{ transform: 'translateZ(15px)' }}>
+                  {/* Same House Checkbox - Ultra Clean White Design */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        id="sameHouse"
+                        checked={sameHouseImages}
+                        onChange={(e) => setSameHouseImages(e.target.checked)}
+                        className="w-4 h-4 text-white bg-white/95 backdrop-blur-2xl border-white/80 rounded-sm focus:ring-white/30 focus:ring-1 focus:ring-offset-1 focus:ring-offset-transparent transition-all duration-300 hover:bg-white checked:bg-white checked:border-white shadow-sm appearance-none"
+                        style={{ 
+                          backgroundColor: sameHouseImages ? 'white' : 'rgba(255, 255, 255, 0.95)',
+                          borderColor: 'rgba(255, 255, 255, 0.8)',
+                          color: 'white'
+                        }}
+                      />
+                    </div>
+                    <label htmlFor="sameHouse" className="text-xs font-medium text-gray-700 cursor-pointer hover:text-gray-800 transition-colors duration-300">
+                      Gleicher Stil
+                    </label>
+                  </div>
+
+                  {/* Interior Style Selector - Super Clean Glassy Design */}
+                  {sameHouseImages && (
+                    <div className="flex items-center gap-2">
+                      <Select value={interiorStyle} onValueChange={setInteriorStyle}>
+                        <SelectTrigger className="h-8 w-24 text-xs bg-white/20 backdrop-blur-3xl border-white/30 hover:bg-white/30 transition-all duration-300 rounded-full shadow-[0_4px_20px_rgba(255,255,255,0.15),inset_0_1px_2px_rgba(255,255,255,0.1)]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white/10 backdrop-blur-3xl border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.1),inset_0_1px_3px_rgba(255,255,255,0.05)]">
+                          {styles.map((style) => (
+                            <SelectItem key={style.id} value={style.id} className="hover:bg-white/10 focus:bg-white/10">
+                              {style.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Enhanced Glassmorphic Upload Section with Animation */}
+        {uploadedImages.length === 0 ? (
+          <Card className={`bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl p-10 shadow-2xl transition-all duration-1000 ${
+            isPageLoaded 
+              ? 'opacity-100 translate-y-0 scale-100' 
+              : 'opacity-0 translate-y-8 scale-95'
+          }`} style={{ transitionDelay: '300ms' }}>
+            <div className="text-center space-y-8">
+              <div className={`transition-all duration-700 ${
+                isPageLoaded 
+                  ? 'opacity-100 translate-y-0 scale-100' 
+                  : 'opacity-0 translate-y-8 scale-95'
+              }`} style={{ transitionDelay: '500ms' }}>
+                <h2 className="text-3xl font-bold text-gray-800 mb-4">Raumbilder hochladen</h2>
+                <p className="text-gray-600 text-lg">
+                  {isPremium 
+                    ? 'Ein Bild für Premium-Verarbeitung hochladen'
+                    : 'Mehrere Bilder per Drag & Drop oder Klick auswählen'
+                  }
+                </p>
+              </div>
+
+              {/* Enhanced Upload Card - Liquid Glass Design */}
+              <div className={`relative transition-all duration-700 ${
+                isPageLoaded 
+                  ? 'opacity-100 translate-y-0 scale-100' 
+                  : 'opacity-0 translate-y-8 scale-95'
+              }`} style={{ transitionDelay: '700ms' }}>
+                <Card 
+                  className="relative bg-gradient-to-br from-white/15 via-white/10 to-white/5 backdrop-blur-3xl border border-white/30 rounded-3xl p-12 shadow-2xl hover:shadow-2xl transition-all duration-500 hover:scale-[1.02] group cursor-pointer overflow-hidden"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {/* Subtle Liquid Glass Shimmer Effect */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
+                  
+                  {/* Upload Icon - Plus Symbol */}
+                  <div className="relative z-10 flex flex-col items-center space-y-6">
+                    <div className="w-24 h-24 bg-white/20 backdrop-blur-xl border border-white/40 rounded-full flex items-center justify-center group-hover:bg-white/25 transition-all duration-500">
+                      <Plus className="w-12 h-12 text-gray-700 group-hover:text-gray-700 transition-colors duration-500" />
+                    </div>
+                    
+                    <div className="text-center space-y-2">
+                      <p className="text-lg font-medium text-gray-700">Bilder hier ablegen</p>
+                      <p className="text-sm text-gray-500">
+                        Unterstützt: JPG, PNG, WebP • Max: 10MB • Bis zu 10 Bilder
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Action Buttons - Liquid Glass Design */}
+              <div className={`flex items-center justify-center gap-4 transition-all duration-700 ${
+                isPageLoaded 
+                  ? 'opacity-100 translate-y-0 scale-100' 
+                  : 'opacity-0 translate-y-8 scale-95'
+              }`} style={{ transitionDelay: '900ms' }}>
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="h-14 px-8 bg-white/40 backdrop-blur-xl text-gray-800 hover:bg-white/60 border border-white/50 shadow-2xl transition-all duration-300 rounded-full hover:scale-105 active:scale-95 !bg-white/40 !text-gray-800"
+                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.4)', color: '#1f2937' }}
+                >
+                  Bilder auswählen
+                </Button>
+
+                <Button
+                  onClick={addEmptyRoom}
+                  className="h-14 px-8 bg-white/40 backdrop-blur-xl text-gray-800 hover:bg-white/60 border border-white/50 shadow-2xl transition-all duration-300 rounded-full hover:scale-105 active:scale-95 !bg-white/40 !text-gray-800"
+                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.4)', color: '#1f2937' }}
+                >
+                  Leeren Raum verwenden
+                </Button>
+              </div>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple={!isPremium}
+              accept="image/*"
+              onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+              className="hidden"
+            />
+          </Card>
+        ) : (
+          /* Enhanced Glassmorphic Images Grid with Animation */
+          <Card className={`bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl p-10 shadow-2xl transition-all duration-1000 ${
+            isPageLoaded 
+              ? 'opacity-100 translate-y-0 scale-100' 
+              : 'opacity-0 translate-y-12 scale-95'
+          }`} style={{ transitionDelay: '300ms' }}>
+            <div className="flex items-center justify-between mb-10">
+              <h2 className={`text-2xl font-semibold flex items-center gap-3 text-gray-800 transition-all duration-700 ${
+                isPageLoaded 
+                  ? 'opacity-100 translate-x-0' 
+                  : 'opacity-0 -translate-x-8'
+              }`} style={{ transitionDelay: '500ms' }}>
+                <Layers className="w-6 h-6" />
+                Hochgeladene Bilder ({uploadedImages.length})
+              </h2>
+              <div className={`flex gap-4 transition-all duration-700 ${
+                isPageLoaded 
+                  ? 'opacity-100 translate-x-0 scale-100' 
+                  : 'opacity-0 translate-x-8 scale-95'
+              }`} style={{ transitionDelay: '700ms' }}>
+                <Button
+                  onClick={processImages}
+                  disabled={isProcessing}
+                  className={`h-14 px-8 transition-all duration-300 rounded-full hover:scale-105 active:scale-95 ${
+                    isProcessing
+                      ? 'bg-white/15 text-gray-500 cursor-not-allowed'
+                      : 'bg-white/40 backdrop-blur-xl text-gray-800 hover:bg-white/60 border border-white/50 shadow-2xl'
+                  }`}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-6 h-6 mr-3 animate-spin" />
+                      Verarbeitung...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="w-6 h-6 mr-3" />
+                      Bilder transformieren
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+              {uploadedImages.map((image, index) => {
+                const isProcessingThisImage = processingImages.has(image.id)
+                const result = results.find(r => r.originalImage.id === image.id)
+                
+                return (
+                  <Card key={image.id} className={`group bg-white/20 backdrop-blur-xl border border-white/30 shadow-2xl hover:shadow-3xl transition-all duration-500 rounded-3xl overflow-hidden hover:bg-white/30 hover:scale-105 ${
+                    isPageLoaded 
+                      ? 'opacity-100 translate-y-0 scale-100' 
+                      : 'opacity-0 translate-y-8 scale-95'
+                  }`} style={{ transitionDelay: `${800 + (index * 100)}ms` }}>
+                    <div className="relative">
+                      <div className="aspect-square overflow-hidden">
+                        {isProcessingThisImage ? (
+                          /* Loading Animation on Card */
+                          <div className="w-full h-full bg-white/20 backdrop-blur-xl flex items-center justify-center">
+                            <div className="text-center space-y-4">
+                              <div className="w-16 h-16 bg-white/30 backdrop-blur-xl border border-white/50 rounded-full flex items-center justify-center mx-auto shadow-2xl">
+                                <div className="w-8 h-8 border-4 border-white/60 border-t-white rounded-full animate-spin"></div>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex justify-center space-x-1">
+                                  <div className="w-2 h-2 bg-white/60 rounded-full animate-pulse"></div>
+                                  <div className="w-2 h-2 bg-white/60 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                                  <div className="w-2 h-2 bg-white/60 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                                </div>
+                                <p className="text-xs text-gray-700 font-medium">AI verarbeitet...</p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : result ? (
+                          /* Transformed Result */
+                          <div 
+                            className="w-full h-full cursor-pointer"
+                            onClick={() => {
+                              setSelectedImage(result)
+                              setShowImagePopup(true)
+                            }}
+                          >
+                            <img
+                              src={result.resultUrl}
+                              alt="Transformed"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
+                              <div className="text-white text-sm font-medium">
+                                {styles.find(s => s.id === result.style)?.name}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Original Image */
+                          <img
+                            src={image.url}
+                            alt={image.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                        )}
+                      </div>
+                      
+                      {!isProcessingThisImage && !result && (
+                        <button
+                          onClick={() => removeImage(image.id)}
+                          className="absolute top-4 right-4 w-10 h-10 bg-red-500/90 backdrop-blur-xl hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-2xl hover:scale-110"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {!result && (
+                      <div className="p-8">
+                        <p className="text-sm font-medium text-gray-800 mb-6 truncate">{image.name}</p>
+                        
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-3">Raumtyp</label>
+                          <Select 
+                            value={image.roomType} 
+                            onValueChange={(value) => updateImageRoomType(image.id, value)}
+                          >
+                            <SelectTrigger className="h-12 text-sm bg-white/20 backdrop-blur-3xl border-white/30 hover:bg-white/30 transition-all duration-300 rounded-full shadow-[0_4px_20px_rgba(255,255,255,0.15),inset_0_1px_2px_rgba(255,255,255,0.1)]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white/10 backdrop-blur-3xl border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.1),inset_0_1px_3px_rgba(255,255,255,0.05)]">
+                              <SelectItem value="living-room" className="hover:bg-white/10 focus:bg-white/10">Wohnzimmer</SelectItem>
+                              <SelectItem value="bedroom" className="hover:bg-white/10 focus:bg-white/10">Schlafzimmer</SelectItem>
+                              <SelectItem value="kitchen" className="hover:bg-white/10 focus:bg-white/10">Küche</SelectItem>
+                              <SelectItem value="bathroom" className="hover:bg-white/10 focus:bg-white/10">Badezimmer</SelectItem>
+                              <SelectItem value="office" className="hover:bg-white/10 focus:bg-white/10">Büro</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                )
+              })}
+              
+              {/* Add More Button - Same size as image card with Animation */}
+              {!isPremium && (
+                <Card 
+                  className={`group bg-white/20 backdrop-blur-xl border border-white/30 shadow-2xl hover:shadow-3xl transition-all duration-500 rounded-3xl overflow-hidden hover:bg-white/30 hover:scale-105 cursor-pointer ${
+                    isPageLoaded 
+                      ? 'opacity-100 translate-y-0 scale-100' 
+                      : 'opacity-0 translate-y-8 scale-95'
+                  }`} 
+                  style={{ transitionDelay: `${800 + (uploadedImages.length * 100)}ms` }}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <div className="aspect-square flex items-center justify-center">
+                    <div className="w-16 h-16 bg-white/40 backdrop-blur-xl border border-white/50 rounded-full flex items-center justify-center shadow-2xl group-hover:scale-110 transition-all duration-300">
+                      <Plus className="w-8 h-8 text-gray-700" />
+                    </div>
+                  </div>
+                  
+                  <div className="p-8 text-center">
+                    <p className="text-sm font-medium text-gray-800 mb-6">Bild hinzufügen</p>
+                    
+                    <div className="h-12 bg-white/20 backdrop-blur-xl border border-white/30 rounded-full flex items-center justify-center">
+                      <span className="text-xs text-gray-600">Klick zum Hochladen</span>
+                    </div>
+                  </div>
+                </Card>
+              )}
+            </div>
+          </Card>
+        )}
+
+
+
+            {/* Image Popup Modal */}
+            {showImagePopup && selectedImage && (
+              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white/20 backdrop-blur-3xl border border-white/30 rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+                  <div className="relative">
+                    {/* Close Button */}
+                    <button
+                      onClick={() => setShowImagePopup(false)}
+                      className="absolute top-4 right-4 w-10 h-10 bg-white/20 backdrop-blur-xl hover:bg-white/30 text-gray-800 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 z-10"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                    
+                    {/* Image Content */}
+                    <div className="p-8">
+                      <div className="space-y-6">
+                        {/* Header */}
+                        <div className="flex items-center justify-between relative">
+                          <div className="flex-1"></div>
+                          <h4 className="text-xl font-semibold text-gray-800 absolute left-1/2 transform -translate-x-1/2">
+                            Nachher - {styles.find(s => s.id === selectedImage.style)?.name}
+                          </h4>
+                          <Button
+                            onClick={() => setIsSliderActive(!isSliderActive)}
+                            className={`h-10 px-6 text-sm bg-white/40 backdrop-blur-xl text-gray-800 hover:bg-white/60 border border-white/50 shadow-2xl transition-all duration-300 rounded-full hover:scale-105 active:scale-95 ${
+                              isSliderActive ? 'bg-white/60' : ''
+                            }`}
+                          >
+                            {isSliderActive ? 'Slider aus' : 'Slider an'}
+                          </Button>
+                        </div>
+                        
+                        {/* Single Image Display */}
+                        <div className="flex justify-center">
+                          {isSliderActive ? (
+                            /* Sliding Comparison Tool */
+                            <div 
+                              className="slider-container relative aspect-square rounded-2xl overflow-hidden bg-white/20 backdrop-blur-xl border border-white/30 shadow-2xl cursor-ew-resize max-w-md w-full"
+                              onClick={(e) => {
+                                if (isSliderActive) {
+                                  const rect = e.currentTarget.getBoundingClientRect()
+                                  const x = e.clientX - rect.left
+                                  const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100))
+                                  setSliderPosition(percentage)
+                                }
+                              }}
+                            >
+                              {/* Original Image (Background) */}
+                              <img
+                                src={selectedImage.originalImage.url}
+                                alt="Original"
+                                className="absolute inset-0 w-full h-full object-cover"
+                              />
+                            
+                              {/* Transformed Image (Foreground with mask) */}
+                              <div 
+                                className="absolute inset-0 overflow-hidden"
+                                style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
+                              >
+                                <img
+                                  src={selectedImage.resultUrl}
+                                  alt="Transformed"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                              
+                              {/* Slider Handle */}
+                              <div 
+                                className="absolute top-0 bottom-0 w-1 bg-white/80 backdrop-blur-xl cursor-ew-resize flex items-center justify-center"
+                                style={{ left: `${sliderPosition}%` }}
+                                onMouseDown={() => setIsDragging(true)}
+                                onTouchStart={() => setIsDragging(true)}
+                              >
+                                <div className="w-8 h-8 bg-white/90 backdrop-blur-xl border border-white/60 rounded-full shadow-2xl flex items-center justify-center">
+                                  <div className="w-4 h-4 bg-white/60 rounded-full"></div>
+                                </div>
+                              </div>
+                              
+                              {/* Slider Labels */}
+                              <div className="absolute bottom-4 left-4 bg-white/20 backdrop-blur-xl px-3 py-1 rounded-full">
+                                <span className="text-xs font-medium text-gray-800">Vorher</span>
+                              </div>
+                              <div className="absolute bottom-4 right-4 bg-white/20 backdrop-blur-xl px-3 py-1 rounded-full">
+                                <span className="text-xs font-medium text-gray-800">Nachher</span>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Normal Image Display */
+                            <div className="aspect-square rounded-2xl overflow-hidden bg-white/20 backdrop-blur-xl border border-white/30 shadow-2xl max-w-md w-full">
+                              <img
+                                src={selectedImage.resultUrl}
+                                alt="Transformed"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Action Buttons */}
+                      <div className="flex gap-4 mt-8 justify-center">
+                        <Button
+                          onClick={() => downloadResult(selectedImage)}
+                          className="h-12 px-8 bg-white/40 backdrop-blur-xl text-gray-800 hover:bg-white/60 border border-white/50 shadow-2xl transition-all duration-300 rounded-full hover:scale-105 active:scale-95"
+                        >
+                          <Download className="w-5 h-5 mr-2" />
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+        </>
+        )}
+      </div>
+    </div>
+  )
+} 

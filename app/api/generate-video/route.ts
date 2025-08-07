@@ -1,17 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
+import { GoogleAuth } from 'google-auth-library'
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
+// Helper function to verify authentication
+async function verifyAuth(request: NextRequest) {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { authenticated: false, user: null, error: 'Missing or invalid authorization header' }
   }
-)
+
+  const token = authHeader.replace('Bearer ', '')
+  
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    
+    if (error || !user) {
+      return { authenticated: false, user: null, error: 'Invalid or expired token' }
+    }
+
+    return { authenticated: true, user, error: null }
+  } catch (error) {
+    return { authenticated: false, user: null, error: 'Authentication verification failed' }
+  }
+}
 
 interface VideoGenerationRequest {
   prompt: string
@@ -27,20 +38,75 @@ interface VideoGenerationRequest {
 interface VideoGenerationResponse {
   success: boolean
   videoUrl?: string
-  taskId?: string
+  operationName?: string
   error?: string
   estimatedTime?: number
 }
 
-// Google Veo API Configuration
-const GOOGLE_VEO_API_URL = 'https://aiplatform.googleapis.com/v1'
-const GOOGLE_VEO_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT_ID
-const GOOGLE_VEO_API_KEY = process.env.GOOGLE_VEO_API_KEY
+// Vertex AI Configuration
+const VERTEX_AI_BASE_URL = 'https://us-central1-aiplatform.googleapis.com'
+const GOOGLE_CLOUD_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT_ID
+const GOOGLE_APPLICATION_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS
 
-async function generateVideoWithVeo(request: VideoGenerationRequest): Promise<VideoGenerationResponse> {
+// Initialize Google Auth client
+async function getAuthenticatedClient() {
+  const auth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    keyFile: GOOGLE_APPLICATION_CREDENTIALS,
+  })
+  
+  return await auth.getClient()
+}
+
+// Poll long-running operation
+async function pollOperation(operationName: string): Promise<any> {
+  const client = await getAuthenticatedClient()
+  const accessToken = await client.getAccessToken()
+  
+  const maxAttempts = 60 // 5 minutes with 5-second intervals
+  let attempts = 0
+  
+  while (attempts < maxAttempts) {
+    const response = await fetch(
+      `${VERTEX_AI_BASE_URL}/v1/${operationName}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken.token}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+    
+    if (!response.ok) {
+      throw new Error(`Failed to poll operation: ${response.status} - ${response.statusText}`)
+    }
+    
+    const operation = await response.json()
+    
+    if (operation.done) {
+      if (operation.error) {
+        throw new Error(`Operation failed: ${JSON.stringify(operation.error)}`)
+      }
+      return operation.response
+    }
+    
+    // Wait 5 seconds before next poll
+    await new Promise(resolve => setTimeout(resolve, 5000))
+    attempts++
+  }
+  
+  throw new Error('Operation timed out after 5 minutes')
+}
+
+async function generateVideoWithVertexAI(request: VideoGenerationRequest): Promise<VideoGenerationResponse> {
   try {
-    if (!GOOGLE_VEO_API_KEY) {
-      throw new Error('Google Veo API key not configured')
+    if (!GOOGLE_CLOUD_PROJECT_ID) {
+      throw new Error('Google Cloud Project ID not configured')
+    }
+
+    if (!GOOGLE_APPLICATION_CREDENTIALS) {
+      throw new Error('Google Application Credentials not configured')
     }
 
     // Map resolution to actual dimensions
@@ -52,11 +118,19 @@ async function generateVideoWithVeo(request: VideoGenerationRequest): Promise<Vi
 
     const dimensions = resolutionMap[request.resolution]
 
-    // Prepare Veo API request
-    const veoRequest = {
+    // Validate motion intensity range
+    if (request.motionIntensity < 0 || request.motionIntensity > 10) {
+      throw new Error('Motion intensity must be between 0 and 10')
+    }
+
+    // Get authenticated client
+    const client = await getAuthenticatedClient()
+    const accessToken = await client.getAccessToken()
+
+    // Prepare Vertex AI request body
+    const vertexRequest = {
       instances: [{
         prompt: request.prompt,
-        model: request.model,
         video_config: {
           duration_seconds: request.duration,
           fps: request.fps,
@@ -68,62 +142,61 @@ async function generateVideoWithVeo(request: VideoGenerationRequest): Promise<Vi
         }
       }],
       parameters: {
-        temperature: 0.7,
-        max_output_tokens: 1024
+        model: request.model
       }
     }
 
-    console.log('Generating video with Veo:', { 
+    console.log('Generating video with Vertex AI:', { 
       prompt: request.prompt, 
       model: request.model,
       duration: request.duration,
       resolution: request.resolution
     })
 
-    // Call Google Veo API
+    // Call Vertex AI predictLongRunning endpoint
     const response = await fetch(
-      `${GOOGLE_VEO_API_URL}/projects/${GOOGLE_VEO_PROJECT_ID}/locations/us-central1/publishers/google/models/${request.model}:predict`,
+      `${VERTEX_AI_BASE_URL}/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/us-central1/publishers/google/models/${request.model}:predictLongRunning`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${GOOGLE_VEO_API_KEY}`,
+          'Authorization': `Bearer ${accessToken.token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(veoRequest)
+        body: JSON.stringify(vertexRequest)
       }
     )
 
     if (!response.ok) {
       const errorData = await response.text()
-      console.error('Veo API error:', errorData)
-      throw new Error(`Veo API error: ${response.status} - ${errorData}`)
+      console.error('Vertex AI error:', errorData)
+      throw new Error(`Vertex AI error: ${response.status} - ${errorData}`)
     }
 
     const result = await response.json()
     
-    // Handle different response formats
-    if (result.predictions && result.predictions[0]) {
-      const prediction = result.predictions[0]
+    // Extract operation name from response
+    if (result.name) {
+      console.log('Video generation started, operation name:', result.name)
       
-      // If video is immediately available
-      if (prediction.video_url) {
-        return {
-          success: true,
-          videoUrl: prediction.video_url
+      // Poll the operation until completion
+      const operationResult = await pollOperation(result.name)
+      
+      // Extract video URL from operation result
+      if (operationResult.predictions && operationResult.predictions[0]) {
+        const prediction = operationResult.predictions[0]
+        
+        if (prediction.video_url) {
+          return {
+            success: true,
+            videoUrl: prediction.video_url
+          }
         }
       }
       
-      // If video generation is queued (async)
-      if (prediction.task_id) {
-        return {
-          success: true,
-          taskId: prediction.task_id,
-          estimatedTime: prediction.estimated_time_seconds || 60
-        }
-      }
+      throw new Error('Video generation completed but no video URL found in response')
     }
 
-    throw new Error('Unexpected response format from Veo API')
+    throw new Error('Unexpected response format from Vertex AI')
 
   } catch (error) {
     console.error('Video generation error:', error)
@@ -187,12 +260,12 @@ export async function POST(request: NextRequest) {
     // Try Google Veo API first, fallback to simulation
     let result: VideoGenerationResponse
     
-    if (GOOGLE_VEO_API_KEY && process.env.NODE_ENV === 'production') {
-      result = await generateVideoWithVeo(body)
+    if (GOOGLE_CLOUD_PROJECT_ID && GOOGLE_APPLICATION_CREDENTIALS) {
+      result = await generateVideoWithVertexAI(body)
       
-      // If Veo fails, try simulation as fallback
+      // If Vertex AI fails, try simulation as fallback
       if (!result.success) {
-        console.warn('Veo API failed, using simulation:', result.error)
+        console.warn('Vertex AI failed, using simulation:', result.error)
         result = await simulateVideoGeneration(body)
       }
     } else {
@@ -224,8 +297,8 @@ export async function POST(request: NextRequest) {
             cameraMovement: body.cameraMovement
           },
           result_url: result.videoUrl,
-          status: result.taskId ? 'processing' : 'completed',
-          task_id: result.taskId
+          status: result.operationName ? 'processing' : 'completed',
+          task_id: result.operationName
         })
     } catch (dbError) {
       console.error('Failed to log generation:', dbError)
@@ -235,7 +308,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       videoUrl: result.videoUrl,
-      taskId: result.taskId,
+      taskId: result.operationName,
       estimatedTime: result.estimatedTime
     })
 
@@ -265,27 +338,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Check task status with Google Veo
-    if (GOOGLE_VEO_API_KEY) {
-      const response = await fetch(
-        `${GOOGLE_VEO_API_URL}/projects/${GOOGLE_VEO_PROJECT_ID}/locations/us-central1/operations/${taskId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${GOOGLE_VEO_API_KEY}`,
-            'Content-Type': 'application/json',
-          }
-        }
-      )
-
-      if (response.ok) {
-        const result = await response.json()
-        
-        return NextResponse.json({
-          success: true,
-          status: result.done ? 'completed' : 'processing',
-          videoUrl: result.done ? result.response?.video_url : undefined,
-          progress: result.metadata?.progress_percent || 0
-        })
-      }
+    if (GOOGLE_CLOUD_PROJECT_ID) {
+      const operationResult = await pollOperation(taskId)
+      
+      return NextResponse.json({
+        success: true,
+        status: operationResult.done ? 'completed' : 'processing',
+        videoUrl: operationResult.done ? operationResult.response?.predictions?.[0]?.video_url : undefined,
+        progress: operationResult.metadata?.progress_percent || 0
+      })
     }
 
     // Fallback for simulation

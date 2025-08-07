@@ -16,6 +16,38 @@ interface SavedCaptionSuggestion extends CaptionSuggestion {
   id: string
 }
 
+// User profile interface
+interface UserProfile {
+  brand_tone: string
+  target_audience?: string[]
+  goals?: string[]
+  industry?: string
+}
+
+// Performance insights interface
+interface PerformanceInsights {
+  avgEngagement: number
+  topHashtags?: string[]
+  insights: string
+}
+
+// Caption generation parameters interface
+interface CaptionGenerationParams {
+  postContent: string
+  mediaType: string
+  platform: string
+  context: string
+  userProfile: UserProfile
+  performanceInsights: PerformanceInsights
+}
+
+// AI response validation interface
+interface AIResponseValidation {
+  isValid: boolean
+  content: string
+  error?: string
+}
+
 // OpenAI client
 function getOpenAIClient(): OpenAI {
   if (!process.env.OPENAI_API_KEY) {
@@ -43,6 +75,20 @@ export async function POST(request: NextRequest) {
     if (!postContent) {
       return NextResponse.json(
         { success: false, error: 'Post content is required' },
+        { status: 400 }
+      )
+    }
+
+    if (mediaType && !['image', 'video', 'carousel', 'text'].includes(mediaType)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid media type' },
+        { status: 400 }
+      )
+    }
+
+    if (!['instagram', 'facebook', 'twitter', 'linkedin'].includes(platform)) {
+      return NextResponse.json(
+        { success: false, error: 'Unsupported platform' },
         { status: 400 }
       )
     }
@@ -122,9 +168,10 @@ export async function PUT(request: NextRequest) {
       .eq('id', suggestionId)
       .eq('user_id', user.id)
       .select()
+      .single()
 
     if (error) {
-      console.error('Error updating suggestion feedback:', error)
+      console.error('Error saving feedback:', error)
       return NextResponse.json(
         { success: false, error: 'Failed to save feedback' },
         { status: 500 }
@@ -148,49 +195,58 @@ export async function PUT(request: NextRequest) {
 
 // Helper Functions
 
-async function fetchUserProfile(userId: string) {
-  const { data: profile } = await supabase
+async function fetchUserProfile(userId: string): Promise<UserProfile> {
+  const { data: profile, error } = await supabase
     .from('user_profiles')
     .select('preferences')
     .eq('id', userId)
     .single()
+
+  if (error) {
+    console.error('Error fetching user profile:', error)
+    throw new Error('Failed to fetch user profile')
+  }
 
   // Return structured profile or defaults
   return profile?.preferences || {
     brand_tone: 'professional_trustworthy_humorous',
     target_audience: ['general'],
     goals: ['engagement'],
-    platforms: ['instagram', 'facebook'],
     industry: 'general'
   }
 }
 
-async function analyzeUserPerformance(userId: string) {
-  // Get user's best performing posts for learning
-  const { data: topPosts } = await supabase
+async function analyzeUserPerformance(userId: string): Promise<PerformanceInsights> {
+  // Get top performing posts (highest engagement)
+  const { data: topPosts, error } = await supabase
     .from('posts')
-    .select('content, likes, comments, shares, reach, impressions, tags, created_at')
+    .select('likes, comments, shares, tags, content_type')
     .eq('user_id', userId)
     .eq('status', 'published')
     .order('likes', { ascending: false })
     .limit(10)
 
-  if (!topPosts || topPosts.length === 0) {
+  if (error) {
+    console.error('Error fetching user posts:', error)
     return {
-      avgLikes: 0,
-      avgComments: 0,
-      avgShares: 0,
       avgEngagement: 0,
       topHashtags: [],
-      bestContentTypes: [],
+      insights: 'Unable to analyze performance. Using general best practices.'
+    }
+  }
+
+  if (!topPosts || topPosts.length === 0) {
+    return {
+      avgEngagement: 0,
+      topHashtags: [],
       insights: 'No published posts found. Starting with general best practices.'
     }
   }
 
   // Analyze patterns
-  const avgLikes = Math.round(topPosts.reduce((sum, post) => sum + post.likes, 0) / topPosts.length)
-  const avgComments = Math.round(topPosts.reduce((sum, post) => sum + post.comments, 0) / topPosts.length)
-  const avgShares = Math.round(topPosts.reduce((sum, post) => sum + post.shares, 0) / topPosts.length)
+  const avgLikes = Math.round(topPosts.reduce((sum, post) => sum + (post.likes || 0), 0) / topPosts.length)
+  const avgComments = Math.round(topPosts.reduce((sum, post) => sum + (post.comments || 0), 0) / topPosts.length)
+  const avgShares = Math.round(topPosts.reduce((sum, post) => sum + (post.shares || 0), 0) / topPosts.length)
   
   // Extract successful hashtags
   const allTags = topPosts.flatMap(post => post.tags || [])
@@ -205,12 +261,8 @@ async function analyzeUserPerformance(userId: string) {
     .map(([tag]) => tag)
 
   return {
-    avgLikes,
-    avgComments,
-    avgShares,
-    avgEngagement: Math.round((avgLikes + avgComments + avgShares) / 3),
+    avgEngagement: Math.round((avgLikes + avgComments * 2 + avgShares * 1.5) / 4.5), // Weight comments and shares higher
     topHashtags,
-    bestContentTypes: ['educational', 'behind_the_scenes', 'testimonial'], // Could be derived from content analysis
     insights: `Your posts average ${avgLikes} likes, ${avgComments} comments. Top hashtags: ${topHashtags.slice(0, 3).join(', ')}`
   }
 }
@@ -222,7 +274,7 @@ async function generateCaptionSuggestions({
   context,
   userProfile,
   performanceInsights
-}: any) {
+}: CaptionGenerationParams): Promise<CaptionSuggestion[]> {
   const client = getOpenAIClient()
   
   const prompt = `You are an expert social media content creator specializing in ${userProfile.industry || 'general'} content.
@@ -281,19 +333,90 @@ OPTION 3:
 
 Remember: This is ${userProfile.industry} content for ${userProfile.target_audience?.join(' and ')} audience.`
 
-  const response = await client.chat.completions.create({
-    model: 'gpt-4',
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 1500,
-    temperature: 0.7
-  })
+  try {
+    const response = await client.chat.completions.create({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 1500,
+      temperature: 0.7
+    })
 
-  const content = response.choices[0]?.message?.content || ''
-  
-  // Parse the response into structured options
-  const options = parseGeneratedOptions(content)
-  
-  return options
+    const content = response.choices[0]?.message?.content || ''
+    
+    // Validate the AI response structure
+    const validation = validateAIResponse(content)
+    if (!validation.isValid) {
+      throw new Error(`AI response validation failed: ${validation.error}`)
+    }
+    
+    // Parse the response into structured options
+    const options = parseGeneratedOptions(validation.content)
+    
+    // Validate that we got the expected number of options
+    if (options.length === 0) {
+      throw new Error('No valid caption options were generated from the AI response')
+    }
+    
+    if (options.length < 3) {
+      console.warn(`Generated only ${options.length} caption options instead of expected 3`)
+    }
+    
+    return options
+    
+  } catch (error) {
+    console.error('Error generating caption suggestions:', error)
+    
+    // Provide fallback suggestions if AI generation fails
+    if (error instanceof Error) {
+      throw new Error(`Failed to generate caption suggestions: ${error.message}`)
+    } else {
+      throw new Error('Failed to generate caption suggestions: Unknown error occurred')
+    }
+  }
+}
+
+function validateAIResponse(content: string): AIResponseValidation {
+  if (!content || content.trim().length === 0) {
+    return {
+      isValid: false,
+      content: '',
+      error: 'AI response is empty'
+    }
+  }
+
+  // Check if the response contains the expected format markers
+  const hasOptionMarkers = /OPTION \d+:/i.test(content)
+  if (!hasOptionMarkers) {
+    return {
+      isValid: false,
+      content,
+      error: 'AI response does not contain expected option markers'
+    }
+  }
+
+  // Check if response contains hashtags
+  const hasHashtags = /#\w+/.test(content)
+  if (!hasHashtags) {
+    return {
+      isValid: false,
+      content,
+      error: 'AI response does not contain hashtags'
+    }
+  }
+
+  // Check minimum content length
+  if (content.length < 50) {
+    return {
+      isValid: false,
+      content,
+      error: 'AI response is too short to be valid'
+    }
+  }
+
+  return {
+    isValid: true,
+    content
+  }
 }
 
 function parseGeneratedOptions(content: string): CaptionSuggestion[] {
@@ -327,7 +450,7 @@ function parseGeneratedOptions(content: string): CaptionSuggestion[] {
 
 function getStrategyReasoning(strategy: string): string {
   const reasoningMap: Record<string, string> = {
-    'Brand Voice Match': 'Crafted to perfectly match your established professional yet personable tone for real estate.',
+    'Brand Voice Match': 'Crafted to perfectly match your established brand tone and voice.',
     'Engagement Optimized': 'Uses proven tactics like questions and CTAs to maximize likes, comments, and shares.',
     'Trend-Focused Experimental': 'Tests new approaches with current trends to potentially reach new audience segments.'
   }
@@ -335,9 +458,14 @@ function getStrategyReasoning(strategy: string): string {
   return reasoningMap[strategy] || 'AI-generated suggestion based on best practices.'
 }
 
-async function storeSuggestions(userId: string, suggestions: CaptionSuggestion[], metadata: any): Promise<SavedCaptionSuggestion[]> {
+async function storeSuggestions(
+  userId: string,
+  suggestions: CaptionSuggestion[],
+  metadata: any
+): Promise<SavedCaptionSuggestion[]> {
   const savedSuggestions: SavedCaptionSuggestion[] = []
-  
+  const errors: string[] = []
+
   for (const suggestion of suggestions) {
     const { data, error } = await supabase
       .from('ai_suggestions')
@@ -356,14 +484,27 @@ async function storeSuggestions(userId: string, suggestions: CaptionSuggestion[]
       })
       .select()
       .single()
-    
-    if (!error && data) {
+
+    if (error) {
+      console.error('Error storing suggestion:', error)
+      errors.push(`Failed to store ${suggestion.strategy}: ${error.message}`)
+    } else if (data) {
       savedSuggestions.push({
         id: data.id,
         ...suggestion
       })
     }
   }
-  
+
+  // If no suggestions were saved, throw an error
+  if (savedSuggestions.length === 0) {
+    throw new Error(`Failed to store any suggestions: ${errors.join(', ')}`)
+  }
+
+  // Log partial failures
+  if (errors.length > 0) {
+    console.warn('Some suggestions failed to save:', errors)
+  }
+
   return savedSuggestions
-} 
+}

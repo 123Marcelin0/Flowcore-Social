@@ -55,21 +55,23 @@ CREATE TABLE chat_messages (
 ### **Store New Message**
 ```javascript
 // POST /api/chat-memory
-const storeMessage = async (content, messageType, contextType = 'chat') => {
+const storeMessage = async (
+  content,
+  messageType,
+  contextType = 'chat',
+  metadata = {},
+  sessionId = null  // Add sessionId parameter with default null for new sessions
+) => {
   const response = await fetch('/api/chat-memory', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      session_id: currentSessionId,     // null for new session
+      session_id: sessionId,            // null for new session, or existing session ID
       message_type: messageType,        // 'user' | 'assistant' | 'system'
       content: content,                 // The message text
       context_type: contextType,        // 'chat', 'caption_request', 'content_ideas'
-      metadata: {                       // Additional context
-        feature_used: 'smart_captions',
-        user_intent: 'help_request'
-      }
-    })
-  })
+      metadata                      // Arbitrary caller-supplied metadata
+    })  })
   
   const result = await response.json()
   return {
@@ -120,9 +122,9 @@ const getSessionHistory = async (sessionId) => {
 ### **Integration with AI Features**
 ```javascript
 // Example: Smart caption generation with memory
-const generateSmartCaption = async (userRequest) => {
-  // 1. Store user request
-  const storeResult = await storeMessage(userRequest, 'user', 'caption_request')
+const generateSmartCaption = async (userRequest, sessionId = null) => {
+  // 1. Store user request (creates new session if sessionId is null)
+  const storeResult = await storeMessage(userRequest, 'user', 'caption_request', {}, sessionId)
   
   // 2. Search for relevant past caption discussions
   const memorySearch = await searchMemory('caption real estate', 'caption_request')
@@ -141,11 +143,11 @@ const generateSmartCaption = async (userRequest) => {
   
   const aiResponse = await generateAI(aiPrompt, userRequest)
   
-  // 4. Store AI response with memory metadata
+  // 4. Store AI response with memory metadata (use the session ID from step 1)
   await storeMessage(aiResponse, 'assistant', 'caption_request', {
     memory_context_used: memorySearch.relevant_memories.length > 0,
     previous_discussions_found: memorySearch.relevant_memories.length
-  })
+  }, storeResult.session_id)
   
   return aiResponse
 }
@@ -406,7 +408,8 @@ const createConversationSummary = async (sessionId) => {
 ```javascript
 // Suggest actions based on conversation history
 const getMemoryGuidedSuggestions = async (userId, currentContext) => {
-  const recentMemories = await searchMemory(currentContext, null)
+  const { relevant_memories: recentMemories } =
+    await searchMemory(currentContext, null)
   
   const suggestions = []
   
@@ -419,8 +422,7 @@ const getMemoryGuidedSuggestions = async (userId, currentContext) => {
   }
   
   if (recentMemories.some(m => m.content.includes('engagement'))) {
-    suggestions.push({
-      action: 'analyze_engagement_patterns',
+    suggestions.push({      action: 'analyze_engagement_patterns',
       description: 'Analyze what content drives engagement for you',
       confidence: 0.9
     })

@@ -3,6 +3,44 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/supabase'
 import { generateEmbedding } from '@/lib/openaiService'
 
+// Interface for AI insights data
+interface AIInsight {
+  likes: number
+  comments: number
+  shares: number
+  reach: number
+  impressions: number
+  engagement_rate: number
+  performance_category: 'high' | 'medium' | 'low' | null
+}
+
+// Interface for search filters
+interface SearchFilters {
+  type?: string
+  platform?: string
+  status?: string
+  topics?: string[]
+  dateFrom?: string
+  dateTo?: string
+  performanceCategory?: string
+}
+
+// Interface for the post object used in getMatchReasons
+interface SearchPost {
+  id: string
+  title: string | null
+  content: string
+  type?: string
+  topics?: string[] // Note: This might be 'tags' in the actual schema
+  platforms?: string[]
+  status?: string
+  published_at?: string | null
+  ai_insights?: AIInsight[]
+  similarity_score?: number
+  performance_boost?: number
+  match_reasons?: string[]
+}
+
 // POST /api/smart-search - Hybrid search with filters + vector similarity
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +64,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         error: 'Search query is required'
-      })
+      }, { status: 400 })
     }
 
     console.log('🔍 Smart search request:', { query, filters })
@@ -92,7 +130,8 @@ export async function POST(request: NextRequest) {
     
     // Performance filters
     if (filters.performanceCategory) {
-      // This requires a join with ai_insights, so we'll handle it after the main query
+      // Filter by performance category from ai_insights table
+      searchQuery = searchQuery.eq('ai_insights.performance_category', filters.performanceCategory)
     }
 
     // Execute the filtered query first
@@ -132,7 +171,7 @@ export async function POST(request: NextRequest) {
       
       try {
         // Calculate cosine similarity
-        const embedding = typedPost.embedding as number[]
+        const embedding = typedPost.embedding!
         const similarity = calculateCosineSimilarity(queryEmbedding, embedding)
         
         // Apply performance boost if available
@@ -173,25 +212,30 @@ export async function POST(request: NextRequest) {
     }))
 
     // Log the search for analytics
-    await supabase
-      .from('ai_context_logs')
-      .insert({
-        user_id: user.id,
-        source_type: 'smart_search',
-        source_id: null,
-        context_summary: `Smart search: "${query}" with filters`,
-        ai_response: JSON.stringify({
-          results_count: topResults.length,
-          top_score: topResults[0]?.final_score || 0,
-          search_filters: filters
-        }),
-        model_used: 'vector_search',
-        metadata: {
-          query: query,
-          filters: filters,
-          results_found: topResults.length
-        }
-      })
+    try {
+      await supabase
+        .from('ai_context_logs')
+        .insert({
+          user_id: user.id,
+          source_type: 'smart_search',
+          source_id: null,
+          context_summary: `Smart search: "${query}" with filters`,
+          ai_response: JSON.stringify({
+            results_count: topResults.length,
+            top_score: topResults[0]?.final_score || 0,
+            search_filters: filters
+          }),
+          model_used: 'vector_search',
+          metadata: {
+            query: query,
+            filters: filters,
+            results_found: topResults.length
+          }
+        })
+    } catch (logError) {
+      console.error('Failed to log search analytics:', logError)
+      // Don't throw - continue with returning results
+    }
 
     return NextResponse.json({
       success: true,
@@ -242,7 +286,7 @@ function calculateCosineSimilarity(embedding1: number[], embedding2: number[]): 
 }
 
 // Helper function to generate match reasons
-function getMatchReasons(post: any, query: string, filters: any): string[] {
+function getMatchReasons(post: SearchPost, query: string, filters: SearchFilters): string[] {
   const reasons = []
   
   if (filters.type && post.type === filters.type) {
@@ -251,7 +295,7 @@ function getMatchReasons(post: any, query: string, filters: any): string[] {
   
   if (filters.topics && post.topics) {
     const matchingTopics = post.topics.filter((topic: string) => 
-      filters.topics.includes(topic)
+      filters.topics!.includes(topic)
     )
     if (matchingTopics.length > 0) {
       reasons.push(`Contains topics: ${matchingTopics.join(', ')}`)
@@ -260,6 +304,10 @@ function getMatchReasons(post: any, query: string, filters: any): string[] {
   
   if (filters.platform && post.platforms?.includes(filters.platform)) {
     reasons.push(`Published on ${filters.platform}`)
+  }
+  
+  if (filters.performanceCategory && post.ai_insights?.[0]?.performance_category === filters.performanceCategory) {
+    reasons.push(`${filters.performanceCategory} performing content`)
   }
   
   // Check for keyword matches in content
@@ -279,7 +327,7 @@ function getMatchReasons(post: any, query: string, filters: any): string[] {
 }
 
 // Helper function to generate usage suggestions
-function generateUsageSuggestions(post: any, query: string): string[] {
+function generateUsageSuggestions(post: SearchPost, query: string): string[] {
   const suggestions = []
   
   // Always offer basic options
@@ -306,48 +354,59 @@ function generateUsageSuggestions(post: any, query: string): string[] {
 }
 
 // Helper function to explain relevance
-function explainRelevance(post: any, query: string, filters: any): string {
+function explainRelevance(post: SearchPost, query: string, filters: SearchFilters): string {
   const reasons = []
   
-  if (post.similarity_score > 0.8) {
+  if (post.similarity_score && post.similarity_score > 0.8) {
     reasons.push('Very similar content theme')
-  } else if (post.similarity_score > 0.6) {
+  } else if (post.similarity_score && post.similarity_score > 0.6) {
     reasons.push('Similar content concepts')
   } else {
     reasons.push('Related topic match')
   }
   
-  if (post.performance_boost > 0) {
+  if (post.performance_boost && post.performance_boost > 0) {
     reasons.push('previously performed well')
   }
   
-  if (post.match_reasons.length > 0) {
+  if (post.match_reasons && post.match_reasons.length > 0) {
     reasons.push('matches your filters')
   }
   
-  const timeAgo = getTimeAgo(post.published_at)
+  const timeAgo = post.published_at ? getTimeAgo(post.published_at) : null
   if (timeAgo) {
-    reasons.push(`from ${timeAgo}`)
+    reasons.push(`published ${timeAgo}`)
   }
   
   return reasons.join(', ')
 }
 
-// Helper function to get time ago
+// Helper function to get time ago string
 function getTimeAgo(dateString: string): string {
-  if (!dateString) return ''
-  
-  const now = new Date()
   const date = new Date(dateString)
-  const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+  const now = new Date()
+  const diffInMs = now.getTime() - date.getTime()
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24))
   
-  if (diffInDays < 7) return `${diffInDays} days ago`
-  if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`
-  if (diffInDays < 365) return `${Math.floor(diffInDays / 30)} months ago`
-  return `${Math.floor(diffInDays / 365)} years ago`
+  if (diffInDays === 0) {
+    return 'today'
+  } else if (diffInDays === 1) {
+    return 'yesterday'
+  } else if (diffInDays < 7) {
+    return `${diffInDays} days ago`
+  } else if (diffInDays < 30) {
+    const weeks = Math.floor(diffInDays / 7)
+    return `${weeks} week${weeks > 1 ? 's' : ''} ago`
+  } else if (diffInDays < 365) {
+    const months = Math.floor(diffInDays / 30)
+    return `${months} month${months > 1 ? 's' : ''} ago`
+  } else {
+    const years = Math.floor(diffInDays / 365)
+    return `${years} year${years > 1 ? 's' : ''} ago`
+  }
 }
 
-// GET /api/smart-search - Get search suggestions and recent searches
+// GET endpoint for recent searches and suggestions
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -358,81 +417,47 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get recent search queries for suggestions
+    // Get recent searches from ai_context_logs
     const { data: recentSearches } = await supabase
       .from('ai_context_logs')
-      .select('metadata, created_at')
+      .select('metadata')
       .eq('user_id', user.id)
       .eq('source_type', 'smart_search')
       .order('created_at', { ascending: false })
       .limit(10)
 
-    // Get popular topics from user's posts
-    const { data: posts } = await supabase
-      .from('posts')
-      .select('topics, type, platforms')
+    // Get performance categories from ai_insights
+    const { data: performanceCategories } = await supabase
+      .from('ai_insights')
+      .select('performance_category')
       .eq('user_id', user.id)
-      .not('topics', 'is', null)
-      .limit(100)
+      .not('performance_category', 'is', null)
 
-    // Extract popular topics and types
-    const topicCounts: Record<string, number> = {}
-    const typeCounts: Record<string, number> = {}
-    const platformCounts: Record<string, number> = {}
-
-    posts?.forEach(post => {
-      // Count topics
-      post.topics?.forEach((topic: string) => {
-        topicCounts[topic] = (topicCounts[topic] || 0) + 1
-      })
-      
-      // Count types
-      if (post.type) {
-        typeCounts[post.type] = (typeCounts[post.type] || 0) + 1
-      }
-      
-      // Count platforms
-      post.platforms?.forEach((platform: string) => {
-        platformCounts[platform] = (platformCounts[platform] || 0) + 1
-      })
-    })
-
-    // Get top suggestions
-    const topTopics = Object.entries(topicCounts)
-      .sort(([,a], [,b]) => (b as number) - (a as number))
-      .slice(0, 10)
-      .map(([topic]) => topic)
-
-    const topTypes = Object.entries(typeCounts)
-      .sort(([,a], [,b]) => (b as number) - (a as number))
-      .slice(0, 5)
-      .map(([type]) => type)
-
-    const topPlatforms = Object.entries(platformCounts)
-      .sort(([,a], [,b]) => (b as number) - (a as number))
-      .slice(0, 5)
-      .map(([platform]) => platform)
+    const uniqueCategories = [...new Set(
+      performanceCategories?.map(insight => insight.performance_category) || []
+    )]
 
     return NextResponse.json({
       success: true,
       data: {
-        recent_searches: recentSearches?.map(log => log.metadata?.query).filter(Boolean) || [],
-        suggested_topics: topTopics,
-        available_types: topTypes,
-        available_platforms: topPlatforms,
-        search_tips: [
-          'Try "motivational reel from last summer"',
-          'Search "high performing Instagram posts"',
-          'Find "carousel about home buying"',
-          'Look for "quotes about real estate"'
+        recent_searches: recentSearches
+          ?.map(log => log.metadata?.query)
+          .filter((query): query is string => Boolean(query)) || [],
+        performance_categories: uniqueCategories,
+        search_suggestions: [
+          'high performing content',
+          'viral posts',
+          'engagement strategies',
+          'trending topics',
+          'best practices'
         ]
       }
     })
 
   } catch (error) {
-    console.error('Error getting search suggestions:', error)
+    console.error('GET smart search error:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to get suggestions' },
+      { success: false, error: 'Failed to get search data' },
       { status: 500 }
     )
   }

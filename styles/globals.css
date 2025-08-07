@@ -2,34 +2,258 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
+* {
+  box-sizing: border-box;
 }
+
+html, body, #__next, [data-nextjs-scroll-focus-boundary] {
+  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #f9fafb !important; /* Default gray-50 background */
+  margin: 0;
+  padding: 0;
+}
+
+/* Dynamic body backgrounds for AI Studio - Override everything */
+html.ai-studio-interior, 
+body.ai-studio-interior,
+html.ai-studio-interior *,
+body.ai-studio-interior #__next,
+html.ai-studio-interior [data-nextjs-scroll-focus-boundary] {
+  background: url(/vecteezy_ai-generated-real-estate-advertisment-background-with-copy_36725233.jpg) center/cover no-repeat fixed !important;
+}
+
+html.ai-studio-video-editor, 
+body.ai-studio-video-editor,
+html.ai-studio-video-editor #__next,
+body.ai-studio-video-editor [data-nextjs-scroll-focus-boundary] {
+  background: url(/abstract-liquid-marble-white-background-handmade-experimental-art.jpg) center/cover no-repeat fixed !important;
+}
+
+html.ai-studio-content-create, 
+body.ai-studio-content-create,
+html.ai-studio-content-create #__next,
+body.ai-studio-content-create [data-nextjs-scroll-focus-boundary] {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 25%, #bae6fd 50%, #7dd3fc 75%, #38bdf8 100%) !important;
+}
+
+html.ai-studio-video-edit, 
+body.ai-studio-video-edit,
+html.ai-studio-video-edit #__next,
+body.ai-studio-video-edit [data-nextjs-scroll-focus-boundary] {
+  background: #080a13 !important;
+}
+
+html.ai-studio-image-generation, 
+body.ai-studio-image-generation,
+html.ai-studio-image-generation #__next,
+body.ai-studio-image-generation [data-nextjs-scroll-focus-boundary] {
+  background: linear-gradient(135deg, #0A0A10 0%, #1A0B2E 50%, #0A0A10 100%) !important;
+}
+
+html.ai-studio-video-merger, 
+body.ai-studio-video-merger,
+html.ai-studio-video-merger #__next,
+body.ai-studio-video-merger [data-nextjs-scroll-focus-boundary] {
+  background: linear-gradient(135deg, #ffffff 0%, #fff7ed 50%, #fed7aa 100%) !important;
+}
+
+/* AI Studio backgrounds are now handled individually by each component */
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+  
+  /* Liquid Glass Design System */
+  .glass-panel {
+    background: linear-gradient(135deg, 
+      rgba(255, 255, 255, 0.08) 0%, 
+      rgba(255, 255, 255, 0.04) 100%);
+    backdrop-filter: blur(20px) saturate(180%) brightness(1.1);
+    -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(1.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.08),
+      0 4px 16px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+  
+  .glass-panel-strong {
+    background: linear-gradient(135deg, 
+      rgba(255, 255, 255, 0.12) 0%, 
+      rgba(255, 255, 255, 0.06) 100%);
+    backdrop-filter: blur(30px) saturate(200%) brightness(1.15);
+    -webkit-backdrop-filter: blur(30px) saturate(200%) brightness(1.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 
+      0 16px 64px rgba(0, 0, 0, 0.12),
+      0 8px 32px rgba(0, 0, 0, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+  
+  .glass-button {
+    background: linear-gradient(135deg, 
+      rgba(255, 255, 255, 0.15) 0%, 
+      rgba(255, 255, 255, 0.08) 100%);
+    backdrop-filter: blur(25px) saturate(180%) brightness(1.1);
+    -webkit-backdrop-filter: blur(25px) saturate(180%) brightness(1.1);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.06),
+      0 2px 8px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  }
+  
+  .glass-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .glass-shimmer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.1),
+      transparent
+    );
+    animation: shimmer 3s infinite;
+    pointer-events: none;
+  }
+  
+  @keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+  }
+  
+  .liquid-float {
+    animation: liquidFloat 6s ease-in-out infinite;
+  }
+  
+  @keyframes liquidFloat {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    50% { transform: translateY(-10px) rotate(2deg); }
+  }
+  
+  /* Floating Action Button Animations */
+  .floating-glow {
+    animation: floatingGlow 4s ease-in-out infinite;
+  }
+  
+  @keyframes floatingGlow {
+    0%, 100% { 
+      opacity: 0.6;
+      transform: scale(1);
+    }
+    50% { 
+      opacity: 0.8;
+      transform: scale(1.05);
+    }
+  }
+  
+  .button-shimmer {
+    animation: buttonShimmer 3s ease-in-out infinite;
+  }
+  
+  @keyframes buttonShimmer {
+    0% { 
+      background-position: -200% center;
+    }
+    100% { 
+      background-position: 200% center;
+    }
+  }
+  
+  .particle-float {
+    animation: particleFloat 8s ease-in-out infinite;
+  }
+  
+  @keyframes particleFloat {
+    0%, 100% { 
+      transform: translateY(0px) translateX(0px);
+      opacity: 0.3;
+    }
+    25% { 
+      transform: translateY(-5px) translateX(2px);
+      opacity: 0.5;
+    }
+    50% { 
+      transform: translateY(-8px) translateX(-1px);
+      opacity: 0.4;
+    }
+    75% { 
+      transform: translateY(-3px) translateX(3px);
+      opacity: 0.6;
+    }
+  }
+  
+  /* Button Appear Animation */
+  .button-appear {
+    animation: buttonAppear 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+  
+  @keyframes buttonAppear {
+    0% { 
+      transform: translateY(100px) scale(0.3);
+      opacity: 0;
+    }
+    50% { 
+      transform: translateY(-10px) scale(1.1);
+      opacity: 0.8;
+    }
+    100% { 
+      transform: translateY(0px) scale(1);
+      opacity: 1;
+    }
+  }
+  
+  /* Haptic Feedback */
+  .haptic-feedback {
+    animation: hapticFeedback 0.3s ease-out;
+  }
+  
+  @keyframes hapticFeedback {
+    0% { transform: scale(1); }
+    25% { transform: scale(0.95); }
+    50% { transform: scale(1.05); }
+    75% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+  }
+  
+  .glass-text-shadow {
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(255, 255, 255, 0.3);
+  }
+  
+  /* Enhanced Scrollbars for Glass Theme */
   .scrollbar-thin {
     scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   }
   
   .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
   }
   
   .scrollbar-thin::-webkit-scrollbar-track {
-    background: #f1f5f9;
-    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
   }
   
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    backdrop-filter: blur(10px);
   }
   
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
+    background: rgba(255, 255, 255, 0.3);
   }
 
   /* Hide scrollbar but keep functionality */
@@ -40,6 +264,25 @@ body {
   
   .no-scrollbar::-webkit-scrollbar {
     display: none;  /* Chrome, Safari and Opera */
+  }
+  
+  /* Liquid Glass Input Styles */
+  .glass-input {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(0, 0, 0, 0.8);
+  }
+  
+  .glass-input:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+  }
+  
+  .glass-input::placeholder {
+    color: rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -120,6 +363,7 @@ body {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    /* Background is handled by custom classes above */
   }
 }
