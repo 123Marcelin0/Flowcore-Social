@@ -568,6 +568,29 @@ function generateContextSuggestions(memories: any[]): string[] {
   return suggestions
 }
 
+// Helper function to generate session title from content
+function generateSessionTitle(content: string): string {
+  // Extract first few words or create a meaningful title
+  const words = content.trim().split(' ').slice(0, 5)
+  const title = words.join(' ')
+  
+  if (title.length > 50) {
+    return title.substring(0, 47) + '...'
+  }
+  
+  return title || 'New Chat Session'
+}
+
+// Helper function to get message count for a session
+async function getSessionMessageCount(sessionId: string): Promise<number> {
+  const { count } = await supabase
+    .from('chat_messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('session_id', sessionId)
+  
+  return count || 0
+}
+
 // Helper function to generate search insights
 function generateSearchInsights(memories: any[]) {
   if (memories.length === 0) {

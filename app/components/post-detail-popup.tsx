@@ -177,13 +177,17 @@ function MediaPreview({ src, mediaUrls = [src], mediaType = 'image', alt, classN
 interface Post {
   id: string
   media: string
-  mediaType: "image" | "video"
+  mediaUrls: string[]
+  mediaType: "image" | "video" | "carousel" | "text"
   text: string
   platforms: ("instagram" | "facebook" | "twitter" | "linkedin" | "tiktok")[]
   status: "scheduled" | "published" | "draft" | "failed"
   date: string
   likes?: number
   comments?: number
+  views?: number
+  shares?: number
+  reach?: number
   approved?: boolean
 }
 
