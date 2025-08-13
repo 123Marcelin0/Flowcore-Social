@@ -35,8 +35,8 @@ export default function LoginPage() {
         await signIn(email, password)
       }
       
-      // Redirect to root path after successful authentication
-      router.push('/')
+      // Redirect to dashboard after successful authentication
+      router.push('/dashboard')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Ein Fehler ist aufgetreten')
     } finally {
