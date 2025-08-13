@@ -12,6 +12,7 @@ export interface EnhancedLiquidGlassProps extends MotionProps {
   gradient?: boolean
   borderGlow?: boolean
   className?: string
+  onClick?: () => void
 }
 
 export function EnhancedLiquidGlass({
@@ -22,6 +23,7 @@ export function EnhancedLiquidGlass({
   gradient = false,
   borderGlow = false,
   className,
+  onClick,
   ...motionProps
 }: EnhancedLiquidGlassProps) {
   const baseClasses = [
@@ -137,6 +139,7 @@ export function EnhancedLiquidGlass({
         intensityClasses[intensity],
         className
       )}
+      onClick={onClick}
       {...animationVariants[animation]}
       {...motionProps}
     >

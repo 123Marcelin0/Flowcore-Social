@@ -85,6 +85,7 @@ export function AIStudioToolbar({
 
   return (
     <div 
+      data-ai-tools-sidebar
       className={`absolute inset-0 w-72 h-[calc(100vh-10rem)] overflow-hidden animate-in slide-in-from-left-full duration-700 ease-out mt-6 mb-20 ${
         isInteriorActive || isVideoEditorActive ? 'rounded-tr-[24px] rounded-br-[24px]' : 'rounded-tr-[80px] rounded-br-[80px]'
       }`}

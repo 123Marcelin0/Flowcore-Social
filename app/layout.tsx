@@ -3,6 +3,10 @@ import './globals.css'
 import dynamic from 'next/dynamic'
 import { Suspense } from 'react'
 import { ErrorBoundaryWrapper } from '@/app/error-boundary-wrapper'
+import { Inter, Great_Vibes } from 'next/font/google'
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
+const signature = Great_Vibes({ subsets: ['latin'], weight: '400', variable: '--font-signature' })
 
 const AuthProvider = dynamic(() => import('@/lib/auth-context').then(mod => mod.AuthProvider), {
   ssr: true
@@ -30,7 +34,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
+      <body className={`${inter.variable} ${signature.variable}`}>
+        <div id="cursor-glow" aria-hidden="true"></div>
         <ErrorBoundaryWrapper>
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-screen">

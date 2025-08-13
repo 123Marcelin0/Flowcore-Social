@@ -1,3 +1,45 @@
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateX(-8px) translateY(4px); }
+  100% { opacity: 1; transform: translateX(0) translateY(0); }
+}
+
+/* Subtle cursor glow */
+#cursor-glow {
+  position: fixed;
+  pointer-events: none;
+  z-index: 50;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(255,255,255,0.26), rgba(255,255,255,0.0));
+  box-shadow: 0 0 30px 10px rgba(255,255,255,0.16);
+  opacity: 0.85;
+  transform: translate(-50%, -50%);
+  transition: opacity 300ms ease, filter 300ms ease;
+  filter: blur(0.3px);
+}
+
+:root {
+  --cursor-lag: 0.12s; /* smoothness */
+}
+
+html, body {
+  cursor: default;
+}
+
+/* Headline typographic touch - modern, professional */
+.modern-title {
+  letter-spacing: -0.01em;
+  font-variation-settings: 'wght' 620;
+}
+
+/* Slight idle breathing so glow remains visible even when still */
+@keyframes glow-breathe {
+  0%, 100% { box-shadow: 0 0 22px 8px rgba(255,255,255,0.10); }
+  50% { box-shadow: 0 0 26px 10px rgba(255,255,255,0.14); }
+}
+
+#cursor-glow { animation: glow-breathe 3.2s ease-in-out infinite; }
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,6 +52,8 @@ html {
 
 /* AI Workflow Custom Styles */
 @import url('../styles/ai-workflow.css');
+/* Glassmorphic Workflow Builder Styles */
+@import url('./glassmorphic-workflow.css');
 
 /* Swipe Cards Styles */
 @import url('../styles/swipe-cards.css');
@@ -263,10 +307,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Smooth transitions */
-* {
-  transition: all 0.2s ease-in-out;
-}
+/* Avoid global transitions; components opt-in where needed for responsiveness */
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
@@ -466,21 +507,7 @@ body {
   animation: pulse-border 2s ease-in-out infinite;
 }
 
-/* Smooth drag animations */
-[draggable="true"] {
-  transition: transform 0.2s ease, opacity 0.2s ease;
-  transform: scale(var(--drag-scale, 1)) rotate(var(--drag-rotate, 0deg));
-  opacity: var(--drag-opacity, 1);
-}
-
-/* Drag cursor for draggable elements */
-[draggable="true"] {
-  cursor: grab;
-}
-
-[draggable="true"]:active {
-  cursor: grabbing;
-}
+/* Drag styles kept for generic areas; editor cards no longer use draggable */
 
 /* Smooth transitions for calendar cells */
 .calendar-cell {
@@ -552,3 +579,33 @@ body {
     border-color: rgba(20, 184, 166, 0.5);
   }
 }
+
+/* AI Studio: fixed inset dotted + marble background that respects page edges */
+html.ai-studio-video-editor,
+body.ai-studio-video-editor {
+  /* Base tone */
+  background-color: #fafafa;
+}
+
+/* Single overlay that matches the intended canvas size with consistent page padding */
+body.ai-studio-video-editor::before {
+  content: '';
+  position: fixed;
+  top: 8px;   /* match m-2 spacing */
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  border-radius: 28px;
+  pointer-events: none;
+  z-index: 1; /* above base marble background (.z-0), below content (.z-10/20) */
+  /* Two shifted dot layers on top of soft vignette gradients */
+  background-image:
+    radial-gradient(#d4d4d8 1.2px, transparent 1.2px),
+    radial-gradient(#d4d4d8 1.2px, transparent 1.2px),
+    radial-gradient(1200px 800px at 70% 10%, rgba(0,0,0,0.04), transparent 45%),
+    radial-gradient(1000px 600px at 20% 80%, rgba(0,0,0,0.045), transparent 50%);
+  background-size: 22px 22px, 22px 22px, auto, auto;
+  background-position: 0 0, 11px 11px, 0 0, 0 0;
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
+}
+
