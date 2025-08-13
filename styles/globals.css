@@ -61,6 +61,19 @@ body.ai-studio-video-merger [data-nextjs-scroll-focus-boundary] {
 
 /* AI Studio backgrounds are now handled individually by each component */
 
+/* Ensure any Radix dialog portals appear above full-screen editor overlays */
+[data-radix-dialog-content], .radix-dialog-content {
+  z-index: 200060 !important;
+}
+
+/* Accessibility: make focus rings visible on glass elements */
+.glass-button:focus-visible,
+.glass-panel:focus-visible,
+.glass-input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.5) !important;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,8 +25,9 @@ import { AIStudioVideoGenerator } from './ai-studio-video-generator'
 import { AIStudioImageGenerator } from './ai-studio-image-generator'
 import { AIStudioVideoMerger } from './ai-studio-video-merger'
 import { AIStudioVideoEditor } from './ai-studio-video-editor'
-import { AIStudioEditorRedesigned } from './ai-studio-editor-redesigned'
+import WorkflowCanvas from '@/components/glassmorphic-workflow-canvas'
 import { ContentGallery } from './content-gallery'
+import { cn } from '@/lib/utils'
 
 interface UploadedFile {
   id: string
@@ -326,7 +327,40 @@ export function AIStudioMain({
           exit="exit"
           transition={pageTransition}
         >
-          <AIStudioEditorRedesigned />
+          {(() => {
+            // Ensure full-page dotted background is applied to html/body while editor is active
+            if (typeof document !== 'undefined') {
+              document.documentElement.classList.add('ai-studio-video-editor')
+              document.body.classList.add('ai-studio-video-editor')
+            }
+            const bgStyle = {
+              background:
+                "radial-gradient(1200px 800px at 70% 10%, rgba(0,0,0,0.04), transparent 45%), radial-gradient(1000px 600px at 20% 80%, rgba(0,0,0,0.045), transparent 50%), transparent",
+            } as React.CSSProperties
+            const dotLayerStyle = {
+              backgroundImage:
+                "radial-gradient(#d4d4d8 1.2px, transparent 1.2px), radial-gradient(#d4d4d8 1.2px, transparent 1.2px)",
+              backgroundSize: "22px 22px,22px 22px",
+              backgroundPosition: "0 0,11px 11px",
+              opacity: 0.6,
+            } as React.CSSProperties
+            return (
+              <main className="relative min-h-screen w-full overflow-hidden">
+                <section
+                  className={cn(
+                    "relative m-2 h-[calc(100vh-16px)] rounded-[28px] border",
+                    "border-black/5 bg-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.08)] backdrop-blur-xl",
+                  )}
+                  style={bgStyle}
+                >
+                  <div className="absolute inset-0 rounded-[28px]" style={dotLayerStyle} />
+                  <div className="absolute inset-0 rounded-[28px]">
+                    <WorkflowCanvas className="h-full w-full" />
+                  </div>
+                </section>
+              </main>
+            )
+          })()}
         </motion.div>
       )}
 
