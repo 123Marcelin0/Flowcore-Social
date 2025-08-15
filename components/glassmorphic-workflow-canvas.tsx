@@ -4,6 +4,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "
 import { cn } from "@/lib/utils"
 import { distance, cubicPath, lerpPoint, type Point } from "@/lib/glassmorphic-geometry"
 import { GlassBar, GlassButton, GlassSep } from "@/components/glass"
+import GlassSurface from "@/components/ui/glass-surface"
 import {
   Link2,
   AlignCenter,
@@ -62,6 +63,7 @@ export type EdgeData = {
 }
 
 export type HandleSide = "left" | "right"
+export type PreviewPayload = { kind: 'photo' | 'video'; src?: string; poster?: string; label?: string }
 type TempConnection = {
   from: { nodeId: string; side: HandleSide; anchor: Point }
   to: Point
@@ -72,7 +74,8 @@ type Transform = { x: number; y: number; k: number }
 const SNAP_RADIUS = 42
 const EDGE_PAD = 4000
 const AUTOCONNECT_RADIUS = 72
-const NODE_WIDTH = 200
+// Smaller node width reduces paint area and memory bandwidth for previews
+const NODE_WIDTH = 180
 const GRID_GAP_X = 80
 const GRID_GAP_Y = 120
 
@@ -196,6 +199,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
 
   const [nodes, setNodes] = useState<NodeData[]>(seededNodes)
   const [edges, setEdges] = useState<EdgeData[]>([])
+  const [activePreview, setActivePreview] = useState<PreviewPayload | null>(null)
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
@@ -407,20 +411,32 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
 
   // MAIN POINTER MOVE HANDLER - Handles both node dragging and connection drawing
   const onPointerMove = (e: React.PointerEvent) => {
-    // NODE DRAGGING LOGIC
+    // NODE DRAGGING LOGIC (throttled via rAF for ultra‑smooth motion)
     if (dragInfo.current?.type === "node") {
       const info = dragInfo.current
       const world = toWorld({ x: e.clientX, y: e.clientY })
       const dx = world.x - info.startWorld.x
       const dy = world.y - info.startWorld.y
-      // Direct update for ultra‑responsive dragging
-      setNodes((prev) =>
-        prev.map((n) =>
-          info.nodeIds.includes(n.id)
-            ? { ...n, x: info.initialPositions[n.id].x + dx, y: info.initialPositions[n.id].y + dy }
-            : n,
-        ),
-      )
+
+      // Defer applying the drag to the next animation frame to avoid
+      // flooding React with state updates on every pointer event.
+      applyDrag.current = { dx, dy }
+      if (dragFrame.current == null) {
+        dragFrame.current = requestAnimationFrame(() => {
+          const d = applyDrag.current
+          const active = dragInfo.current
+          if (d && active) {
+            setNodes((prev) =>
+              prev.map((n) =>
+                active.nodeIds.includes(n.id)
+                  ? { ...n, x: active.initialPositions[n.id].x + d.dx, y: active.initialPositions[n.id].y + d.dy }
+                  : n,
+              ),
+            )
+          }
+          dragFrame.current = null
+        })
+      }
     }
 
     // CONNECTION DRAWING LOGIC
@@ -476,7 +492,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
     if (edges.some((e) => e.source === from && e.target === to)) return
     commitHistory()
     const id = `e-${from}-${to}-${Date.now()}`
-    setEdges((prev) => [...prev, { id, source: from, target: to, birthWhite: true }])
+    setEdges((prev) => [...prev, { id, source: from, target: to, transformed: true, sweep: true, birthWhite: true }])
     setTimeout(() => {
       setEdges((prev) => prev.map((e) => (e.id === id ? { ...e, birthWhite: false } : e)))
     }, 1300)
@@ -487,6 +503,10 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
     if (dragInfo.current) {
       const moved = dragInfo.current.nodeIds
       dragInfo.current = null
+      if (dragFrame.current != null) {
+        cancelAnimationFrame(dragFrame.current)
+        dragFrame.current = null
+      }
       // Auto-connect nearby nodes after drag
       autoConnectAround(moved)
       endInteractSoon()
@@ -813,11 +833,17 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
   const worldTransformStyle = useMemo(
     () =>
       ({
-        transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k}) translate(-50%, -50%)`,
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.k}) translate(-50%, -50%)`,
         transformOrigin: "0 0",
+        willChange: "transform",
       }) as React.CSSProperties,
     [transform],
   )
+
+  // Lighter glass parameters during interactions to keep 60fps
+  const glassParams = interacting || !!editing
+    ? { backgroundOpacity: 0.06, distortionScale: -25, redOffset: 3, greenOffset: 1, blueOffset: -2, displace: 0.35 }
+    : { backgroundOpacity: 0.08, distortionScale: -55, redOffset: 6, greenOffset: 2, blueOffset: -4, displace: 0.6 }
 
   const edgePathOverlay = useCallback(
     (sourceId: string, targetId: string) => {
@@ -1023,13 +1049,24 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
           onDrop={onDrop}
         >
           {/* Top toolbar */}
-          <div className={cn("absolute left-1/2 top-4 -translate-x-1/2", editing ? "z-[200200]" : "z-20")}>
+          <div className={cn("absolute left-1/2 top-4 -translate-x-1/2", editing ? "z-[200200]" : "z-20", audioOpen && "pointer-events-none opacity-0 transition-opacity duration-200") }>
             <div ref={topBarRef} className="relative">
-              <GlassBar
-                aria-label="Top toolbar"
-                className={cn("px-2 py-2 toolbar-base", editing && "toolbar-base--morph")}
+              <GlassSurface
+                width="auto"
+                height="auto"
+                borderRadius={36}
+                backgroundOpacity={glassParams.backgroundOpacity}
+                distortionScale={glassParams.distortionScale}
+                redOffset={glassParams.redOffset}
+                greenOffset={glassParams.greenOffset}
+                blueOffset={glassParams.blueOffset}
+                displace={glassParams.displace}
+                className={cn("px-3 py-2 toolbar-base editor-toolbar relative overflow-hidden", editing && "toolbar-base--morph")}
                 style={editing ? ({ width: barWidth ?? undefined } as React.CSSProperties) : undefined}
+                contentClassName="flex items-center gap-1"
               >
+                {/* remove edge overlay to eliminate double gray layer */}
+                {/* removed extra overlay to avoid double layering */}
                 {editing ? (
                   <div className="w-full">
                     <FilmStripEditor
@@ -1152,7 +1189,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
                     </GlassButton>
                   </>
                 )}
-              </GlassBar>
+              </GlassSurface>
             </div>
           </div>
 
@@ -1188,7 +1225,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
           {/* Edges */}
           {view !== "library" && (
             <div
-              className="pointer-events-none absolute"
+              className="pointer-events-none absolute z-10"
               style={{
                 left: -EDGE_PAD,
                 top: -EDGE_PAD,
@@ -1280,6 +1317,8 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
                   connectMode={connectMode}
                   interacting={interacting}
                   onStartEditVideo={startVideoEdit}
+                  audioOpen={audioOpen}
+                  onOpenPreview={setActivePreview}
                 />
               ))}
             </div>
@@ -1288,7 +1327,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
           {/* Temp connection above nodes for visibility while connecting */}
           {view !== "library" && tempPathOverlay && (
             <div
-              className="pointer-events-none absolute z-30"
+              className="pointer-events-none absolute z-40"
               style={{
                 left: -EDGE_PAD,
                 top: -EDGE_PAD,
@@ -1337,11 +1376,34 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
             })}
 
           {/* Library view */}
-          {view === "library" && <MediaBoard items={mediaItems} />}
+          {view === "library" && !audioOpen && (
+            <MediaBoard items={mediaItems} />
+          )}
 
           {/* Popups */}
           <AudioPopup isOpen={audioOpen} onClose={() => setAudioOpen(false)} />
-          <MediaPopup isOpen={mediaOpen} onClose={() => setMediaOpen(false)} />
+          <MediaPopup isOpen={mediaOpen && !audioOpen} onClose={() => setMediaOpen(false)} />
+
+          {/* Node preview lightbox (matches library style) */}
+          <Dialog open={!!activePreview} onOpenChange={(v) => !v && setActivePreview(null)}>
+            <DialogContent className={cn("max-w-5xl border-white/25 bg-white/10 p-0 text-white/95 backdrop-blur-2xl") }>
+              <DialogHeader className="px-4 pb-2 pt-3">
+                <DialogTitle className="text-white/95">{activePreview?.label || "Preview"}</DialogTitle>
+                <DialogDescription className="text-white/70">
+                  {activePreview?.kind === 'photo' ? 'Image' : 'Video'} preview
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-3 p-4 pt-0">
+                <div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl border border-white/20 bg-black/30">
+                  {activePreview?.kind === 'video' ? (
+                    <video src={activePreview?.src} controls preload="metadata" poster={activePreview?.poster} className="h-full w-full object-contain" playsInline disablePictureInPicture controlsList="nodownload noplaybackrate" />
+                  ) : (
+                    <img src={activePreview?.src || activePreview?.poster || '/placeholder.svg?height=720&width=1280'} alt={activePreview?.label || 'Image preview'} className="h-full w-full object-contain" />
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Video edit popup */}
           {editing && (
@@ -1374,8 +1436,9 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
           )}
 
           {/* Bottom nav */}
-          <div className="absolute inset-x-0 bottom-5 z-20 flex justify-center">
-            <GlassBar aria-label="Bottom navigation" className="px-3 py-2">
+          <div className={cn("absolute inset-x-0 bottom-5 z-20 flex justify-center", audioOpen && "opacity-0 pointer-events-none transition-opacity duration-200") }>
+            <GlassSurface width="auto" height="auto" borderRadius={36} backgroundOpacity={glassParams.backgroundOpacity} distortionScale={glassParams.distortionScale} redOffset={glassParams.redOffset} greenOffset={glassParams.greenOffset} blueOffset={glassParams.blueOffset} displace={glassParams.displace} className="px-3 py-2 editor-bottombar relative overflow-hidden" contentClassName="flex items-center gap-1" aria-label="Bottom navigation">
+              {/* removed extra overlay to avoid double layering */}
               <GlassButton aria-label="Back">
                 <ChevronLeft className="h-4 w-4" />
                 Back
@@ -1392,20 +1455,10 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
                 Next
                 <ChevronRight className="h-4 w-4" />
               </GlassButton>
-            </GlassBar>
+            </GlassSurface>
           </div>
 
-          {/* Hint */}
-          {view !== "library" ? (
-            <div className="pointer-events-none absolute left-4 top-4 mt-14 text-xs text-zinc-600 canvas-hint">
-              Toggle Library • Use Templates for quick starts • Drag media from the Media panel • Double‑click a video
-              to trim
-            </div>
-          ) : (
-            <div className="pointer-events-none absolute left-4 top-4 mt-14 text-xs text-zinc-600 canvas-hint">
-              Library: search, filter, and open media. Switch back to Workflow any time.
-            </div>
-          )}
+          {/* Hint removed per design request */}
         </div>
       </div>
     </WorkflowContext.Provider>
@@ -1423,6 +1476,8 @@ function NodeViewBase({
   connectMode,
   interacting,
   onStartEditVideo,
+  audioOpen,
+  onOpenPreview,
 }: {
   data: NodeData
   selected: boolean
@@ -1433,6 +1488,8 @@ function NodeViewBase({
   connectMode: boolean
   interacting: boolean
   onStartEditVideo: (node: NodeData) => void
+  audioOpen: boolean
+  onOpenPreview: (payload: PreviewPayload) => void
 }) {
   const pastel =
     data.tint === "violet"
@@ -1452,20 +1509,21 @@ function NodeViewBase({
   const onDouble = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (data.mediaType === "video") {
-      onStartEditVideo(data)
+      // open preview dialog for video node
+      onOpenPreview({ kind: 'video', src: data.src, poster: data.thumb, label: data.label })
     } else {
-      onToggleSelect(data.id, e)
+      onOpenPreview({ kind: 'photo', src: data.src || data.thumb, poster: data.thumb, label: data.label })
     }
   }
 
   return (
     <div
       className={cn(
-        "node node-draggable absolute -translate-x-1/2 -translate-y-1/2 rounded-2xl p-[1px] will-change-[left,top,transform]",
+        "node node-draggable absolute rounded-2xl p-[1px] will-change-transform",
         selected && "ring-2 ring-violet-300/70",
         connectMode && "ring-1 ring-violet-200/70",
       )}
-      style={{ left: data.x, top: data.y }}
+      style={{ left: 0, top: 0, transform: `translate3d(${data.x}px, ${data.y}px, 0) translate(-50%, -50%)` }}
       onPointerDown={onPointerDownNode}
       onDoubleClick={onDouble}
       onClick={() => onConnectClick(data.id)}
@@ -1473,10 +1531,22 @@ function NodeViewBase({
       role="group"
       aria-label={data.label}
     >
-      <div className={cn("node-glow relative w-[200px] select-none rounded-2xl border bg-gradient-to-b", pastel)}>
+      <GlassSurface
+        width={200}
+        height={290}
+        borderRadius={28}
+        backgroundOpacity={interacting ? 0.06 : 0.08}
+        distortionScale={interacting ? -25 : -55}
+        redOffset={interacting ? 3 : 6}
+        greenOffset={interacting ? 1 : 2}
+        blueOffset={interacting ? -2 : -4}
+        displace={interacting ? 0.35 : 0.6}
+        className={cn(audioOpen && "opacity-0 pointer-events-none transition-opacity duration-200")}
+        contentClassName="relative select-none rounded-[28px] border border-white/45 bg-white/25 shadow-[0_18px_60px_rgba(0,0,0,0.12)] h-full flex flex-col"
+      >
         {data.mediaType ? (
-          <div className="relative overflow-hidden rounded-t-2xl border-b border-white/20 bg-white/40">
-            <div className="relative aspect-[4/3] w-full">
+          <div className="relative overflow-hidden mx-2 mt-2 rounded-[22px] border border-white/60 bg-white/35 shrink-0" style={{ borderWidth: 0.75 }}>
+            <div className="relative aspect-square w-full">
               {data.mediaType === "video" ? (
                 <video
                   src={data.src}
@@ -1500,18 +1570,29 @@ function NodeViewBase({
                   draggable={false}
                 />
               )}
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/10 to-black/20" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/30" />
+              {/* Top-right liquid preview icon */}
+              <button
+                onClick={(e) => { e.stopPropagation(); onDouble(e) }}
+                aria-label="Preview"
+                title="Preview"
+                className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full border border-white/45 bg-white/35 text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)] backdrop-blur-xl hover:bg-white/45"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 8V4h4"/><path d="M20 8V4h-4"/><path d="M4 16v4h4"/><path d="M20 16v4h-4"/>
+                </svg>
+              </button>
             </div>
           </div>
         ) : null}
 
-        <div className="px-4 py-3">
+        <div className="px-4 pt-3 pb-5 min-h-[80px] flex-1">
           <div className="flex items-center justify-between">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+            <div className="text-[11px] uppercase tracking-wide text-white/80">
               {data.mediaType ? (data.mediaType === "photo" ? "Photo" : "Video") : data.groupId ? "Group" : "Text"}
             </div>
             {data.mediaType && (
-              <div className="flex items-center gap-1 text-zinc-500">
+              <div className="flex items-center gap-1 text-white/80">
                 {data.mediaType === "photo" ? (
                   <ImageIcon className="h-3.5 w-3.5" />
                 ) : (
@@ -1520,12 +1601,12 @@ function NodeViewBase({
               </div>
             )}
           </div>
-          <div className="mt-1 truncate text-sm font-medium text-zinc-800">{data.label}</div>
+          <div className="mt-2 truncate text-sm font-medium text-zinc-800">{data.label}</div>
         </div>
 
         <Handle side="left" onPointerDown={onHandlePointerDown(data.id, "left")} />
         <Handle side="right" onPointerDown={onHandlePointerDown(data.id, "right")} />
-      </div>
+      </GlassSurface>
     </div>
   )
 }
@@ -1556,13 +1637,13 @@ function Handle({ side, onPointerDown }: { side: HandleSide; onPointerDown: (e: 
       aria-label={`${side} handle`}
       onPointerDown={onPointerDown}
       className={cn(
-        "handle absolute top-1/2 -translate-y-1/2 rounded-full border will-change-transform",
+        "handle absolute top-1/2 -translate-y-1/2 rounded-full border will-change-transform z-20",
         "border-white/80 bg-white/90 text-violet-500 shadow-[0_6px_16px_rgba(0,0,0,.12)]",
         "after:hidden hover:after:block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300",
         "handle-pulse",
-        isLeft ? "-left-3" : "-right-3",
+        isLeft ? "left-1" : "right-1",
       )}
-      style={{ width: 16, height: 16 }}
+      style={{ width: 18, height: 18 }}
     />
   )
 }

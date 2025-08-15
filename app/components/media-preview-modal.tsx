@@ -237,6 +237,8 @@ export function MediaPreviewModal({ isOpen, onClose, media }: MediaPreviewModalP
                   transition={{ duration: 0.3 }}
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
+                  loading="lazy"
+                  decoding="async"
                 />
               ) : media.file_type === 'video' ? (
                 <div className="relative w-full max-w-4xl">

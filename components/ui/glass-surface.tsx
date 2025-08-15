@@ -225,6 +225,15 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
       borderRadius: `${borderRadius}px`,
       "--glass-frost": backgroundOpacity,
       "--glass-saturation": saturation,
+      // GPU/compositing hints for smoother animations and drags
+      willChange: "transform, opacity",
+      transform: "translateZ(0)",
+      backfaceVisibility: "hidden",
+      WebkitBackfaceVisibility: "hidden",
+      // Contain layout/paint to prevent large reflows from backdrop filters
+      contain: "layout paint style",
+      // Keep filter blending effects isolated to this element
+      isolation: "isolate",
     } as React.CSSProperties;
 
     const svgSupported = supportsSVGFilters();

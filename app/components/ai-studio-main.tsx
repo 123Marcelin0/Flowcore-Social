@@ -84,12 +84,173 @@ export function AIStudioMain({
 }: AIStudioMainProps) {
   const { user } = useAuth()
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
-  const [isDragging, setIsDragging] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [isChatLoading, setIsChatLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Refs for high-FPS drag visuals and composite blur without React re-renders
+  const dropZoneRef = useRef<HTMLDivElement | null>(null)
+  const compositeBlurRef = useRef<HTMLDivElement | null>(null)
+  const isDraggingRef = useRef<boolean>(false)
+  const rafRef = useRef<number | null>(null)
+
+  // Pre-rendered glass rasters (idle vs interacting) to avoid live backdrop blur during interaction
+  const idleGlassUrlRef = useRef<string | null>(null)
+  const interactingGlassUrlRef = useRef<string | null>(null)
+
+  // Helper: pre-render a subtle glass texture
+  const renderGlassState = useCallback((opts: { width: number; height: number; intensity: number; hueShift: number }) => {
+    const { width, height, intensity, hueShift } = opts
+    // Pre-render on a small in-memory canvas; this is cheap and avoids per-frame backdrop blur work
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
+    if (!ctx) return ''
+    // Base translucent gradient
+    const g = ctx.createLinearGradient(0, 0, width, height)
+    g.addColorStop(0, `hsla(${200 + hueShift}, 100%, 95%, ${0.10 + intensity * 0.05})`)
+    g.addColorStop(1, `hsla(${210 + hueShift}, 80%, 88%, ${0.08 + intensity * 0.05})`)
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, width, height)
+    // Subtle noise to break banding and approximate frosted texture
+    const noiseDensity = Math.max(60, Math.min(140, Math.floor(100 + intensity * 60)))
+    const noiseAlpha = 0.04 + intensity * 0.04
+    const imgData = ctx.createImageData(width, height)
+    for (let i = 0; i < width * height * 4; i += 4) {
+      const v = Math.random() * 255
+      imgData.data[i] = v
+      imgData.data[i + 1] = v
+      imgData.data[i + 2] = v
+      imgData.data[i + 3] = noiseAlpha * 255
+    }
+    ctx.putImageData(imgData, 0, 0)
+    // Soft vignette for depth
+    const radial = ctx.createRadialGradient(width * 0.5, height * 0.4, width * 0.1, width * 0.5, height * 0.5, width * 0.7)
+    radial.addColorStop(0, 'rgba(255,255,255,0)')
+    radial.addColorStop(1, `rgba(255,255,255,${0.08 + intensity * 0.06})`)
+    ctx.fillStyle = radial
+    ctx.fillRect(0, 0, width, height)
+    // Convert to data URL for CSS background-image usage
+    try {
+      const dataUrl = canvas.toDataURL('image/png') || ''
+      return dataUrl
+    } catch {
+      return ''
+    }
+  }, [])
+
+  // Initialize composite blur overlay and pre-rendered glass backgrounds once
+  useEffect(() => {
+    const overlay = compositeBlurRef.current
+    if (!overlay) return
+    // Pre-render two states. Kept small and scaled via CSS to preserve memory, OK for subtle texture
+    idleGlassUrlRef.current = renderGlassState({ width: 320, height: 320, intensity: 0.6, hueShift: 0 })
+    interactingGlassUrlRef.current = renderGlassState({ width: 320, height: 320, intensity: 1.0, hueShift: 8 })
+    overlay.style.setProperty('--glass-bg', `url(${idleGlassUrlRef.current || ''})`)
+    // Default: idle visual
+    overlay.setAttribute('data-state', 'idle')
+    // Optional: disable backdrop-filter entirely and rely on pre-rendered raster for max FPS
+    if (process.env.NEXT_PUBLIC_DISABLE_BACKDROP === '1') {
+      overlay.style.backdropFilter = 'none'
+      ;(overlay.style as any).WebkitBackdropFilter = 'none'
+    }
+
+    // If OffscreenCanvas is available, upgrade rasters asynchronously to object URLs rendered off-thread
+    let urlsToRevoke: string[] = []
+    const tryOffscreen = async () => {
+      try {
+        // @ts-ignore
+        if (typeof OffscreenCanvas === 'undefined') return
+        // @ts-ignore
+        const idleCanvas = new OffscreenCanvas(320, 320)
+        const idleCtx = idleCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D
+        if (!idleCtx) return
+        const draw = (ctx: OffscreenCanvasRenderingContext2D, intensity: number, hueShift: number) => {
+          const width = 320, height = 320
+          const g = ctx.createLinearGradient(0, 0, width, height)
+          g.addColorStop(0, `hsla(${200 + hueShift}, 100%, 95%, ${0.10 + intensity * 0.05})`)
+          g.addColorStop(1, `hsla(${210 + hueShift}, 80%, 88%, ${0.08 + intensity * 0.05})`)
+          ctx.fillStyle = g as any
+          ctx.fillRect(0, 0, width, height)
+          const noiseAlpha = 0.04 + intensity * 0.04
+          const imgData = ctx.createImageData(width, height)
+          for (let i = 0; i < width * height * 4; i += 4) {
+            const v = Math.random() * 255
+            imgData.data[i] = v
+            imgData.data[i + 1] = v
+            imgData.data[i + 2] = v
+            imgData.data[i + 3] = noiseAlpha * 255
+          }
+          ctx.putImageData(imgData, 0, 0)
+          const radial = ctx.createRadialGradient(width * 0.5, height * 0.4, width * 0.1, width * 0.5, height * 0.5, width * 0.7)
+          radial.addColorStop(0, 'rgba(255,255,255,0)')
+          radial.addColorStop(1, `rgba(255,255,255,${0.08 + intensity * 0.06})`)
+          ctx.fillStyle = radial as any
+          ctx.fillRect(0, 0, width, height)
+        }
+        draw(idleCtx, 0.6, 0)
+        const idleBlob = await (idleCanvas as any).convertToBlob({ type: 'image/png' })
+        const idleUrl = URL.createObjectURL(idleBlob)
+        urlsToRevoke.push(idleUrl)
+        idleGlassUrlRef.current = idleUrl
+
+        // interacting
+        // @ts-ignore
+        const activeCanvas = new OffscreenCanvas(320, 320)
+        const activeCtx = activeCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D
+        if (activeCtx) {
+          draw(activeCtx, 1.0, 8)
+          const activeBlob = await (activeCanvas as any).convertToBlob({ type: 'image/png' })
+          const activeUrl = URL.createObjectURL(activeBlob)
+          urlsToRevoke.push(activeUrl)
+          interactingGlassUrlRef.current = activeUrl
+        }
+
+        // Apply upgraded idle background
+        overlay.style.setProperty('--glass-bg', `url(${idleGlassUrlRef.current || ''})`)
+      } catch {
+        // Ignore; fallback rasters already set
+      }
+    }
+    tryOffscreen()
+
+    return () => {
+      urlsToRevoke.forEach((u) => URL.revokeObjectURL(u))
+    }
+  }, [renderGlassState])
+
+  // Maintain composite overlay clip region to limit paint work to the drop zone
+  const updateOverlayClip = useCallback(() => {
+    const overlay = compositeBlurRef.current
+    const target = dropZoneRef.current
+    if (!overlay || !target) return
+    const rect = target.getBoundingClientRect()
+    const r = 24
+    // Translate viewport rect to overlay local using CSS variables; using both inset and border-radius via clip-path
+    overlay.style.setProperty('--clip-top', `${rect.top}px`)
+    overlay.style.setProperty('--clip-left', `${rect.left}px`)
+    overlay.style.setProperty('--clip-right', `${window.innerWidth - rect.right}px`)
+    overlay.style.setProperty('--clip-bottom', `${window.innerHeight - rect.bottom}px`)
+    overlay.style.setProperty('--clip-radius', `${r}px`)
+  }, [])
+
+  useEffect(() => {
+    updateOverlayClip()
+    const onResize = () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      rafRef.current = requestAnimationFrame(updateOverlayClip)
+    }
+    window.addEventListener('resize', onResize, { passive: true })
+    window.addEventListener('scroll', onResize, { passive: true })
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('scroll', onResize)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [updateOverlayClip])
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -167,7 +328,14 @@ export function AIStudioMain({
   // Handle drag and drop
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    setIsDragging(false)
+    isDraggingRef.current = false
+    const dz = dropZoneRef.current
+    if (dz) dz.removeAttribute('data-dragging')
+    const overlay = compositeBlurRef.current
+    if (overlay) {
+      overlay.setAttribute('data-state', 'idle')
+      overlay.style.setProperty('--glass-bg', `url(${idleGlassUrlRef.current || ''})`)
+    }
     const files = event.dataTransfer.files
     if (files.length > 0) {
       handleFileUpload(files)
@@ -194,14 +362,61 @@ export function AIStudioMain({
     }
   }, [isProcessing, onProcessingComplete, uploadedFiles.length, activeTool])
 
+  // Optional: accept pre-selected media from /library via sessionStorage
+  useEffect(() => {
+    try {
+      const payload = typeof window !== 'undefined' ? sessionStorage.getItem('workflowSelectedMedia') : null
+      if (!payload) return
+      const items: Array<{ id: string; url: string; type: 'image' | 'video'; name: string; size?: number }> = JSON.parse(payload)
+      if (Array.isArray(items) && items.length > 0) {
+        const mapped: UploadedFile[] = items.map((it) => ({
+          id: it.id,
+          file: new File([], it.name || 'remote'),
+          url: it.url,
+          type: it.type,
+          name: it.name || 'remote',
+          size: it.size || 0
+        }))
+        setUploadedFiles(mapped)
+        onFilesChange?.(mapped.length > 0)
+      }
+      sessionStorage.removeItem('workflowSelectedMedia')
+    } catch {
+      // ignore
+    }
+  }, [onFilesChange])
+
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    setIsDragging(true)
+    // Enter drag mode: suspend transitions/animations globally for ultra-low latency
+    if (typeof document !== 'undefined' && !document.body.classList.contains('drag-mode')) {
+      document.body.classList.add('drag-mode')
+    }
+    if (!isDraggingRef.current) {
+      isDraggingRef.current = true
+      const dz = dropZoneRef.current
+      if (dz) dz.setAttribute('data-dragging', 'true')
+      const overlay = compositeBlurRef.current
+      if (overlay) {
+        overlay.setAttribute('data-state', 'interacting')
+        overlay.style.setProperty('--glass-bg', `url(${interactingGlassUrlRef.current || ''})`)
+      }
+    }
   }, [])
 
   const handleDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    setIsDragging(false)
+    isDraggingRef.current = false
+    const dz = dropZoneRef.current
+    if (dz) dz.removeAttribute('data-dragging')
+    const overlay = compositeBlurRef.current
+    if (overlay) {
+      overlay.setAttribute('data-state', 'idle')
+      overlay.style.setProperty('--glass-bg', `url(${idleGlassUrlRef.current || ''})`)
+    }
+    if (typeof document !== 'undefined' && document.body.classList.contains('drag-mode')) {
+      document.body.classList.remove('drag-mode')
+    }
   }, [])
 
   // Handle chat
@@ -275,7 +490,7 @@ export function AIStudioMain({
           exit="exit"
           transition={pageTransition}
         >
-          <AIInteriorDesigner />
+          {React.createElement(AIInteriorDesigner as unknown as React.ComponentType)}
         </motion.div>
       )}
 
@@ -328,36 +543,15 @@ export function AIStudioMain({
           transition={pageTransition}
         >
           {(() => {
-            // Ensure full-page dotted background is applied to html/body while editor is active
+            // Ensure clean page background class only (no dotted overlay)
             if (typeof document !== 'undefined') {
               document.documentElement.classList.add('ai-studio-video-editor')
               document.body.classList.add('ai-studio-video-editor')
             }
-            const bgStyle = {
-              background:
-                "radial-gradient(1200px 800px at 70% 10%, rgba(0,0,0,0.04), transparent 45%), radial-gradient(1000px 600px at 20% 80%, rgba(0,0,0,0.045), transparent 50%), transparent",
-            } as React.CSSProperties
-            const dotLayerStyle = {
-              backgroundImage:
-                "radial-gradient(#d4d4d8 1.2px, transparent 1.2px), radial-gradient(#d4d4d8 1.2px, transparent 1.2px)",
-              backgroundSize: "22px 22px,22px 22px",
-              backgroundPosition: "0 0,11px 11px",
-              opacity: 0.6,
-            } as React.CSSProperties
+            const bgStyle = { background: 'transparent' } as React.CSSProperties
             return (
-              <main className="relative min-h-screen w-full overflow-hidden">
-                <section
-                  className={cn(
-                    "relative m-2 h-[calc(100vh-16px)] rounded-[28px] border",
-                    "border-black/5 bg-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.08)] backdrop-blur-xl",
-                  )}
-                  style={bgStyle}
-                >
-                  <div className="absolute inset-0 rounded-[28px]" style={dotLayerStyle} />
-                  <div className="absolute inset-0 rounded-[28px]">
-                    <WorkflowCanvas className="h-full w-full" />
-                  </div>
-                </section>
+              <main className="relative min-h-screen w-full overflow-hidden" style={bgStyle}>
+                <WorkflowCanvas className="absolute inset-0 h-full w-full will-change-transform" />
               </main>
             )
           })()}
@@ -389,31 +583,36 @@ export function AIStudioMain({
         >
       {/* Upload Area */}
       <div className="flex-1 p-8">
-        <div
-          className={`h-full rounded-3xl transition-all duration-200 cursor-pointer glass-shimmer ${
-            isDragging 
-              ? 'glass-panel-strong border-2 border-dashed border-white/40 shadow-2xl' 
-              : uploadedFiles.length > 0
-              ? 'glass-panel-strong border border-white/25 shadow-2xl'
-              : 'glass-panel border-2 border-dashed border-white/30 hover:glass-panel-strong hover:border-white/40 shadow-xl'
-          }`}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onClick={() => fileInputRef.current?.click()}
-        >
+        <div className="relative h-full">
+          {/* Composite blur overlay: one layer serving all glass within the drop zone to reduce multiple backdrop passes */}
+          <div
+            ref={compositeBlurRef}
+            className="glass-composite-layer paint-clip"
+            aria-hidden="true"
+          />
+          <div
+            ref={dropZoneRef}
+            className={`relative z-10 h-full rounded-3xl transition-transform duration-200 cursor-pointer glass-shimmer glass-panel-opt border-2 border-dashed border-white/30 shadow-xl`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={() => fileInputRef.current?.click()}
+          >
           {uploadedFiles.length > 0 ? (
             // File Grid
-            <div className="h-full p-6 overflow-y-auto">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+            <div className="h-full p-6 overflow-y-auto cv-auto" style={{ containIntrinsicSize: '800px 600px' }}>
+              <div className="uploaded-files-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4" data-media-cards data-workflow-cards>
                 {uploadedFiles.map((file) => (
                   <div key={file.id} className="relative group">
-                    <div className="aspect-square rounded-2xl overflow-hidden glass-panel border border-white/25 shadow-lg transition-all duration-200 hover:glass-panel-strong">
+                    <div className="aspect-square rounded-2xl overflow-hidden glass-panel-opt border border-white/25 shadow-lg transition-all duration-200">
                       {file.type === 'image' ? (
                         <img
                           src={file.url}
                           alt={file.name}
                           className="w-full h-full object-cover"
+                          loading="lazy"
+                          decoding="async"
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
@@ -426,7 +625,7 @@ export function AIStudioMain({
                         e.stopPropagation()
                         removeFile(file.id)
                       }}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500/90 backdrop-blur-lg rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-red-600/90 active:scale-95 shadow-lg border border-white/20"
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-red-600/90 active:scale-95 shadow-lg border border-white/20"
                     >
                       <X className="w-3 h-3 text-white" />
                     </button>
@@ -436,7 +635,7 @@ export function AIStudioMain({
                 
                 {/* Add More Button */}
                 <div 
-                  className="aspect-square rounded-2xl border-2 border-dashed border-white/30 flex items-center justify-center glass-panel hover:glass-panel-strong hover:border-white/40 transition-all duration-200 cursor-pointer active:scale-95"
+                  className="aspect-square rounded-2xl border-2 border-dashed border-white/30 flex items-center justify-center glass-panel-opt hover:border-white/40 transition-all duration-200 cursor-pointer active:scale-95"
                   onClick={(e) => {
                     e.stopPropagation()
                     fileInputRef.current?.click()
@@ -453,11 +652,11 @@ export function AIStudioMain({
             // Empty State
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
-                <div className="w-24 h-24 glass-panel-strong border border-white/25 shadow-2xl rounded-3xl flex items-center justify-center mx-auto mb-6 transition-all duration-200 hover:glass-panel-strong liquid-float">
+                <div className="w-24 h-24 glass-panel-opt border border-white/25 shadow-2xl rounded-3xl flex items-center justify-center mx-auto mb-6 transition-all duration-200 liquid-float">
                   <Upload className="w-10 h-10 text-slate-700" />
                 </div>
                 <h3 className="text-lg font-semibold text-slate-800 mb-2 drop-shadow-sm">
-                  {isDragging ? 'Drop your files here' : 'Upload your files'}
+                  Upload your files
                 </h3>
                 <p className="text-slate-700 mb-6 drop-shadow-sm">
                   Drag and drop images or videos, or click to browse
@@ -472,7 +671,7 @@ export function AIStudioMain({
               </div>
             </div>
           )}
-        </div>
+          </div>
 
         <input
           ref={fileInputRef}
@@ -483,12 +682,13 @@ export function AIStudioMain({
           className="hidden"
         />
       </div>
+      </div>
 
       {/* Chat Interface - Extended height for better alignment */}
-      <div className="border-t border-white/20 glass-panel-strong flex flex-col" style={{ minHeight: '180px' }}>
+      <div className="border-t border-white/20 glass-panel-opt flex flex-col" style={{ minHeight: '180px' }}>
         {/* Chat Messages */}
         {chatMessages.length > 0 && (
-          <div className="max-h-40 overflow-y-auto p-4 space-y-3">
+          <div className="max-h-40 overflow-y-auto p-4 space-y-3 cv-auto" style={{ containIntrinsicSize: '600px 200px' }}>
             {chatMessages.map((message) => (
               <div
                 key={message.id}
@@ -497,8 +697,8 @@ export function AIStudioMain({
                 <div
                   className={`max-w-xs px-3 py-2 rounded-xl text-sm transition-all duration-200 ${
                     message.sender === 'user'
-                      ? 'backdrop-blur-xl bg-slate-800 text-white shadow-lg'
-                      : 'backdrop-blur-xl bg-white/60 text-slate-800 border border-white/20 shadow-lg'
+                      ? 'bg-slate-800 text-white shadow-lg'
+                      : 'bg-white/60 text-slate-800 border border-white/20 shadow-lg'
                   }`}
                 >
                   {message.content}
@@ -507,7 +707,7 @@ export function AIStudioMain({
             ))}
             {isChatLoading && (
               <div className="flex justify-start">
-                <div className="backdrop-blur-xl bg-white/60 border border-white/20 shadow-lg px-3 py-2 rounded-xl">
+                <div className="bg-white/60 border border-white/20 shadow-lg px-3 py-2 rounded-xl">
                   <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
                 </div>
               </div>
@@ -519,12 +719,12 @@ export function AIStudioMain({
         <div className="flex-1"></div>
 
         {/* Chat Input - Positioned at bottom with extra padding */}
-        <div className="p-6 border-t border-white/20 backdrop-blur-xl bg-white/60">
+        <div className="p-6 border-t border-white/20 bg-white/60">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="sm"
-              className="text-slate-500 hover:text-slate-700 backdrop-blur-xl bg-white/40 hover:bg-white/80 border border-white/20 transition-all duration-200 active:scale-95 h-12 w-12 rounded-xl"
+              className="text-slate-500 hover:text-slate-700 bg-white/40 hover:bg-white/80 border border-white/20 transition-all duration-200 active:scale-95 h-12 w-12 rounded-xl"
             >
               <Paperclip className="w-4 h-4" />
             </Button>
@@ -533,7 +733,7 @@ export function AIStudioMain({
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}
               placeholder="Ask AI anything about your files..."
-              className="flex-1 border-0 backdrop-blur-xl bg-white/40 focus:bg-white/80 transition-all duration-200 h-12 rounded-xl text-slate-800 placeholder:text-slate-500"
+              className="flex-1 border-0 bg-white/40 focus:bg-white/80 transition-all duration-200 h-12 rounded-xl text-slate-800 placeholder:text-slate-500"
             />
             <Button
               onClick={handleChatSend}
@@ -541,8 +741,8 @@ export function AIStudioMain({
               size="sm"
               className={`h-12 px-4 rounded-xl transition-all duration-200 active:scale-95 ${
                 !chatInput.trim() || isChatLoading
-                  ? 'backdrop-blur-xl bg-slate-200 text-slate-500 cursor-not-allowed opacity-50'
-                  : 'backdrop-blur-xl bg-slate-800 text-white hover:bg-slate-700 shadow-lg'
+                  ? 'bg-slate-200 text-slate-500 cursor-not-allowed opacity-50'
+                  : 'bg-slate-800 text-white hover:bg-slate-700 shadow-lg'
               }`}
             >
               <Send className="w-4 h-4" />

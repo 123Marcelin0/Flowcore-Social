@@ -19,6 +19,7 @@ import { MediaPreviewModal } from './media-preview-modal'
 import AudioPopup from '@/components/audio-popup'
 import { MediaLibraryDialog } from './ai-studio-editor/MediaLibraryDialog'
 import { CommandPalette } from './ai-studio-editor/CommandPalette'
+import GlassSurface from '@/components/ui/glass-surface'
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -2002,40 +2003,41 @@ export function AIStudioEditorRedesigned({ className }: AIStudioEditorRedesigned
                   >
                     {/* Builder Toolbar */}
                     <div className="absolute top-3 left-4 right-4 z-[200005] flex items-center justify-between pointer-events-auto" onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-2 rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl px-3 py-2 shadow-lg pointer-events-auto" onPointerDown={(e) => e.stopPropagation()}>
-                        <button type="button" title="Add Node" className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60 flex items-center gap-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsCommandPaletteOpen(true) }} onPointerDown={(e) => e.stopPropagation()}>
+                      <div className="pointer-events-auto" onPointerDown={(e) => e.stopPropagation()}>
+                        <GlassSurface width="auto" height="auto" borderRadius={36} backgroundOpacity={0.10} distortionScale={-55} redOffset={6} greenOffset={2} blueOffset={-4} displace={0.6} className="px-4 py-3" contentClassName="flex items-center gap-2">
+                        <button type="button" title="Add Node" className="px-3 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 text-white hover:bg-white/40 shadow-[0_8px_24px_rgba(0,0,0,0.12)] flex items-center gap-2" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsCommandPaletteOpen(true) }} onPointerDown={(e) => e.stopPropagation()}>
                           <Plus className="w-4 h-4" /> Add
                         </button>
-                        <button type="button" title="Connect Mode" className={`px-2 py-1 text-xs rounded-lg border ${isConnecting ? 'border-indigo-400 bg-indigo-50' : 'border-white/40 bg-white/60'}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsConnecting(v => !v) }} onPointerDown={(e) => e.stopPropagation()}>
+                        <button type="button" title="Connect Mode" className={`px-3 py-2 text-sm rounded-2xl border ${isConnecting ? 'border-white/70 bg-white/40 text-white' : 'border-white/50 bg-white/30 text-white hover:bg-white/40'}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsConnecting(v => !v) }} onPointerDown={(e) => e.stopPropagation()}>
                           <Layers className="w-4 h-4" /> Connect
                         </button>
-                        <button type="button" title="Align to grid" className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60" onClick={(e) => {
+                        <button type="button" title="Align to grid" className="px-3 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 text-white hover:bg-white/40" onClick={(e) => {
                           e.preventDefault(); e.stopPropagation();
                           pushHistory()
                           setTimelineClips(prev => prev.map(c => ({ ...c, x: Math.round((c.x || 0)/GRID)*GRID, y: Math.round((c.y || 0)/GRID)*GRID })))
                         }}>
                           <Gauge className="w-4 h-4" /> Align
                         </button>
-                        <button type="button" title="Group" className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60" onClick={(e) => {
+                        <button type="button" title="Group" className="px-3 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 text-white hover:bg-white/40" onClick={(e) => {
                           e.preventDefault(); e.stopPropagation();
                           if (selectedIds.size === 0) return
                           pushHistory()
                           const gid = `group-${Date.now()}`
                           setGroups(prev => [...prev, { id: gid, children: Array.from(selectedIds) }])
                         }}>Group</button>
-                        <button type="button" title="Ungroup" className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60" onClick={(e) => {
+                        <button type="button" title="Ungroup" className="px-3 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 text-white hover:bg-white/40" onClick={(e) => {
                           e.preventDefault(); e.stopPropagation();
                           if (selectedIds.size === 0) return
                           pushHistory()
                           setGroups(prev => prev.filter(g => !g.children.some(id => selectedIds.has(id))))
                         }}>Ungroup</button>
-                        <button type="button" title="Snap toggle" className={`px-2 py-1 text-xs rounded-lg border ${snapEnabled ? 'border-teal-400 bg-teal-50' : 'border-white/40 bg-white/60'}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSnapEnabled(v => !v) }}>
+                        <button type="button" title="Snap toggle" className={`px-3 py-2 text-sm rounded-2xl border ${snapEnabled ? 'border-white/70 bg-white/40 text-white' : 'border-white/50 bg-white/30 text-white hover:bg-white/40'}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSnapEnabled(v => !v) }}>
                           <Magnet className="w-4 h-4" /> Snap
                         </button>
-                        <button type="button" title="Undo" className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60" onClick={(e) => { e.preventDefault(); e.stopPropagation(); undo() }}>
+                        <button type="button" title="Undo" className="px-3 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 text-white hover:bg-white/40" onClick={(e) => { e.preventDefault(); e.stopPropagation(); undo() }}>
                           <Undo2 className="w-4 h-4" />
                         </button>
-                        <button type="button" title="Redo" className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60" onClick={(e) => { e.preventDefault(); e.stopPropagation(); redo() }}>
+                        <button type="button" title="Redo" className="px-3 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 text-white hover:bg-white/40" onClick={(e) => { e.preventDefault(); e.stopPropagation(); redo() }}>
                           <Redo2 className="w-4 h-4" />
                         </button>
                         <div className="ml-1 flex items-center gap-1">
@@ -2046,10 +2048,12 @@ export function AIStudioEditorRedesigned({ className }: AIStudioEditorRedesigned
                         <button type="button" title="Marquee" className={`px-2 py-1 text-xs rounded-lg border ${isMarqueeSelecting ? 'border-indigo-400 bg-indigo-50' : 'border-white/40 bg-white/60'}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsMarqueeSelecting(v => !v) }}>
                           <BoxSelect className="w-4 h-4" />
                         </button>
+                        </GlassSurface>
                       </div>
-                      <div className="flex items-center gap-2 rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl px-3 py-2 shadow-lg pointer-events-auto" onPointerDown={(e) => e.stopPropagation()}>
-                        <button title="Theme" className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60" onClick={() => setIsDarkGlass(v => !v)}>{isDarkGlass ? 'Light' : 'Dark'}</button>
-                        <select className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60" value={gridDensity} onChange={e => setGridDensity(Number(e.target.value) as 8|16|24)}>
+                      <div className="pointer-events-auto" onPointerDown={(e) => e.stopPropagation()}>
+                        <GlassSurface width="auto" height="auto" borderRadius={36} backgroundOpacity={0.10} distortionScale={-55} redOffset={6} greenOffset={2} blueOffset={-4} displace={0.6} className="px-4 py-3" contentClassName="flex items-center gap-2">
+                        <button title="Theme" className="px-3 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 text-white hover:bg-white/40" onClick={() => setIsDarkGlass(v => !v)}>{isDarkGlass ? 'Light' : 'Dark'}</button>
+                        <select className="px-3 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 text-white" value={gridDensity} onChange={e => setGridDensity(Number(e.target.value) as 8|16|24)}>
                           <option value={8}>Dense</option>
                           <option value={16}>Medium</option>
                           <option value={24}>Loose</option>
@@ -2058,10 +2062,10 @@ export function AIStudioEditorRedesigned({ className }: AIStudioEditorRedesigned
                           <button 
                             type="button" 
                             title="Media Panel (Ctrl+M)" 
-                            className={`px-3 py-2 text-sm rounded-xl border transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-300/50 cursor-pointer ${
+                            className={`px-4 py-2 text-sm rounded-2xl border transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-300/50 cursor-pointer ${
                               isLeftMediaPanelOpen 
-                                ? 'border-blue-400/60 bg-blue-500/20 text-blue-700 shadow-lg' 
-                                : 'border-white/40 bg-white/60 hover:bg-white/80 text-slate-700 hover:shadow-md'
+                                ? 'border-white/70 bg-white/40 text-white shadow-lg' 
+                                : 'border-white/50 bg-white/30 hover:bg-white/40 text-white hover:shadow-md'
                             }`} 
                             onClick={(e) => { 
                               e.preventDefault(); 
@@ -2087,7 +2091,7 @@ export function AIStudioEditorRedesigned({ className }: AIStudioEditorRedesigned
                           <button
                             type="button"
                             title="Add Audio"
-                            className="px-3 py-2 text-sm rounded-xl border border-white/40 bg-white/60 hover:bg-white/80 text-slate-700 hover:shadow-md"
+                            className="px-4 py-2 text-sm rounded-2xl border border-white/50 bg-white/30 hover:bg-white/40 text-white hover:shadow-md"
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAudioPopupOpen(true) }}
                             onPointerDown={(e) => e.stopPropagation()}
                           >
@@ -2106,11 +2110,11 @@ export function AIStudioEditorRedesigned({ className }: AIStudioEditorRedesigned
                         <button type="button" title="Close" className="px-2 py-1 text-xs rounded-lg border border-white/40 bg-white/60 hover:bg-white/70" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowOverlay(false) }}>
                           Close
                         </button>
+                        </GlassSurface>
                       </div>
                     </div>
                     {/* Inner transformed canvas */}
                     <div id="editor-canvas-inner" className="absolute inset-0 z-[1]" style={{ transform: `translate(${canvasTranslate.x}px, ${canvasTranslate.y}px) scale(${canvasScale})`, transformOrigin: '0 0' }}>
-                      <div className={`absolute inset-0 [background-image:radial-gradient(rgba(0,0,0,0.06)_1px,transparent_1px)]`} style={{ backgroundSize: `${GRID}px ${GRID}px` }} />
                       <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
                         {edges.map((edge, idx) => {
                           const from = timelineClips.find(c => c.id === edge.fromId)
@@ -2204,7 +2208,6 @@ export function AIStudioEditorRedesigned({ className }: AIStudioEditorRedesigned
                     {/* Minimap */}
                     <div ref={minimapRef} className="absolute bottom-3 right-3 z-[3] w-44 h-28 rounded-lg border border-white/50 bg-white/70 backdrop-blur p-1 shadow">
                       <div className="relative w-full h-full overflow-hidden rounded">
-                        <div className="absolute inset-0 [background-image:radial-gradient(rgba(0,0,0,0.06)_1px,transparent_1px)]" style={{ backgroundSize: `${GRID/2}px ${GRID/2}px` }} />
                         {/* viewport rectangle */}
                         <div className="absolute border border-indigo-400/70 bg-indigo-400/10"
                           style={{ left: Math.max(0, (-canvasTranslate.x) * 0.15), top: Math.max(0, (-canvasTranslate.y) * 0.15), width: Math.max(20, (canvasWrapperRef.current?.clientWidth || 0) * 0.15 / canvasScale), height: Math.max(20, (canvasWrapperRef.current?.clientHeight || 0) * 0.15 / canvasScale) }}
@@ -2300,21 +2303,21 @@ export function AIStudioEditorRedesigned({ className }: AIStudioEditorRedesigned
                     transition={{ type: 'spring', stiffness: 240, damping: 24 }}
                     className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10015]"
                   >
-                    <div className="flex items-center gap-3 px-4 py-2 rounded-full border border-white/40 bg-white/60 supports-[backdrop-filter]:bg-white/40 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.18)]">
+                    <GlassSurface width="auto" height="auto" borderRadius={40} backgroundOpacity={0.10} distortionScale={-55} redOffset={6} greenOffset={2} blueOffset={-4} displace={0.6} className="px-5 py-3" contentClassName="flex items-center gap-3 text-white">
                       <button
                         onClick={() => {
                           // Back to previous step if exists
                           const prevStep = Math.max(1, currentStep - 1)
                           handleStepClick(prevStep)
                         }}
-                        className="px-4 py-2 text-sm rounded-full border border-white/40 bg-white/70 hover:bg-white/80 text-slate-800"
+                        className="px-5 py-2 text-sm rounded-full border border-white/60 bg-white/30 hover:bg-white/40 text-white"
                       >
                         Back
                       </button>
                       <button onClick={() => startShotstackRender()} disabled={isRenderingPreview} className="px-4 py-2 text-sm rounded-full border border-indigo-300/60 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-800 flex items-center gap-2">
                         {isRenderingPreview ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}<span>Preview</span>
                       </button>
-                      <button onClick={() => setShowExportDialog(true)} className="px-4 py-2 text-sm rounded-full border border-emerald-300/60 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-800 flex items-center gap-2">
+                       <button onClick={() => setShowExportDialog(true)} className="px-5 py-2 text-sm rounded-full border border-white/60 bg-white/30 hover:bg-white/40 text-white flex items-center gap-2">
                         <Download className="w-4 h-4" />
                         <span>Publish</span>
                       </button>
@@ -2324,11 +2327,11 @@ export function AIStudioEditorRedesigned({ className }: AIStudioEditorRedesigned
                           const nextStep = Math.min(steps.length, currentStep + 1)
                           handleStepClick(nextStep)
                         }}
-                        className="px-4 py-2 text-sm rounded-full border border-white/40 bg-white/70 hover:bg-white/80 text-slate-800"
+                        className="px-5 py-2 text-sm rounded-full border border-white/60 bg-white/30 hover:bg-white/40 text-white"
                       >
                         Next
                       </button>
-                    </div>
+                    </GlassSurface>
                   </motion.div>
                   {/* Close h-full container */}
                 </div>

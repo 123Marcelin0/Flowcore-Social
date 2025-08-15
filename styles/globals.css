@@ -28,7 +28,8 @@ html.ai-studio-video-editor,
 body.ai-studio-video-editor,
 html.ai-studio-video-editor #__next,
 body.ai-studio-video-editor [data-nextjs-scroll-focus-boundary] {
-  background: url(/abstract-liquid-marble-white-background-handmade-experimental-art.jpg) center/cover no-repeat fixed !important;
+  /* Removed marble background for editor page */
+  background: none !important;
 }
 
 html.ai-studio-content-create, 

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import GlassSurface from '@/components/ui/glass-surface'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
@@ -2856,34 +2857,30 @@ export function AIStudioVideoEditor() {
             variants={itemVariants}
             className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-20"
           >
-            <Card className="bg-white/20 backdrop-blur-[40px] border border-white/30 rounded-[25px] shadow-[0_25px_60px_rgba(255,255,255,0.3),inset_0_1px_2px_rgba(255,255,255,0.4)]">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="text-sm text-gray-700">
-                    {selectedTemplate ? `Template: ${selectedTemplate.name}` : 'Custom Video'}
-                    {selectedMedia.length > 0 && ` • ${selectedMedia.length} file${selectedMedia.length !== 1 ? 's' : ''}`}
-                  </div>
-                  
-                  <Button
-                    onClick={startExport}
-                    disabled={isLoading || isRendering}
-                    className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-[20px] px-8 py-3 font-semibold shadow-lg"
-                  >
-                    {isLoading || isRendering ? (
-                      <>
-                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        {isRendering ? 'Rendering...' : 'Starting...'}
-                      </>
-                    ) : (
-                      <>
-                        <Wand2 className="w-5 h-5 mr-2" />
-                        Export Video
-                      </>
-                    )}
-                  </Button>
+            <GlassSurface width="auto" height="auto" borderRadius={28} backgroundOpacity={0.12} className="px-6 py-4" contentClassName="flex items-center gap-4">
+                <div className="text-sm text-gray-700">
+                  {selectedTemplate ? `Template: ${selectedTemplate.name}` : 'Custom Video'}
+                  {selectedMedia.length > 0 && ` • ${selectedMedia.length} file${selectedMedia.length !== 1 ? 's' : ''}`}
                 </div>
-              </CardContent>
-            </Card>
+                
+                <Button
+                  onClick={startExport}
+                  disabled={isLoading || isRendering}
+                  className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-[20px] px-8 py-3 font-semibold shadow-lg"
+                >
+                  {isLoading || isRendering ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      {isRendering ? 'Rendering...' : 'Starting...'}
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="w-5 h-5 mr-2" />
+                      Export Video
+                    </>
+                  )}
+                </Button>
+            </GlassSurface>
           </motion.div>
         )}
       </motion.div>

@@ -4,6 +4,7 @@ import type React from "react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { X, ImageIcon, VideoIcon } from "lucide-react"
+import GlassSurface from '@/components/ui/glass-surface'
 import { MOCK_MEDIA } from "@/lib/glassmorphic-mock-media"
 
 export type MediaItem = {
@@ -83,16 +84,18 @@ export default function MediaPopup({
 
   if (!isOpen) return null
 
-  const topOffset = "max(1rem, env(safe-area-inset-top, 1rem))"
-  const bottomOffset = "max(1rem, env(safe-area-inset-bottom, 1rem))"
+  // Align vertically with the editor's top and bottom button groups
+  // Add ~72-80px extra offset beyond safe-area to match the groups visually
+  const topOffset = "calc(max(1rem, env(safe-area-inset-top, 1rem)) + 72px)"
+  const bottomOffset = "calc(max(1rem, env(safe-area-inset-bottom, 1rem)) + 80px)"
 
   return (
     <aside
       ref={asideRef}
       className={cn(
-        "media-drawer distort media-drawer--dark",
-        "fixed left-4 z-[200120] w-[320px] max-w-[calc(100vw-2rem)] rounded-3xl border",
-        "animate-appear text-white/90",
+        // Container; glass is applied via inner GlassSurface to unify styling
+        "fixed left-4 z-[200120] w-[380px] max-w-[calc(100vw-2rem)] rounded-3xl",
+        "animate-appear text-white/90 overflow-hidden flex flex-col",
       )}
       style={{
         top: topOffset,
@@ -101,29 +104,46 @@ export default function MediaPopup({
       }}
       aria-label="Media Library"
     >
-      {/* Header */}
-      <div className="media-header sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-3xl px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="grid h-8 w-8 place-items-center rounded-full border border-white/25 bg-white/15">
-            <VideoIcon className="h-4 w-4 text-white/90" />
+      <GlassSurface
+        width="100%"
+        height="100%"
+        borderRadius={36}
+        backgroundOpacity={0.08}
+        distortionScale={-55}
+        redOffset={6}
+        greenOffset={2}
+        blueOffset={-4}
+        displace={0.6}
+        className="absolute inset-0"
+        contentClassName="relative h-full flex flex-col"
+      >
+        {/* Header */}
+        <div className="sticky top-0 z-10 px-3 pt-3">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/40 bg-white/30 px-3 py-2 shadow-[0_12px_28px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.6)]">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-white/45 bg-white/30 px-3 py-1.5 text-sm font-medium text-white shadow-2xl hover:bg-white/40 transition-colors"
+              aria-label="Media"
+            >
+              <VideoIcon className="h-4 w-4" />
+              <span>Media</span>
+            </button>
+            <button
+              aria-label="Close media"
+              onClick={onClose}
+              className="grid h-8 w-8 place-items-center rounded-xl border border-white/40 bg-white/30 text-white hover:bg-white/40 shadow-2xl"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <span className="text-sm font-medium">Media</span>
         </div>
-        <button
-          aria-label="Close media"
-          onClick={onClose}
-          className="grid h-8 w-8 place-items-center rounded-full border border-white/25 bg-white/15 text-white/90 hover:bg-white/25"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
 
-      {/* Scroll body */}
-      <div className="media-scroll media-scroll--mask h-full overflow-y-auto px-3 pb-4">
+        {/* Scroll body */}
+        <div className="media-scroll media-scroll--mask flex-1 min-h-0 overflow-y-auto px-3 pb-6">
         {/* Videos */}
         {videos.length > 0 && (
           <section className="pb-3">
-            <div className="media-section-label">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/20 px-2.5 py-1 text-[11px] uppercase tracking-wide text-white/85 shadow-2xl">
               <VideoIcon className="h-3.5 w-3.5" />
               <span>Videos</span>
             </div>
@@ -143,7 +163,7 @@ export default function MediaPopup({
         {/* Photos */}
         {photos.length > 0 && (
           <section className="pt-2">
-            <div className="media-section-label">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/20 px-2.5 py-1 text-[11px] uppercase tracking-wide text-white/85 shadow-2xl">
               <ImageIcon className="h-3.5 w-3.5" />
               <span>Photos</span>
             </div>
@@ -155,12 +175,13 @@ export default function MediaPopup({
           </section>
         )}
 
-        {videos.length === 0 && photos.length === 0 && (
-          <div className="mt-10 rounded-2xl border border-white/20 bg-white/10 p-6 text-center text-sm text-white/70">
-            Your media library is empty. Drag files into the canvas or add new media.
-          </div>
-        )}
-      </div>
+          {videos.length === 0 && photos.length === 0 && (
+            <div className="mt-10 rounded-2xl border border-white/20 bg-white/10 p-6 text-center text-sm text-white/70">
+              Your media library is empty. Drag files into the canvas or add new media.
+            </div>
+          )}
+        </div>
+      </GlassSurface>
     </aside>
   )
 }
@@ -208,7 +229,7 @@ function MediaTile({
     <div
       draggable
       onDragStart={onDragStart}
-      className={cn("media-tile group relative overflow-hidden rounded-2xl border border-white/18 bg-white/10")}
+      className={cn("media-tile group relative overflow-hidden rounded-2xl border border-white/40 bg-white/22 backdrop-blur-xl shadow-[0_12px_28px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.6)]")}
       role="button"
       aria-label={`${item.kind}: ${item.label}`}
       title="Drag onto canvas or template slot"
@@ -222,24 +243,24 @@ function MediaTile({
       <img
         src={visualSrc || "/placeholder.svg"}
         alt={item.label}
-        className="block h-[118px] w-full object-cover"
+        className="block h-[118px] w-full object-cover rounded-2xl transition-transform duration-300 group-hover:scale-[1.015]"
         crossOrigin="anonymous"
       />
       {/* Footer stripe */}
       <div className="tile-meta flex items-center justify-between gap-2 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           {item.kind === "photo" ? (
-            <span className="grid h-6 w-6 place-items-center rounded-full border border-white/20 bg-white/15 text-white/90">
+            <span className="grid h-6 w-6 place-items-center rounded-xl border border-white/40 bg-white/30 text-white">
               <ImageIcon className="h-3.5 w-3.5" />
             </span>
           ) : (
-            <span className="grid h-6 w-6 place-items-center rounded-full border border-white/20 bg-white/15 text-white/90">
+            <span className="grid h-6 w-6 place-items-center rounded-xl border border-white/40 bg-white/30 text-white">
               <VideoIcon className="h-3.5 w-3.5" />
             </span>
           )}
-          <span className="truncate text-sm text-white/95">{item.label}</span>
+          <span className="truncate text-sm text-white">{item.label}</span>
         </div>
-        <span className="drag-pill">View</span>
+        <span className="drag-pill rounded-full border border-white/45 bg-white/30 px-2.5 py-1 text-xs text-white shadow-2xl">View</span>
       </div>
     </div>
   )

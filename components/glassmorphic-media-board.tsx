@@ -126,8 +126,19 @@ export default function MediaBoard({
     return () => io.disconnect()
   })
 
+  // Hide board entirely when music popup is open
+  const [audioOpen, setAudioOpen] = useState(false)
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      const music = document.querySelector('[aria-modal="true"][role="dialog"] .text-lg')
+      setAudioOpen(!!document.querySelector('.music-tint') || !!document.querySelector('[aria-label="Close music overlay"]'))
+    })
+    obs.observe(document.body, { subtree: true, attributes: true, childList: true })
+    return () => obs.disconnect()
+  }, [])
+
   return (
-    <div className={cn("absolute inset-0 p-4 sm:p-6 md:p-8", className)}>
+    <div className={cn("absolute inset-0 p-4 sm:p-6 md:p-8", className, audioOpen && "opacity-0 pointer-events-none transition-opacity duration-200") }>
       {/* Header */}
       <div
         className={cn(
@@ -374,9 +385,9 @@ function MediaCard({
       onClick={handleClick}
       onKeyDown={onKeyDownOpen}
       className={cn(
-        "group distort backdrop-boost block overflow-hidden rounded-2xl border border-white/18 bg-white/10 text-left",
-        "shadow-[0_12px_40px_rgba(0,0,0,0.25)] transition-transform hover:-translate-y-0.5",
-        "will-change-transform",
+        "group relative block overflow-hidden text-left",
+        "rounded-[28px] border border-white/45 bg-white/25 backdrop-blur-2xl",
+        "shadow-[0_18px_60px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5",
       )}
       aria-label={`Open ${item.kind}: ${item.label}`}
     >
@@ -405,6 +416,17 @@ function MediaCard({
           />
         )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/30" />
+        {/* Top-right preview icon in liquid style */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpen() }}
+          aria-label="Preview"
+          title="Preview"
+          className="pointer-events-auto absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-xl border border-white/40 bg-white/30 text-white shadow-2xl backdrop-blur-xl hover:bg-white/40"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 8V4h4"/><path d="M20 8V4h-4"/><path d="M4 16v4h4"/><path d="M20 16v4h-4"/>
+          </svg>
+        </button>
         <div className="absolute left-3 top-3 flex flex-col items-start gap-3 z-10">
           <span className="grid h-8 w-8 place-items-center rounded-full border border-white/30 bg-white/25 text-white/95 backdrop-blur-md shadow-lg">
             {item.kind === "photo" ? <ImageIcon className="h-4 w-4" /> : <VideoIcon className="h-4 w-4" />}
@@ -423,12 +445,12 @@ function MediaCard({
         )}
         </div>
       </div>
-      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 px-3 py-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-white/95">{item.label}</div>
-          <div className="text-xs text-white/70">{item.kind === "photo" ? "Image" : "Video"}</div>
+          <div className="truncate text-base font-medium text-white/95">{item.label}</div>
+          <div className="text-xs text-white/75">{item.kind === "photo" ? "Image" : "Video"}</div>
         </div>
-        <span className="rounded-full border border-white/25 bg-white/15 px-2 py-1 text-xs text-white/85">Open</span>
+        <span className="rounded-full border border-white/35 bg-white/25 px-2.5 py-1.5 text-xs text-white/90">Open</span>
       </div>
     </div>
   )

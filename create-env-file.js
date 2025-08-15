@@ -35,6 +35,12 @@ NEXTAUTH_SECRET=your-nextauth-secret-here
 # ==================
 NODE_ENV=development
 
+# ==================
+# Performance / Rendering Flags
+# ==================
+# Disable CSS backdrop-filter in editor and use pre-rendered rasters for max FPS
+NEXT_PUBLIC_DISABLE_BACKDROP=1
+
 # ==============================================
 # WICHTIGE HINWEISE:
 # ==============================================

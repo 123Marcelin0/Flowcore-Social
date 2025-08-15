@@ -230,13 +230,30 @@ export class PixabayService {
     if (options.category) params.append('category', options.category)
     if (options.editorsChoice) params.append('editors_choice', 'true')
 
+    // Primary music endpoint
     const response = await fetch(`${this.baseUrl}audio/?${params.toString()}`)
     
-    if (!response.ok) {
-      throw new Error(`Pixabay API error: ${response.status} ${response.statusText}`)
+    if (response.ok) {
+      return await response.json()
+    }
+    
+    // Graceful fallback path: some keys/plans may not have audio API enabled.
+    // Try generic endpoint with media_type=audio; if it still fails, return empty result
+    if (response.status === 403 || response.status === 404) {
+      try {
+        const fallbackParams = new URLSearchParams(params)
+        fallbackParams.append('media_type', 'audio')
+        const fallback = await fetch(`${this.baseUrl}?${fallbackParams.toString()}`)
+        if (fallback.ok) {
+          return await fallback.json()
+        }
+      } catch (e) {
+        // ignore and return empty
+      }
+      return { total: 0, totalHits: 0, hits: [] }
     }
 
-    return await response.json()
+    throw new Error(`Pixabay API error: ${response.status} ${response.statusText}`)
   }
 
   /**

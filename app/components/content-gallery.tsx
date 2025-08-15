@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -136,6 +136,175 @@ export function ContentGallery() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 12
+  const gridContainerRef = useRef<HTMLDivElement | null>(null)
+  const [viewportHeight, setViewportHeight] = useState(0)
+  const [rowHeight, setRowHeight] = useState(320) // approximate; adjust if card layout changes
+  const [overscan, setOverscan] = useState(3)
+  const dragStateRef = useRef<{ active: boolean; id: number; startX: number; startY: number; offsetX: number; offsetY: number; clone: HTMLElement | null; containerScrollTop: number } | null>(null)
+
+  // Lightweight virtualization: only render rows likely visible
+  const visibleSlice = useMemo(() => {
+    const container = gridContainerRef.current
+    if (!container) return { start: 0, end: itemsPerPage }
+    const scrollTop = container.scrollTop
+    const height = container.clientHeight || viewportHeight || 800
+    const itemsPerRow = 4 // xl grid; degrade gracefully on smaller widths
+    const total = (activeView === 'optimized' ? filteredOptimizedPosts.length : filteredRawMaterials.length)
+    const rowStart = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan)
+    const numRows = Math.ceil(height / rowHeight) + overscan * 2
+    const start = Math.min(total, rowStart * itemsPerRow)
+    const end = Math.min(total, start + numRows * itemsPerRow)
+    return { start, end, itemsPerRow }
+  }, [activeView, filteredOptimizedPosts.length, filteredRawMaterials.length, rowHeight, overscan, viewportHeight])
+
+  const onScroll = useCallback(() => {
+    const c = gridContainerRef.current
+    if (!c) return
+    // trigger memo recompute by updating viewport height state
+    setViewportHeight(c.clientHeight)
+  }, [])
+
+  useEffect(() => {
+    const c = gridContainerRef.current
+    if (!c) return
+    setViewportHeight(c.clientHeight)
+    c.addEventListener('scroll', onScroll, { passive: true })
+    const obs = new ResizeObserver(() => {
+      setViewportHeight(c.clientHeight)
+    })
+    obs.observe(c)
+    return () => {
+      c.removeEventListener('scroll', onScroll)
+      obs.disconnect()
+    }
+  }, [onScroll])
+
+  // Feather drag (compositor-only) overlay for ultra-light movement feel
+  const startFeatherDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault() // Prevent default touch behaviors
+    e.stopPropagation() // Prevent event bubbling
+    
+    const target = e.currentTarget as HTMLElement
+    const rect = target.getBoundingClientRect()
+    const id = e.pointerId
+    const startX = e.clientX
+    const startY = e.clientY
+    const offsetX = startX - rect.left
+    const offsetY = startY - rect.top
+    
+    // Force immediate layer promotion for target
+    target.style.willChange = 'transform'
+    target.style.transform = 'translateZ(0)'
+    
+    const state = {
+      active: true,
+      id,
+      startX,
+      startY,
+      offsetX,
+      offsetY,
+      clone: null as HTMLElement | null,
+      containerScrollTop: gridContainerRef.current?.scrollTop || 0,
+    }
+    dragStateRef.current = state
+    
+    // Capture pointer for consistent events
+    target.setPointerCapture?.(id)
+
+    // Create highly optimized clone
+    const clone = target.cloneNode(true) as HTMLElement
+    clone.classList.add('feather-clone')
+    
+    // Zero-cost positioning setup
+    const cloneStyle = clone.style
+    cloneStyle.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      will-change: transform;
+      transform-origin: 0 0;
+      transition: none;
+      contain: layout paint style;
+      isolation: isolate;
+    `
+    
+    document.body.appendChild(clone)
+    dragStateRef.current.clone = clone
+    
+    // Enter high-performance drag mode
+    document.body.classList.add('drag-mode')
+    document.body.style.userSelect = 'none'
+    document.body.style.touchAction = 'none'
+    target.style.cursor = 'grabbing'
+    
+    // Suppress click to prevent accidental activation
+    const suppress = (clickEv: Event) => { 
+      clickEv.stopPropagation() 
+      clickEv.preventDefault() 
+    }
+    target.addEventListener('click', suppress, { once: true, capture: true })
+
+    // Direct transform application - no calculations
+    const apply = (cx: number, cy: number) => {
+      const s = dragStateRef.current
+      if (!s?.clone) return
+      const x = cx - s.offsetX
+      const y = cy - s.offsetY
+      s.clone.style.transform = `translate3d(${x}px, ${y}px, 0)`
+    }
+
+    // Position immediately - no delay
+    apply(startX, startY)
+
+    // High-frequency event handlers
+    const onMove = (ev: PointerEvent) => {
+      ev.preventDefault()
+      apply(ev.clientX, ev.clientY)
+    }
+    
+    // Use pointerrawupdate for ultra-low latency when available
+    const onRawUpdate = (ev: any) => {
+      apply(ev.clientX, ev.clientY)
+    }
+
+    const endDrag = () => {
+      const s = dragStateRef.current
+      dragStateRef.current = null
+      
+      // Clean up all event listeners
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerrawupdate', onRawUpdate)
+      window.removeEventListener('pointerup', endDrag)
+      window.removeEventListener('pointercancel', endDrag)
+      
+      // Reset styles
+      target.style.willChange = ''
+      target.style.transform = ''
+      target.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.body.style.touchAction = ''
+      
+      // Remove clone and exit drag mode
+      if (s?.clone) {
+        s.clone.remove()
+      }
+      document.body.classList.remove('drag-mode')
+    }
+
+    // Register optimized event listeners with maximum frequency
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerrawupdate', onRawUpdate, { passive: true })
+    window.addEventListener('pointerup', endDrag, { passive: true, once: true })
+    window.addEventListener('pointercancel', endDrag, { passive: true, once: true })
+    
+    // Force maximum refresh rate for this interaction (browser hint)
+    if ('requestIdleCallback' in window) {
+      // @ts-ignore
+      window.requestIdleCallback(() => {}, { timeout: 1 })
+    }
+  }, [])
   
   // Selection state for raw materials
   const [selectedRawMaterialIds, setSelectedRawMaterialIds] = useState<Set<string>>(new Set())
@@ -351,15 +520,22 @@ export function ContentGallery() {
   }
 
   const handleItemClick = (item: Post | MediaFile) => {
-    // Check if it's a media file (has file_type property)
-    if ('file_type' in item) {
-      // Use MediaPreviewModal for media files
-      setPreviewMedia(item)
-      setPreviewModalOpen(true)
-    } else {
-      // Use existing modal for posts
-      setSelectedItem(item)
-      setIsDetailOpen(true)
+    // For this iteration, clicking navigates to workflow with selection in sessionStorage
+    try {
+      const toStore = 'file_type' in item
+        ? [{ id: item.id, url: (item.thumbnail_url || item.storage_url), type: item.file_type, name: item.original_filename, size: item.file_size }]
+        : [{ id: item.id, url: item.media_urls[0], type: (item.media_type === 'video' ? 'video' : 'image') as 'image' | 'video', name: item.title || 'Post', size: 0 }]
+      sessionStorage.setItem('workflowSelectedMedia', JSON.stringify(toStore))
+      window.location.href = '/workflow'
+    } catch {
+      // Fallback to modal preview
+      if ('file_type' in item) {
+        setPreviewMedia(item)
+        setPreviewModalOpen(true)
+      } else {
+        setSelectedItem(item)
+        setIsDetailOpen(true)
+      }
     }
   }
 
@@ -527,6 +703,8 @@ export function ContentGallery() {
                     src={mediaUrl}
                     alt={filename}
                     className="object-contain w-full h-full"
+                    loading="lazy"
+                    decoding="async"
                   />
                 )}
               </div>
@@ -1045,17 +1223,19 @@ export function ContentGallery() {
                   ) : (
                     <>
 
-                      {/* Content Grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                      {/* Content Grid - virtualized */}
+                      <div ref={gridContainerRef} className="content-gallery grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 max-h-[70vh] overflow-auto cv-auto" data-media-cards style={{ containIntrinsicSize: '1200px 800px' }}>
                         {activeView === 'optimized' ? (
-                          paginatedOptimizedPosts.map((post) => (
+                          paginatedOptimizedPosts.slice(visibleSlice.start, visibleSlice.end).map((post) => (
                             <motion.div
                               key={post.id}
                               whileHover={{ scale: 1.02 }}
                               whileTap={{ scale: 0.98 }}
                             >
                               <div 
-                                className="relative cursor-pointer transition-all duration-300 p-4 rounded-[30px] hover:scale-[1.02] group"
+                                data-card
+                                className="relative cursor-pointer p-4 rounded-[30px] group"
+                                onPointerDown={startFeatherDrag}
                                 onClick={() => handleItemClick(post)}
                               >
                                 {/* Liquid Glass Background */}
@@ -1075,6 +1255,8 @@ export function ContentGallery() {
                                       src={post.media_urls[0]} 
                                       alt={post.title || 'Post thumbnail'}
                                       className="w-full h-full object-cover rounded-[20px]"
+                                      loading="lazy"
+                                      decoding="async"
                                     />
                                   ) : (
                                     <Video className="w-8 h-8 text-gray-600" />
@@ -1121,7 +1303,7 @@ export function ContentGallery() {
                                     onChange={handleFileUpload}
                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                   />
-                                  <div className="relative cursor-pointer transition-all duration-300 p-4 rounded-[30px] hover:scale-[1.02] group">
+                                  <div data-card className="relative cursor-pointer p-4 rounded-[30px] group" onPointerDown={startFeatherDrag}>
                                     {/* Liquid Glass Background */}
                                     <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-white/12 to-white/8 backdrop-blur-[20px] rounded-[30px] border-2 border-dashed border-white/40 shadow-[0_8px_32px_rgba(255,255,255,0.15),inset_0_1px_0_rgba(255,255,255,0.2)] group-hover:bg-gradient-to-br group-hover:from-white/25 group-hover:via-white/15 group-hover:to-white/10 group-hover:border-white/50 group-hover:shadow-[0_12px_40px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.3)] transition-all duration-300" />
                                     
@@ -1153,8 +1335,8 @@ export function ContentGallery() {
                               </motion.div>
                             )}
                             
-                            {/* Raw Materials */}
-                            {paginatedRawMaterials.map((file) => {
+                            {/* Raw Materials (virtualized) */}
+                            {paginatedRawMaterials.slice(visibleSlice.start, visibleSlice.end).map((file) => {
                               const isSelected = selectedRawMaterialIds.has(file.id)
                               
                               return (
@@ -1164,11 +1346,13 @@ export function ContentGallery() {
                                   whileTap={{ scale: 0.98 }}
                                 >
                                   <div 
+                                    data-card
                                     className={`relative cursor-pointer transition-all duration-300 p-4 rounded-[30px] hover:scale-[1.02] group ${
                                       isSelected 
                                         ? 'ring-2 ring-orange-400/50' 
                                         : ''
                                     }`}
+                                    onPointerDown={startFeatherDrag}
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       if (isSelectionMode) {
@@ -1198,6 +1382,8 @@ export function ContentGallery() {
                                           src={file.thumbnail_url} 
                                           alt={file.original_filename}
                                           className="w-full h-full object-cover rounded-[20px]"
+                                          loading="lazy"
+                                          decoding="async"
                                         />
                                       ) : (
                                         file.file_type === 'video' ? (

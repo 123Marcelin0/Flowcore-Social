@@ -14,6 +14,7 @@ import {
   Film,
   Edit3
 } from 'lucide-react'
+import GlassSurface from '@/components/ui/glass-surface'
 
 interface AIStudioToolbarProps {
   onBack: () => void
@@ -86,37 +87,11 @@ export function AIStudioToolbar({
   return (
     <div 
       data-ai-tools-sidebar
-      className={`absolute inset-0 w-72 h-[calc(100vh-10rem)] overflow-hidden animate-in slide-in-from-left-full duration-700 ease-out mt-6 mb-20 ${
-        isInteriorActive || isVideoEditorActive ? 'rounded-tr-[24px] rounded-br-[24px]' : 'rounded-tr-[80px] rounded-br-[80px]'
-      }`}
-
+      className={`absolute inset-y-0 left-0 w-72 overflow-hidden animate-in slide-in-from-left-full duration-700 ease-out mt-6 mb-20 editor-toolbar will-change-transform cv-auto`}
+      style={{ contain: 'paint layout style', contentVisibility: 'auto' as any, containIntrinsicSize: '960px 800px' }}
     >
-      {/* Unified Glass Overlay - No duplicate background */}
-      <div 
-        className={`absolute inset-0 overflow-hidden ${
-          isInteriorActive || isVideoEditorActive ? 'rounded-tr-[24px] rounded-br-[24px]' : 'rounded-tr-[80px] rounded-br-[80px]'
-        }`}
-      >
-        {/* Single Glass Overlay that adapts to any background */}
-        <div className={`absolute inset-0 backdrop-blur-[40px] backdrop-saturate-[200%] border-r shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(255,255,255,0.08)] ${
-          isVideoActive || isImageActive
-            ? 'bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] border-white/10'
-            : 'bg-gradient-to-br from-white/[0.25] via-white/[0.15] to-white/[0.08] border-white/20'
-        }`} />
-        
-        {/* Subtle Floating Orbs - Universal */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-1/4 left-1/3 w-20 h-20 bg-white/[0.06] rounded-full blur-xl animate-pulse" />
-          <div className="absolute bottom-1/3 right-1/4 w-16 h-16 bg-white/[0.04] rounded-full blur-lg animate-pulse" style={{ animationDelay: '2s' }} />
-          <div className="absolute top-2/3 left-1/2 w-12 h-12 bg-white/[0.03] rounded-full blur-md animate-pulse" style={{ animationDelay: '4s' }} />
-        </div>
-
-        {/* Glass Refraction Effects */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-white/[0.05] via-transparent to-white/[0.02] pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-bl from-transparent via-white/[0.02] to-transparent pointer-events-none" />
-        
-        {/* CSS Animations for All Backgrounds */}
-        <style jsx>{`
+      {/* CSS Animations preserved for internal visuals */}
+      <style jsx>{`
            /* Video Tool Animations */
            @keyframes videoFloat-0 { 0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); } 50% { transform: translate(20px, -15px) scale(1.15) rotate(180deg); } }
            @keyframes videoFloat-1 { 0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); } 50% { transform: translate(-15px, 20px) scale(0.9) rotate(-180deg); } }
@@ -194,9 +169,8 @@ export function AIStudioToolbar({
            @keyframes interiorParticle-8 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(18px, 30px) scale(1.2); opacity: 0.26; } }
            @keyframes interiorParticle-9 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(-15px, -18px) scale(0.9); opacity: 0.22; } }
         `}</style>
-      </div>
       
-      <div className="relative h-full flex flex-col z-10">
+      <GlassSurface width="100%" height="100%" borderRadius={36} backgroundOpacity={0.08} distortionScale={-40} redOffset={0} greenOffset={2} blueOffset={4} displace={0.4} className="rounded-tr-[36px] rounded-br-[36px] rounded-tl-none rounded-bl-none" contentClassName="relative h-full flex flex-col z-10 p-0">
         {/* AI Tools Header with Back Icon */}
         <div className="flex-1 p-8">
           <div className="space-y-3">
@@ -333,7 +307,7 @@ export function AIStudioToolbar({
             </div>
           )}
         </div>
-
+        
         {/* Settings */}
         <div className={`p-8 border-t ${isSpecialTool ? 'border-white/25' : 'border-white/30'}`}>
           <Button
@@ -373,7 +347,7 @@ export function AIStudioToolbar({
             }`}>Settings</span>
           </Button>
         </div>
-      </div>
+      </GlassSurface>
     </div>
   )
 } 

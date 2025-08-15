@@ -94,6 +94,23 @@ body {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
   }
+  
+  /* Offscreen rendering hint for long lists/panels */
+  .cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: 800px 600px;
+  }
+  
+  /* Clip paints to reduce repaint area during interaction */
+  .paint-clip {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    -webkit-clip-path: inset(var(--clip-top,0) var(--clip-right,0) var(--clip-bottom,0) var(--clip-left,0) round var(--clip-radius, 0));
+            clip-path: inset(var(--clip-top,0) var(--clip-right,0) var(--clip-bottom,0) var(--clip-left,0) round var(--clip-radius, 0));
+    will-change: clip-path, -webkit-clip-path;
+  }
 }
 
 /* Strategy Card Overrides */
@@ -580,32 +597,293 @@ body {
   }
 }
 
-/* AI Studio: fixed inset dotted + marble background that respects page edges */
-html.ai-studio-video-editor,
-body.ai-studio-video-editor {
-  /* Base tone */
-  background-color: #fafafa;
+/* Composite glass layer that groups adjacent glass elements behind into one blur/composite */
+.glass-composite-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  background-image: var(--glass-bg, none);
+  background-size: 320px 320px;
+  background-repeat: repeat;
+  opacity: 0.96;
+  transition: opacity 120ms ease;
 }
 
-/* Single overlay that matches the intended canvas size with consistent page padding */
+/* Drag mode: pause costly visuals, disable dynamic blur */
+body.drag-mode * {
+  transition: none !important;
+  animation-play-state: paused !important;
+  transform: none !important; /* Reset any transform-based hover effects */
+}
+body.drag-mode .glass-composite-layer {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* Disable all hover effects during drag */
+body.drag-mode *:hover {
+  transform: none !important;
+  scale: 1 !important;
+  background: inherit !important;
+  box-shadow: inherit !important;
+}
+
+/* Card perf hints */
+[data-card] {
+  will-change: transform;
+  transform: translateZ(0);
+  contain: layout paint style;
+  backface-visibility: hidden;
+}
+body.drag-mode [data-card] {
+  transition: none !important;
+}
+
+/* Optimized glass panel class: avoid own backdrop blur, rely on composite layer */
+.glass-panel-opt {
+  background: rgba(255,255,255,0.40);
+  border: 1px solid rgba(255,255,255,0.45);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.55);
+  will-change: transform;
+  contain: layout paint style;
+}
+
+/* Visual drag state without React per-frame updates */
+[data-dragging="true"] {
+  transform: scale(0.995);
+  border-color: rgba(255,255,255,0.55) !important;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+}
+
+/* Feather drag clone styling */
+.feather-clone {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  will-change: transform;
+  transform: translateZ(0);
+  filter: drop-shadow(0 8px 24px rgba(0,0,0,0.18));
+  transition: none !important;
+}
+
+/* Music popup active: hide workflow media cards */
+body.music-popup-active .workflow-media-cards,
+body.music-popup-active .media-gallery-grid,
+body.music-popup-active .content-gallery,
+body.music-popup-active .media-grid,
+body.music-popup-active [data-media-cards],
+body.music-popup-active .uploaded-files-grid {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transition: opacity 0.3s ease, visibility 0.3s ease !important;
+}
+
+/* Ensure anything explicitly marked as workflow cards is hidden too */
+body.music-popup-active [data-workflow-cards] {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Ensure music editor is always visible and on top */
+body.music-popup-active .music-editor,
+body.music-popup-active [data-music-editor],
+body.music-popup-active [data-music-overlay],
+body.music-popup-active [data-music-overlay] * {
+  z-index: 200200 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Hide specific workflow components when music popup is active */
+body.music-popup-active [data-card] {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Never hide content inside the music overlay (whitelist) */
+body.music-popup-active [data-music-overlay] .group,
+body.music-popup-active [data-music-overlay] [data-card],
+body.music-popup-active [data-music-overlay] * {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* AI Studio page background overrides: remove dotted overlay */
+html.ai-studio-video-editor,
+body.ai-studio-video-editor {
+  background: #f5f6f7; /* soft neutral base */
+}
+
+/* Apple-like clean raster background for the editor page */
 body.ai-studio-video-editor::before {
   content: '';
   position: fixed;
-  top: 8px;   /* match m-2 spacing */
-  right: 8px;
-  bottom: 8px;
-  left: 8px;
-  border-radius: 28px;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 0;
   pointer-events: none;
-  z-index: 1; /* above base marble background (.z-0), below content (.z-10/20) */
-  /* Two shifted dot layers on top of soft vignette gradients */
-  background-image:
-    radial-gradient(#d4d4d8 1.2px, transparent 1.2px),
-    radial-gradient(#d4d4d8 1.2px, transparent 1.2px),
-    radial-gradient(1200px 800px at 70% 10%, rgba(0,0,0,0.04), transparent 45%),
-    radial-gradient(1000px 600px at 20% 80%, rgba(0,0,0,0.045), transparent 50%);
-  background-size: 22px 22px, 22px 22px, auto, auto;
-  background-position: 0 0, 11px 11px, 0 0, 0 0;
-  background-repeat: repeat, repeat, no-repeat, no-repeat;
+  z-index: 0;
+  background:
+    radial-gradient(1200px 850px at 86% 10%, rgba(0,0,0,0.10), transparent 62%),
+    radial-gradient(1300px 900px at 14% 88%, rgba(0,0,0,0.08), transparent 60%),
+    linear-gradient(180deg, transparent 65%, rgba(0,0,0,0.06) 92%, transparent 100%);
+  box-shadow: none;
+}
+
+/* Uniform-strength raster grid overlay */
+body.ai-studio-video-editor::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(148,163,184,0.16) 0 1px, transparent 1px 90px),
+    repeating-linear-gradient(90deg, rgba(148,163,184,0.16) 0 1px, transparent 1px 90px),
+    radial-gradient(1200px 850px at 86% 10%, rgba(0,0,0,0.12), transparent 62%),
+    radial-gradient(1300px 900px at 14% 88%, rgba(0,0,0,0.10), transparent 60%),
+    linear-gradient(180deg, transparent 65%, rgba(0,0,0,0.05) 92%, transparent 100%);
+  background-blend-mode: normal, normal, soft-light, soft-light, soft-light;
+}
+
+/* Natural drop-shadows for glass elements on the editor page */
+body.ai-studio-video-editor .editor-toolbar {
+  box-shadow: 0 12px 36px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.05) !important;
+}
+body.ai-studio-video-editor [data-ai-tools-sidebar] > div {
+  box-shadow: 0 18px 50px rgba(0,0,0,0.10), 0 2px 10px rgba(0,0,0,0.06) !important;
+}
+
+/* Make editor page toolbars/buttons look brighter on glass */
+.editor-toolbar .liquid-btn,
+.editor-bottombar .liquid-btn,
+.editor-toolbar button,
+.editor-bottombar button,
+.editor-toolbar select {
+  color: white !important;
+}
+.editor-toolbar button,
+.editor-bottombar button,
+.editor-toolbar select {
+  border-radius: 22px !important;
+  background: rgba(255,255,255,0.22) !important;
+  border: 1px solid rgba(255,255,255,0.45) !important;
+  backdrop-filter: blur(12px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(170%) !important;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.6) !important;
+}
+.editor-toolbar button:hover,
+.editor-bottombar button:hover,
+.editor-toolbar select:hover {
+  background: rgba(255,255,255,0.30) !important;
+}
+
+/* Subtle highlight for liquid pill edges */
+.editor-toolbar button::before,
+.editor-bottombar button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,0.50), rgba(255,255,255,0.00) 35%);
+  pointer-events: none;
+}
+
+/* Edge‑biased refraction: stronger near edges, minimal in center */
+.editor-toolbar button::after,
+.editor-bottombar button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  -webkit-mask: radial-gradient(closest-side, rgba(0,0,0,0) 58%, rgba(0,0,0,0.75) 82%, rgba(0,0,0,1) 100%);
+          mask: radial-gradient(closest-side, rgba(0,0,0,0) 58%, rgba(0,0,0,0.75) 82%, rgba(0,0,0,1) 100%);
+}
+
+/* (removed) container ::after refraction to avoid double-stacking with component overlay */
+
+/* Editor page only: make AI Tools sidebar match glass button groups */
+/* Sidebar wrapper should remain transparent and let the GlassSurface handle the liquid effect */
+body.ai-studio-video-editor [data-ai-tools-sidebar] {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Square left edge for the sidebar on the editor page */
+body.ai-studio-video-editor [data-ai-tools-sidebar],
+body.ai-studio-video-editor [data-ai-tools-sidebar] > div {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+}
+
+/* Keep sidebar content visible on editor page (do not hide first child) */
+
+/* Sidebar content texts and icons to white for contrast */
+body.ai-studio-video-editor [data-ai-tools-sidebar] h3,
+body.ai-studio-video-editor [data-ai-tools-sidebar] span,
+body.ai-studio-video-editor [data-ai-tools-sidebar] svg {
+  color: white !important;
+}
+body.ai-studio-video-editor [data-ai-tools-sidebar] svg {
+  stroke: #ffffff !important;
+}
+
+/* Sidebar buttons same glass style as editor button groups */
+body.ai-studio-video-editor [data-ai-tools-sidebar] button {
+  border-radius: 22px !important;
+  background: rgba(255,255,255,0.32) !important;
+  border: 1px solid rgba(255,255,255,0.55) !important;
+  backdrop-filter: blur(18px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(160%) !important;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06) !important;
+  color: white !important;
+}
+body.ai-studio-video-editor [data-ai-tools-sidebar] button:hover {
+  background: rgba(255,255,255,0.42) !important;
+}
+
+/* Instant, compositor-only hover for editor buttons (toolbar + sidebar) */
+body.ai-studio-video-editor .editor-toolbar,
+body.ai-studio-video-editor [data-ai-tools-sidebar] {
+  contain: layout paint style;
+  isolation: isolate;
+}
+
+body.ai-studio-video-editor .editor-toolbar button,
+body.ai-studio-video-editor [data-ai-tools-sidebar] button {
+  will-change: transform, opacity;
+  /* Override utility classes to avoid animating background/shadow/filter */
+  transition-property: transform, opacity !important;
+  transition-duration: 120ms, 50ms !important;
+  transition-timing-function: cubic-bezier(0.2,0,0.2,1), linear !important;
+}
+
+body.ai-studio-video-editor .editor-toolbar button:hover,
+body.ai-studio-video-editor [data-ai-tools-sidebar] button:hover {
+  transform: translateZ(0) scale(1.01);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ai-studio-video-editor .editor-toolbar button,
+  body.ai-studio-video-editor [data-ai-tools-sidebar] button {
+    transition-duration: 60ms, 40ms !important;
+  }
 }
 

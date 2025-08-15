@@ -48,6 +48,7 @@ interface QuickEditInterfaceProps {
   onApplyChanges: () => void
   videoPreviewUrl?: string
   className?: string
+  onMusicPopupToggle?: (isOpen: boolean) => void
 }
 
 interface EditMode {
@@ -92,6 +93,7 @@ export function QuickEditInterface({
   onApplyChanges,
   videoPreviewUrl,
   className,
+  onMusicPopupToggle,
 }: QuickEditInterfaceProps) {
   const [selectedSegment, setSelectedSegment] = useState(currentSegment)
   const [editMode, setEditMode] = useState<EditMode>({ type: null, segmentId: null })
@@ -107,6 +109,22 @@ export function QuickEditInterface({
   useEffect(() => {
     setSelectedSegment(currentSegment)
   }, [currentSegment])
+
+  // Add/remove music popup class to body when music editing is active
+  useEffect(() => {
+    const isMusicMode = editMode.type === 'music'
+    
+    if (isMusicMode) {
+      document.body.classList.add('music-popup-active')
+    } else {
+      document.body.classList.remove('music-popup-active')
+    }
+
+    // Cleanup on unmount
+    return () => {
+      document.body.classList.remove('music-popup-active')
+    }
+  }, [editMode.type])
 
   // Auto-scroll to selected segment
   useEffect(() => {
@@ -135,6 +153,11 @@ export function QuickEditInterface({
 
   const handleEditModeChange = (type: EditMode['type'], segmentId: string) => {
     setEditMode({ type, segmentId })
+    
+    // Notify parent when music popup is opened/closed
+    if (onMusicPopupToggle) {
+      onMusicPopupToggle(type === 'music')
+    }
   }
 
   const handleTempChange = (segmentId: string, updates: Partial<VideoSegment>) => {
@@ -166,6 +189,12 @@ export function QuickEditInterface({
       applyTempChanges()
     }
     onApplyChanges()
+    
+    // Ensure music popup is closed when interface closes
+    if (onMusicPopupToggle) {
+      onMusicPopupToggle(false)
+    }
+    
     onClose()
   }
 
@@ -422,7 +451,7 @@ export function QuickEditInterface({
                 return (
                   <motion.div
                     key={segment.id}
-                    ref={(el) => (segmentRefs.current[index] = el)}
+                    ref={(el) => { segmentRefs.current[index] = el }}
                     onClick={() => handleSegmentClick(index)}
                     className={cn(
                       "relative flex-shrink-0 w-24 h-16 rounded-lg overflow-hidden cursor-pointer border-2 transition-all",
@@ -520,11 +549,13 @@ export function QuickEditInterface({
                   )}
                   
                   {editMode.type === 'music' && (
-                    <MusicEditor
-                      segment={getSegmentWithChanges(currentSegmentData)}
-                      tracks={musicTracks}
-                      onChange={(updates) => handleTempChange(editMode.segmentId!, updates)}
-                    />
+                    <div data-music-editor>
+                      <MusicEditor
+                        segment={getSegmentWithChanges(currentSegmentData)}
+                        tracks={musicTracks}
+                        onChange={(updates) => handleTempChange(editMode.segmentId!, updates)}
+                      />
+                    </div>
                   )}
                 </EnhancedLiquidGlass>
               </motion.div>
