@@ -2,25 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAI() {
+  if (!process.env.OPENAI_API_KEY) return null
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+}
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-);
+function getSupabaseService() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const openai = getOpenAI()
+    const supabase = getSupabaseService()
+
     const { userInput, contentType, platforms, language = 'german' } = await request.json();
 
     if (!userInput) {
@@ -28,6 +26,13 @@ export async function POST(request: NextRequest) {
         { error: 'User input is required' },
         { status: 400 }
       );
+    }
+
+    if (!openai) {
+      return NextResponse.json(
+        { error: 'OpenAI not configured' },
+        { status: 500 }
+      )
     }
 
     // Create a comprehensive prompt for GPT-4o
@@ -119,26 +124,28 @@ export async function POST(request: NextRequest) {
     };
 
     // Log the generation for analytics
-    try {
-      const { error: logError } = await supabase
-        .from('content_generations')
-        .insert([{
-          user_input: userInput,
-          generated_content: cleanedResponse,
-          content_type: contentType,
-          platforms: platforms,
-          language: language,
-          created_at: new Date().toISOString()
-        }]);
+    if (supabase) {
+      try {
+        const { error: logError } = await supabase
+          .from('content_generations')
+          .insert([{
+            user_input: userInput,
+            generated_content: cleanedResponse,
+            content_type: contentType,
+            platforms: platforms,
+            language: language,
+            created_at: new Date().toISOString()
+          }]);
       
-      if (logError) {
-        console.error('Failed to log generation:', logError);
-      } else {
-        console.log('Content generation logged');
+        if (logError) {
+          console.error('Failed to log generation:', logError);
+        } else {
+          console.log('Content generation logged');
+        }
+      } catch (logError: any) {
+        // Don't fail the request if logging fails
+        console.error('Logging error:', logError);
       }
-    } catch (logError: any) {
-      // Don't fail the request if logging fails
-      console.error('Logging error:', logError);
     }
 
     return NextResponse.json({

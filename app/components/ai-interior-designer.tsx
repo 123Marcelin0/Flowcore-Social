@@ -322,6 +322,7 @@ export function AIInteriorDesigner() {
       }
       return prev.filter(img => img.id !== imageId)
     })
+  }
   const downloadResult = async (result: ProcessedResult) => {
     try {
       const response = await fetch(result.resultUrl)

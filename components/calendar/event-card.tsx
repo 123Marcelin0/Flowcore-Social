@@ -123,7 +123,7 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
         title: event.title,
         description: event.description
       }))
-      router.push(`/?workflow=trend-optimization&eventData=${eventData}`)
+      router.push(`/workflows/trend-optimization?eventData=${eventData}`)
     } else {
       // Navigate to content strategy workflow page
       toast.success('Navigiere zu Content Strategien...')
@@ -142,7 +142,7 @@ export function EventCard({ event, onEdit, onDelete, isDragging, style }: EventC
         estimatedEffort: 'medium' as const
       }
       const encodedStrategy = encodeURIComponent(JSON.stringify(strategyData))
-      router.push(`/?workflow=content-strategy&strategyData=${encodedStrategy}`)
+      router.push(`/workflows/content-strategy?strategyData=${encodedStrategy}`)
     }
   }
 

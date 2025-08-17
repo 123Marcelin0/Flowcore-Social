@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { 
   ArrowLeft,
@@ -32,6 +33,7 @@ export function AIStudioToolbar({
   isProcessing = false,
   hasFiles = false 
 }: AIStudioToolbarProps) {
+  const router = useRouter()
   // Tool definitions
   const tools = [
     {
@@ -71,6 +73,12 @@ export function AIStudioToolbar({
       color: 'text-teal-600 hover:bg-teal-50'
     }
   ]
+
+  const handleSelect = (tool: string) => {
+    onToolSelect?.(tool)
+    // also navigate to the deep linkable route
+    router.push(`/ai-studio/${tool}`)
+  }
 
   // Check if special tools are active for dynamic styling
   const isVideoActive = activeTool === 'video-edit'
@@ -159,8 +167,7 @@ export function AIStudioToolbar({
            @keyframes mergerFloat-0 { 0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); } 50% { transform: translate(18px, -12px) scale(1.1) rotate(180deg); } }
            @keyframes mergerFloat-1 { 0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); } 50% { transform: translate(-15px, 18px) scale(0.9) rotate(-180deg); } }
            @keyframes mergerFloat-2 { 0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); } 50% { transform: translate(22px, 8px) scale(1.15) rotate(90deg); } }
-           @keyframes mergerDrift-0 { 0% { transform: translateY(-100%) rotate(0deg); opacity: 0; } 12% { opacity: 0.06; } 88% { opacity: 0.06; } 100% { transform: translateY(100vh) rotate(180deg); opacity: 0; } }
-           @keyframes mergerDrift-1 { 0% { transform: translateY(-100%) rotate(180deg); opacity: 0; } 18% { opacity: 0.08; } 82% { opacity: 0.08; } 100% { transform: translateY(100vh) rotate(360deg); opacity: 0; } }
+           @keyframes mergerDrift-0 { 0% { transform: translateY(-100%) rotate(0deg); opacity: 0; } 12% { opacity: 0.06; } 88% { opacity: 0.06; } 100% { transform: translateY(100%) rotate(180deg); opacity: 0; } }
 
            /* Interior Tool Animations */
            @keyframes interiorStain-0 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(25px, -20px) scale(1.4); opacity: 0.25; } }
@@ -182,17 +189,6 @@ export function AIStudioToolbar({
            @keyframes interiorLine-0 { 0% { transform: translateY(-100%) rotate(0deg); opacity: 0; } 10% { opacity: 0.10; } 90% { opacity: 0.10; } 100% { transform: translateY(100vh) rotate(180deg); opacity: 0; } }
            @keyframes interiorLine-1 { 0% { transform: translateY(-100%) rotate(120deg); opacity: 0; } 15% { opacity: 0.08; } 85% { opacity: 0.08; } 100% { transform: translateY(100vh) rotate(300deg); opacity: 0; } }
            @keyframes interiorLine-2 { 0% { transform: translateY(-100%) rotate(240deg); opacity: 0; } 20% { opacity: 0.06; } 80% { opacity: 0.06; } 100% { transform: translateY(100vh) rotate(420deg); opacity: 0; } }
-           
-           @keyframes interiorParticle-0 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(10px, -15px) scale(1.2); opacity: 0.25; } }
-           @keyframes interiorParticle-1 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(-12px, 18px) scale(0.8); opacity: 0.20; } }
-           @keyframes interiorParticle-2 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(15px, 12px) scale(1.1); opacity: 0.23; } }
-           @keyframes interiorParticle-3 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(-8px, -20px) scale(0.9); opacity: 0.18; } }
-           @keyframes interiorParticle-4 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(20px, 25px) scale(1.3); opacity: 0.27; } }
-           @keyframes interiorParticle-5 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(-18px, 15px) scale(0.7); opacity: 0.21; } }
-           @keyframes interiorParticle-6 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(12px, -25px) scale(1.1); opacity: 0.24; } }
-           @keyframes interiorParticle-7 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(-25px, 22px) scale(0.8); opacity: 0.19; } }
-           @keyframes interiorParticle-8 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(18px, 30px) scale(1.2); opacity: 0.26; } }
-           @keyframes interiorParticle-9 { 0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.15; } 50% { transform: translate(-15px, -18px) scale(0.9); opacity: 0.22; } }
         `}</style>
       </div>
       
@@ -227,7 +223,7 @@ export function AIStudioToolbar({
               <Button
                 key={tool.id}
                 variant="ghost"
-                onClick={() => onToolSelect?.(tool.id)}
+                onClick={() => handleSelect(tool.id)}
                 className={`relative w-full justify-start gap-3 h-12 text-sm transition-all duration-500 active:scale-95 rounded-xl overflow-hidden group ${
                   activeTool === tool.id 
                     ? 'bg-gradient-to-r from-white/[0.25] via-white/[0.15] to-white/[0.08] backdrop-blur-[35px] backdrop-saturate-[200%] shadow-[0_16px_48px_rgba(255,255,255,0.08),inset_0_2px_0_rgba(255,255,255,0.2)] border border-white/20'
