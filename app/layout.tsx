@@ -35,6 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} ${signature.variable}`}>
+        <a href="#main" className="sr-only focus:not-sr-only">Skip to content</a>
         <div id="cursor-glow" aria-hidden="true"></div>
         <ErrorBoundaryWrapper>
           <Suspense fallback={

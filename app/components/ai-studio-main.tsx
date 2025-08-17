@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -82,6 +83,14 @@ export function AIStudioMain({
   onFilesChange, 
   onProcessingComplete 
 }: AIStudioMainProps) {
+  const pathname = usePathname()
+  // derive tool from URL if present
+  const deepLinkedTool = useMemo(() => {
+    if (!pathname.startsWith('/ai-studio/')) return null
+    const seg = pathname.split('/')[2] || null
+    return seg as string | null
+  }, [pathname])
+  const effectiveTool = activeTool ?? deepLinkedTool
   const { user } = useAuth()
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -182,7 +191,7 @@ export function AIStudioMain({
         onProcessingComplete?.()
         const aiMessage: ChatMessage = {
           id: `ai-${Date.now()}`,
-          content: `Processing complete! Your ${uploadedFiles.length} file(s) have been processed using ${activeTool}. Results are ready for download.`,
+          content: `Processing complete! Your ${uploadedFiles.length} file(s) have been processed using ${effectiveTool}. Results are ready for download.`,
           sender: 'ai',
           timestamp: new Date()
         }
@@ -192,7 +201,7 @@ export function AIStudioMain({
       
       return () => clearTimeout(timer)
     }
-  }, [isProcessing, onProcessingComplete, uploadedFiles.length, activeTool])
+  }, [isProcessing, onProcessingComplete, uploadedFiles.length, effectiveTool])
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -228,14 +237,14 @@ export function AIStudioMain({
     chatTimeoutRef.current = setTimeout(() => {
       let response = "I can help you with image enhancement, interior design, video editing, and content creation. What would you like to work on?"
       
-      if (activeTool) {
+      if (effectiveTool) {
         const toolNames = {
           'interior-design': 'interior design',
           'image-enhance': 'image enhancement', 
           'video-edit': 'video editing',
           'content-create': 'content creation'
         }
-        response = `Great! I see you've selected ${toolNames[activeTool as keyof typeof toolNames] || activeTool}. ${uploadedFiles.length > 0 ? `You have ${uploadedFiles.length} file(s) ready to process.` : 'Upload some files and I can help you get started!'}`
+        response = `Great! I see you've selected ${toolNames[effectiveTool as keyof typeof toolNames] || effectiveTool}. ${uploadedFiles.length > 0 ? `You have ${uploadedFiles.length} file(s) ready to process.` : 'Upload some files and I can help you get started!'}`
       }
       
       const aiMessage: ChatMessage = {
@@ -248,7 +257,7 @@ export function AIStudioMain({
       setIsChatLoading(false)
       chatTimeoutRef.current = null
     }, 1000)
-  }, [chatInput, activeTool, uploadedFiles.length])
+  }, [chatInput, effectiveTool, uploadedFiles.length])
 
   // Remove file
   const removeFile = useCallback((fileId: string) => {
@@ -266,7 +275,7 @@ export function AIStudioMain({
   // Enhanced page transitions with AnimatePresence
   return (
     <AnimatePresence mode="wait">
-      {activeTool === 'interior-design' && (
+      {effectiveTool === 'interior-design' && (
         <motion.div
           key="interior-design"
           variants={pageVariants}
@@ -279,7 +288,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {activeTool === 'video-edit' && (
+      {effectiveTool === 'video-edit' && (
         <motion.div
           key="video-edit"
           variants={pageVariants}
@@ -292,7 +301,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {activeTool === 'image-generation' && (
+      {effectiveTool === 'image-generation' && (
         <motion.div
           key="image-generation"
           variants={pageVariants}
@@ -305,7 +314,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {activeTool === 'video-merger' && (
+      {effectiveTool === 'video-merger' && (
         <motion.div
           key="video-merger"
           variants={pageVariants}
@@ -318,7 +327,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {activeTool === 'video-editor' && (
+      {effectiveTool === 'video-editor' && (
         <motion.div
           key="video-editor"
           variants={pageVariants}
@@ -364,7 +373,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {activeTool === 'content-create' && (
+      {effectiveTool === 'content-create' && (
         <motion.div
           key="content-create"
           variants={pageVariants}
@@ -377,7 +386,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {!activeTool && (
+      {!effectiveTool && (
         <motion.div
           key="default-upload"
           variants={pageVariants}

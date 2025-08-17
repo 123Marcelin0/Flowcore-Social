@@ -4,22 +4,24 @@ import { generateEmbedding } from '@/lib/openaiService';
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
 
-// Initialize Supabase client for API routes (backend)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-);
+function getSupabaseService() {
+	const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+	const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+	if (!url || !key) return null
+	return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, 
-});
+function getSupabaseAnon() {
+	const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+	const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+	if (!url || !key) return null
+	return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
+
+function getOpenAI() {
+	if (!process.env.OPENAI_API_KEY) return null
+	return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+}
 
 // Cache for embeddings to avoid regenerating same embeddings
 const embeddingCache = new Map<string, number[]>();
@@ -34,21 +36,16 @@ async function verifyAuth(request: NextRequest) {
   const token = authHeader.replace('Bearer ', '');
   
   try {
-    const anonClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    
+    const anonClient = getSupabaseAnon()
+    if (!anonClient) return { authenticated: false, user: null, error: 'Supabase not configured' }
     const { data: { user }, error } = await anonClient.auth.getUser(token);
     
     if (error || !user) {
-      console.error('Auth verification error:', error?.message);
       return { authenticated: false, user: null, error: 'Invalid or expired token' };
     }
 
     return { authenticated: true, user, error: null };
   } catch (error) {
-    console.error('Auth verification exception:', error);
     return { authenticated: false, user: null, error: 'Authentication verification failed' };
   }
 }
@@ -109,13 +106,19 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
 
   try {
     // 1. Get comprehensive user profile and strategy data
+    const supabaseSvc = getSupabaseService();
+    if (!supabaseSvc) {
+      console.error('Supabase client not configured.');
+      return context;
+    }
+
     const [userProfileResult, userStrategyResult] = await Promise.all([
-      supabase
+      supabaseSvc
         .from('user_profiles')
         .select('*')
         .eq('user_id', userId)
         .single(),
-      supabase
+      supabaseSvc
         .from('user_strategy_profiles')
         .select('*')
         .eq('user_id', userId)
@@ -132,7 +135,13 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
     });
 
     // 2. Get ALL user posts with enhanced filtering and analysis
-    const { data: allPosts, error: postsError } = await supabase
+         const supabaseSvc2 = getSupabaseService();
+     if (!supabaseSvc2) {
+       console.error('Supabase client not configured.');
+       return context;
+     }
+ 
+     const { data: allPosts, error: postsError } = await supabaseSvc2
       .from('posts')
       .select(`
         *,
@@ -285,7 +294,13 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
     }
 
     // 3. Get user's content ideas for context
-    const { data: contentIdeas } = await supabase
+    const supabaseIdeas = getSupabaseService();
+    if (!supabaseIdeas) {
+      console.error('Supabase client not configured.');
+      return context;
+    }
+
+    const { data: contentIdeas } = await supabaseIdeas
       .from('content_generations')
       .select('*')
       .eq('user_id', userId)
@@ -298,7 +313,13 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
     }
 
     // 4. Enhanced user preferences with strategy data
-    const { data: userPreferences } = await supabase
+    const supabasePrefs = getSupabaseService();
+    if (!supabasePrefs) {
+      console.error('Supabase client not configured.');
+      return context;
+    }
+
+    const { data: userPreferences } = await supabasePrefs
       .from('user_preferences')
       .select(`
         *,
@@ -319,7 +340,13 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
     }
 
     // 5. Enhanced conversation history with semantic search for photographic memory
-    const { data: chatHistory } = await supabase
+    const supabaseHistory = getSupabaseService();
+    if (!supabaseHistory) {
+      console.error('Supabase client not configured.');
+      return context;
+    }
+
+    const { data: chatHistory } = await supabaseHistory
       .from('chat_messages')
       .select('*')
       .eq('user_id', userId)
@@ -334,7 +361,13 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
     if (queryEmbedding && queryEmbedding.length > 0) {
       try {
         // Similar posts
-        const { data: similarPosts } = await supabase
+        const supabaseSimilarPosts = getSupabaseService();
+        if (!supabaseSimilarPosts) {
+          console.error('Supabase client not configured.');
+          return context;
+        }
+
+        const { data: similarPosts } = await supabaseSimilarPosts
           .rpc('search_similar_posts', {
             user_uuid: userId,
             query_embedding: queryEmbedding,
@@ -347,7 +380,13 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
         }
 
         // Similar messages  
-        const { data: similarMessages } = await supabase
+        const supabaseSimilarMsgs = getSupabaseService();
+        if (!supabaseSimilarMsgs) {
+          console.error('Supabase client not configured.');
+          return context;
+        }
+
+        const { data: similarMessages } = await supabaseSimilarMsgs
           .rpc('search_similar_messages', {
             user_uuid: userId,
             query_embedding: queryEmbedding,
@@ -364,6 +403,12 @@ async function getRelevantContext(userId: string, query: string, queryEmbedding:
     }
 
     // 7. Get trending topics relevant to user's domain
+    const supabaseTrends = getSupabaseService();
+    if (!supabaseTrends) {
+      console.error('Supabase client not configured.');
+      return context;
+    }
+
     const userDomain = context.userProfile?.expertise || 
                       context.userStrategyProfile?.active_region || 
                       'general';
@@ -736,7 +781,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Let's also check what posts exist for ANY user to understand the data structure
-    const { data: allUsersPostsSample, error: sampleError } = await supabase
+    const supabaseSample = getSupabaseService();
+    if (!supabaseSample) {
+      console.error('Supabase client not configured.');
+      return NextResponse.json(
+        { success: false, error: 'Supabase nicht konfiguriert' },
+        { status: 500 }
+      );
+    }
+
+    const { data: allUsersPostsSample, error: sampleError } = await supabaseSample
       .from('posts')
       .select('id, user_id, content, title, likes, comments_count, platforms, status')
       .order('likes', { ascending: false })
@@ -767,7 +821,16 @@ export async function POST(request: NextRequest) {
     if (incoming_conversation_id) {
       currentConversationId = incoming_conversation_id;
     } else {
-      const { data: latestMessage } = await supabase
+      const supabaseLatest = getSupabaseService();
+      if (!supabaseLatest) {
+        console.error('Supabase client not configured.');
+        return NextResponse.json(
+          { success: false, error: 'Supabase nicht konfiguriert' },
+          { status: 500 }
+        );
+      }
+
+      const { data: latestMessage } = await supabaseLatest
         .from('chat_messages')
         .select('conversation_id')
         .eq('user_id', user.id)
@@ -791,6 +854,15 @@ export async function POST(request: NextRequest) {
     });
 
     // 6. Store the user's message
+    const supabaseStore = getSupabaseService();
+    if (!supabaseStore) {
+      console.error('Supabase client not configured.');
+      return NextResponse.json(
+        { success: false, error: 'Supabase nicht konfiguriert' },
+        { status: 500 }
+      );
+    }
+
     const userMessageToSave = {
       user_id: user.id,
       conversation_id: currentConversationId,
@@ -802,13 +874,22 @@ export async function POST(request: NextRequest) {
     // Don't wait for this to complete
     (async () => {
       try {
-        await supabase.from('chat_messages').insert([userMessageToSave]);
+        await supabaseStore.from('chat_messages').insert([userMessageToSave]);
       } catch (error: any) {
         console.error('Error saving user message:', error);
       }
     })();
 
     // 7. Prepare messages for GPT-4o
+    const openai = getOpenAI();
+    if (!openai) {
+      console.error('OpenAI client not configured.');
+      return NextResponse.json(
+        { success: false, error: 'OpenAI nicht konfiguriert' },
+        { status: 500 }
+      );
+    }
+
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -939,6 +1020,15 @@ Können Sie Ihre Frage spezifischer formulieren oder einen dieser Bereiche wähl
     // 9. Store the assistant's response
     const responseEmbedding = await getEmbedding(llmResponse);
     
+    const supabaseSave = getSupabaseService();
+    if (!supabaseSave) {
+      console.error('Supabase client not configured.');
+      return NextResponse.json(
+        { success: false, error: 'Supabase nicht konfiguriert' },
+        { status: 500 }
+      );
+    }
+
     const assistantMessageToSave = {
       user_id: user.id,
       conversation_id: currentConversationId,
@@ -950,7 +1040,7 @@ Können Sie Ihre Frage spezifischer formulieren oder einen dieser Bereiche wähl
     // Don't wait for this to complete
     (async () => {
       try {
-        await supabase.from('chat_messages').insert([assistantMessageToSave]);
+        await supabaseSave.from('chat_messages').insert([assistantMessageToSave]);
       } catch (error: any) {
         console.error('Error saving assistant message:', error);
       }
