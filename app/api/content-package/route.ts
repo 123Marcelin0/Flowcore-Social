@@ -4,17 +4,12 @@ import { chatContextAnalyzer } from '@/lib/chat-context-analyzer';
 import { enhancedContentGenerator } from '@/lib/enhanced-content-generator';
 import { contentPackageBuilder } from '@/lib/content-package-builder';
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-);
+function getSupabaseService() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 // Rate limiting in-memory store (in production, use Redis)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
@@ -31,21 +26,16 @@ async function verifyAuth(request: NextRequest) {
   const token = authHeader.replace('Bearer ', '');
   
   try {
-    const anonClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    
+    const anonUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!anonUrl || !anonKey) return { authenticated: false, user: null, error: 'Supabase not configured' }
+    const anonClient = createClient(anonUrl, anonKey);
     const { data: { user }, error } = await anonClient.auth.getUser(token);
-    
     if (error || !user) {
-      console.error('Auth verification error:', error?.message);
       return { authenticated: false, user: null, error: 'Invalid or expired token' };
     }
-
     return { authenticated: true, user, error: null };
   } catch (error) {
-    console.error('Auth verification exception:', error);
     return { authenticated: false, user: null, error: 'Authentication verification failed' };
   }
 }
@@ -56,7 +46,6 @@ function checkRateLimit(userId: string): { allowed: boolean; remaining: number; 
   const userLimits = rateLimitStore.get(userId);
 
   if (!userLimits || now > userLimits.resetTime) {
-    // Reset or initialize rate limit
     const resetTime = now + RATE_LIMIT_WINDOW;
     rateLimitStore.set(userId, { count: 1, resetTime });
     return { allowed: true, remaining: RATE_LIMIT_REQUESTS - 1, resetTime };
@@ -66,7 +55,6 @@ function checkRateLimit(userId: string): { allowed: boolean; remaining: number; 
     return { allowed: false, remaining: 0, resetTime: userLimits.resetTime };
   }
 
-  // Increment count
   userLimits.count++;
   rateLimitStore.set(userId, userLimits);
   
@@ -86,16 +74,11 @@ async function retryWithBackoff<T>(
       return await operation();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
       if (attempt === maxRetries) {
         throw lastError;
       }
-      
-      // Exponential backoff with jitter
       const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
       await new Promise(resolve => setTimeout(resolve, delay));
-      
-      console.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms:`, lastError.message);
     }
   }
   
@@ -104,6 +87,9 @@ async function retryWithBackoff<T>(
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = getSupabaseService()
+    if (!supabase) return NextResponse.json({ success: false, error: 'Supabase not configured' }, { status: 500 })
+
     // 1. Authenticate the user
     const authResult = await verifyAuth(request);
     if (!authResult.authenticated) {
@@ -180,7 +166,6 @@ export async function POST(request: NextRequest) {
     // 5. Generate content package with retry mechanism
     const contentPackage = await retryWithBackoff(async () => {
       if (regenerate && previousPackageId) {
-        // Get previous package for regeneration
         const { data: previousPackage } = await supabase
           .from('content_packages')
           .select('*')
@@ -202,119 +187,73 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Generate new content package
-      if (platform === 'content-package') {
-        // Use content package builder for comprehensive packages
-        return contentPackageBuilder.buildContentPackage(
-          userContext,
-          topic,
-          {
-            platform: 'instagram', // Default for package builder
-            contentType: contentType as any,
-            tone: tone as any,
-            length: length as any
-          }
-        );
-      } else {
-        // Use enhanced content generator for platform-specific content
-        return await enhancedContentGenerator.generateContentPackage(
-          userContext,
-          {
-            prompt: topic,
-            platform: platform as any,
-            contentType: contentType as any,
-            tone: tone as any,
-            length: length as any
-          }
-        );
-      }
+      return await enhancedContentGenerator.generate(
+        topic,
+        userContext,
+        {
+          platform: platform as any,
+          contentType: contentType as any,
+          tone: tone as any,
+          length: length as any
+        }
+      );
     });
 
-    // 6. Store the generated content package
-    const packageId = (contentPackage as any).id || `pkg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const packageMetadata = (contentPackage as any).metadata || {
-      generatedAt: new Date(),
-      contextSummary: userContext.contextSummary,
-      userStyle: userContext.userStyle.tone,
-      topics: userContext.topics.slice(0, 10),
-      confidence: 0.8,
-      regenerationCount: regenerate ? 1 : 0
-    };
+    if (!contentPackage) {
+      return NextResponse.json(
+        { success: false, error: 'Content generation failed' },
+        { status: 500 }
+      );
+    }
 
-    const packageToStore = {
-      id: packageId,
-      user_id: user.id,
-      topic,
-      platform,
-      content_type: contentType,
-      script: contentPackage.script,
-      hashtags: contentPackage.hashtags,
-      captions: contentPackage.captions,
-      implementation_guide: contentPackage.implementationGuide,
-      visual_guidance: contentPackage.visualGuidance,
-      metadata: packageMetadata,
-      created_at: new Date().toISOString()
-    };
+    // 6. Save content package
+    const { data: savedPackage, error: saveError } = await supabase
+      .from('content_packages')
+      .insert({
+        user_id: user.id,
+        topic,
+        platform,
+        content_type: contentType,
+        tone,
+        length,
+        content: contentPackage,
+        regenerate_of: regenerate ? previousPackageId : null
+      })
+      .select()
+      .single();
 
-    // Store asynchronously, don't block response
-    (async () => {
-      try {
-        const { error: storeError } = await supabase
-          .from('content_packages')
-          .insert([packageToStore]);
-        
-        if (storeError) {
-          console.error('Failed to store content package:', storeError);
-        } else {
-          console.log('Content package stored successfully:', packageToStore.id);
-        }
-      } catch (error) {
-        console.error('Error storing content package:', error);
-      }
-    })();
+    if (saveError) {
+      console.error('Failed to save content package:', saveError);
+      return NextResponse.json(
+        { success: false, error: 'Failed to save content package' },
+        { status: 500 }
+      );
+    }
 
-    // 7. Return successful response with rate limit headers
-    return NextResponse.json(
-      {
-        success: true,
-        contentPackage,
-                 userContext: {
-           topics: userContext.topics.slice(0, 5),
-           userStyle: userContext.userStyle,
-           messageCount: userContext.messageCount,
-           confidence: packageMetadata.confidence || 0.8
-         },
-        packageId: packageToStore.id
-      },
-      {
-        headers: {
-          'X-RateLimit-Limit': RATE_LIMIT_REQUESTS.toString(),
-          'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
-          'X-RateLimit-Reset': rateLimitResult.resetTime.toString()
-        }
-      }
-    );
+    // 7. Build comprehensive response
+    const response = contentPackageBuilder.buildResponse(contentPackage, savedPackage?.id);
+
+    return NextResponse.json({ success: true, data: response }, { status: 200 });
 
   } catch (error) {
-    console.error('Content package generation error:', error);
-    
+    console.error('Content Package API Error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to generate content package',
-        details: process.env.NODE_ENV === 'development' 
-          ? (error instanceof Error ? error.message : String(error))
-          : 'Internal server error'
-      },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
-// GET endpoint to retrieve user's content packages
 export async function GET(request: NextRequest) {
   try {
-    // 1. Authenticate the user
+    const supabase = getSupabaseService()
+    if (!supabase) return NextResponse.json({ success: false, error: 'Supabase not configured' }, { status: 500 })
+
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '10');
+    const platform = searchParams.get('platform');
+
     const authResult = await verifyAuth(request);
     if (!authResult.authenticated) {
       return NextResponse.json(
@@ -325,55 +264,35 @@ export async function GET(request: NextRequest) {
 
     const user = authResult.user!;
 
-    // 2. Parse query parameters
-    const { searchParams } = new URL(request.url);
-    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
-    const offset = parseInt(searchParams.get('offset') || '0');
-    const platform = searchParams.get('platform');
-    const contentType = searchParams.get('contentType');
-
-    // 3. Build query
     let query = supabase
       .from('content_packages')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .order('created_at', { ascending: false });
 
     if (platform) {
       query = query.eq('platform', platform);
     }
 
-    if (contentType) {
-      query = query.eq('content_type', contentType);
-    }
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
 
-    // 4. Execute query
-    const { data: packages, error } = await query;
+    const { data: packages, error } = await query.range(from, to);
 
     if (error) {
-      throw error;
+      console.error('Failed to fetch content packages:', error);
+      return NextResponse.json(
+        { success: false, error: 'Failed to fetch content packages' },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      packages: packages || [],
-      pagination: {
-        limit,
-        offset,
-        hasMore: (packages?.length || 0) === limit
-      }
-    });
+    return NextResponse.json({ success: true, data: packages }, { status: 200 });
 
   } catch (error) {
-    console.error('Error retrieving content packages:', error);
-    
+    console.error('Content Package API Error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to retrieve content packages',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }

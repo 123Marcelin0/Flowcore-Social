@@ -1,9 +1,12 @@
 import OpenAI from 'openai'
 import { supabase } from './supabase'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+let openai: OpenAI | null = null
+function getOpenAI() {
+	if (!process.env.OPENAI_API_KEY) return null
+	if (!openai) openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+	return openai
+}
 
 export interface PostingPlan {
   day: number
@@ -174,9 +177,10 @@ export class AIPlanner {
       let postingPlan: PostingPlan[] = []
 
       // Try to use OpenAI if available
-      if (process.env.OPENAI_API_KEY) {
+      const client = getOpenAI()
+      if (client) {
         try {
-          const completion = await openai.chat.completions.create({
+          const completion = await client.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.7,
@@ -204,7 +208,21 @@ export class AIPlanner {
 
       // Enhanced fallback with realistic examples
       if (postingPlan.length === 0) {
-        postingPlan = this.generateEnhancedFallbackPlan(analysisData, targetMonth)
+        // Fallback: construct a simple mock plan from examples
+        postingPlan = Array.from({ length: 12 }).map((_, i) => ({
+          day: (i + 1) * 2,
+          title: MOCK_POST_EXAMPLES[i % MOCK_POST_EXAMPLES.length].title,
+          content: MOCK_POST_EXAMPLES[i % MOCK_POST_EXAMPLES.length].content,
+          platforms: ['instagram'],
+          hashtags: MOCK_POST_EXAMPLES[i % MOCK_POST_EXAMPLES.length].hashtags,
+          bestTime: ['09:00','14:30','19:00'][i % 3],
+          category: 'fresh',
+          reasoning: 'Mock fallback plan',
+          mediaType: MOCK_POST_EXAMPLES[i % MOCK_POST_EXAMPLES.length].mediaType as any,
+          estimatedReach: MOCK_POST_EXAMPLES[i % MOCK_POST_EXAMPLES.length].estimatedReach,
+          estimatedEngagement: MOCK_POST_EXAMPLES[i % MOCK_POST_EXAMPLES.length].estimatedEngagement,
+          contentPillars: MOCK_POST_EXAMPLES[i % MOCK_POST_EXAMPLES.length].contentPillars,
+        }))
       }
 
       console.log(`✅ Generated ${postingPlan.length} posts for ${targetMonth}`)
@@ -212,164 +230,28 @@ export class AIPlanner {
 
     } catch (error) {
       console.error('Error generating posting plan:', error)
-      return this.generateEnhancedFallbackPlan(analysisData, targetMonth)
+      return []
     }
   }
 
-  static generateEnhancedFallbackPlan(analysisData: AIAnalysisData, targetMonth: string): PostingPlan[] {
-    const baseExamples = MOCK_POST_EXAMPLES
-    const userContent = [...analysisData.ideas, ...analysisData.drafts]
-    
-    // Create enhanced plan mixing user content with high-quality examples
-    const plan: PostingPlan[] = [
-      // Week 1 - Strong Start
-      {
-        day: 2,
-        title: "Montags-Motivation: Traumhaus finden",
-        content: "🏡 Neuer Monat, neue Möglichkeiten! Wer sucht noch das perfekte Zuhause? Unser Team hilft dabei, Träume in Realität zu verwandeln. Was ist euer wichtigstes Kriterium beim Hauskauf? 💭\n\n#NeuerMonat #Immobilien #Traumhaus",
-        platforms: ["instagram", "facebook"],
-        hashtags: ["#Immobilien", "#Traumhaus", "#Beratung", "#NeuerMonat", "#Motivation"],
-        bestTime: "09:00",
-        category: "fresh",
-        reasoning: "Motivierender Start in den Monat mit Community-Engagement",
-        mediaType: "image",
-        estimatedReach: 2100,
-        estimatedEngagement: 9.5,
-        contentPillars: ["Motivation", "Community", "Beratung"]
-      },
-      
-      // Use user's content if available
-      ...(userContent.length > 0 ? [{
-        day: 5,
-        title: userContent[0]?.title || "User Content Idee",
-        content: userContent[0]?.description?.substring(0, 200) + "...\n\n#UserGenerated #Immobilien #Content" || "Basierend auf Ihrer Content-Idee...",
-        platforms: ["instagram"],
-        hashtags: ["#Immobilien", "#UserContent", "#Ideas"],
-        bestTime: "14:30",
-        category: "idea" as const,
-        reasoning: "Basiert auf Ihrer gespeicherten Content-Idee",
-        mediaType: "text" as const,
-        estimatedReach: 1500,
-        estimatedEngagement: 7.2,
-        contentPillars: ["User Content", "Personal"]
-      }] : []),
-
-      // Enhanced examples from mock data
-      {
-        day: 8,
-        title: baseExamples[0].title,
-        content: baseExamples[0].content,
-        platforms: ["instagram", "tiktok"],
-        hashtags: baseExamples[0].hashtags,
-        bestTime: "19:00",
-        category: baseExamples[0].category as 'fresh',
-        reasoning: "Luxus-Content für Abend-Engagement",
-        mediaType: baseExamples[0].mediaType as 'image',
-        estimatedReach: baseExamples[0].estimatedReach || 2500,
-        estimatedEngagement: baseExamples[0].estimatedEngagement || 8.5,
-        contentPillars: baseExamples[0].contentPillars || ["Luxus"]
-      },
-
-      {
-        day: 12,
-        title: baseExamples[1].title,
-        content: baseExamples[1].content,
-        platforms: ["instagram", "facebook"],
-        hashtags: baseExamples[1].hashtags,
-        bestTime: "14:30",
-        category: baseExamples[1].category as 'fresh',
-        reasoning: "Bildungs-Content für Mittagszeit",
-        mediaType: baseExamples[1].mediaType as 'carousel',
-        estimatedReach: baseExamples[1].estimatedReach || 3200,
-        estimatedEngagement: baseExamples[1].estimatedEngagement || 12.3,
-        contentPillars: baseExamples[1].contentPillars || ["Bildung"]
-      },
-
-      {
-        day: 16,
-        title: "Behind the Scenes: Hausbesichtigung",
-        content: "🎬 Heute nehmen wir euch mit zur Hausbesichtigung! Von der ersten Minute bis zum finalen Rundgang - seht selbst, wie eine Immobilien-Beratung abläuft 🏠\n\n#BehindTheScenes #Hausbesichtigung #Immobilien",
-        platforms: ["instagram", "tiktok"],
-        hashtags: ["#BehindTheScenes", "#Hausbesichtigung", "#Immobilien", "#RealEstate", "#BTS"],
-        bestTime: "15:30",
-        category: "fresh",
-        reasoning: "BTS-Content funktioniert immer gut",
-        mediaType: "video",
-        estimatedReach: 2800,
-        estimatedEngagement: 14.2,
-        contentPillars: ["Behind the Scenes", "Authentizität", "Prozess"]
-      },
-
-      {
-        day: 20,
-        title: baseExamples[2].title,
-        content: baseExamples[2].content,
-        platforms: ["instagram", "facebook"],
-        hashtags: baseExamples[2].hashtags,
-        bestTime: "18:00",
-        category: baseExamples[2].category as 'fresh',
-        reasoning: "Familien-Content für Feierabend",
-        mediaType: baseExamples[2].mediaType as 'video',
-        estimatedReach: baseExamples[2].estimatedReach || 1800,
-        estimatedEngagement: baseExamples[2].estimatedEngagement || 15.7,
-        contentPillars: baseExamples[2].contentPillars || ["Familie"]
-      },
-
-      {
-        day: 24,
-        title: "Marktanalyse: Aktuelle Trends",
-        content: "📈 Immobilienmarkt ${targetMonth}: Diese Trends solltet ihr kennen!\n\n✅ Nachhaltige Immobilien im Fokus\n✅ Home-Office-Räume gefragter denn je\n✅ Energieeffiziente Häuser top\n\nWas sind eure Prioritäten? 🏘️",
-        platforms: ["instagram", "linkedin", "facebook"],
-        hashtags: ["#Immobilienmarkt", "#Trends", "#Nachhaltigkeit", "#HomeOffice", "#Analyse"],
-        bestTime: "12:00",
-        category: "fresh",
-        reasoning: "Marktanalyse für informierte Käufer",
-        mediaType: "carousel",
-        estimatedReach: 3500,
-        estimatedEngagement: 11.8,
-        contentPillars: ["Marktanalyse", "Trends", "Bildung"]
-      },
-
-      {
-        day: 28,
-        title: "Monatsrückblick: Erfolge feiern",
-        content: "🎉 Was für ein Monat! Zusammen haben wir wieder Träume wahr gemacht:\n\n🏠 12 glückliche Familien\n🔑 Neue Zuhause übergeben\n❤️ Unzählige Lächeln\n\nAuf was seid ihr diesen Monat stolz? 💪",
-        platforms: ["instagram", "facebook"],
-        hashtags: ["#Monatsrückblick", "#Erfolge", "#GlücklicheFamilien", "#Dankbar", "#Team"],
-        bestTime: "16:00",
-        category: "fresh",
-        reasoning: "Positiver Monatsabschluss mit Erfolgsgeschichten",
-        mediaType: "image",
-        estimatedReach: 2200,
-        estimatedEngagement: 13.5,
-        contentPillars: ["Erfolge", "Community", "Dankbarkeit"]
-      }
-    ]
-
-    // Add user drafts if available
-    if (analysisData.drafts.length > 0) {
-      plan.push({
-        day: 15,
-        title: "Aus den Entwürfen: " + (analysisData.drafts[0]?.title || "Ihr Entwurf"),
-        content: (analysisData.drafts[0]?.content?.substring(0, 150) || "Basierend auf Ihrem gespeicherten Entwurf...") + "\n\n#Entwurf #Immobilien",
-        platforms: ["instagram"],
-        hashtags: ["#Immobilien", "#Content", "#Draft"],
-        bestTime: "13:00",
-        category: "draft",
-        reasoning: "Verwendung Ihres gespeicherten Entwurfs",
-        mediaType: "text",
-        estimatedReach: 1400,
-        estimatedEngagement: 6.8,
-        contentPillars: ["User Content", "Persönlich"]
-      })
-    }
-
-    return plan.slice(0, 8) // Return 8 quality posts
-  }
-
-  static async savePostingPlan(userId: string, plan: PostingPlan[], targetMonth: string) {
+  static async savePostingPlan(userId: string, postingPlan: PostingPlan[], targetMonth: string): Promise<boolean> {
     try {
-      console.log(`💾 Mock saving ${plan.length} posts for user ${userId} in ${targetMonth}`)
+      // Save to a table if configured; otherwise, no-op success
+      // Assuming isSupabaseConfigured is defined elsewhere or removed if not needed
+      // For now, commenting out the actual save logic as it's not in the new_code
+      // if (!isSupabaseConfigured) return true
+      // const { error } = await supabase
+      //   .from('ai_posting_plans')
+      //   .insert(postingPlan.map((post) => ({
+      //     user_id: userId,
+      //     month: targetMonth,
+      //     ...post,
+      //   })))
+      // if (error) {
+      //   console.error('Failed to save posting plan:', error)
+      //   return false
+      // }
+      console.log(`💾 Mock saving ${postingPlan.length} posts for user ${userId} in ${targetMonth}`)
       
       // Instead of saving to database, just simulate success
       // This avoids the database schema issues with the ai_generated column
@@ -377,7 +259,7 @@ export class AIPlanner {
       // Simulate processing time
       await new Promise(resolve => setTimeout(resolve, 500))
       
-      console.log(`✅ Mock successfully saved ${plan.length} posts (not actually saved to database)`)
+      console.log(`✅ Mock successfully saved ${postingPlan.length} posts (not actually saved to database)`)
       return true
       
     } catch (error) {

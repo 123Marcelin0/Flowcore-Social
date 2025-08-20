@@ -28,7 +28,7 @@ import {
 
 } from 'lucide-react'
 import { InteriorDesignWorkflow } from './interior-design-workflow'
-import { AIStudioVideoGenerator } from './ai-studio-video-generator'
+// Removed AIStudioVideoGenerator import - component deleted
 import { AIProjectManager, type AIProject } from './ai-project-manager'
 import { useAuth } from '@/lib/auth-context'
 import { toast } from 'sonner'
@@ -641,7 +641,7 @@ export function AIStudio() {
         {activeSection === 'home' && renderHomeSection()}
         {activeSection === 'interior-design' && renderInteriorDesignSection()}
         {activeSection === 'image-tools' && renderPlaceholderSection('Image Enhancement Tools', 'Enhance, create, and optimize images with AI')}
-        {activeSection === 'video-tools' && <AIStudioVideoGenerator />}
+        {activeSection === 'video-tools' && renderPlaceholderSection('Video Tools', 'Video editing and generation tools')}
         {activeSection === 'content-creation' && renderPlaceholderSection('Content Creation Hub', 'Generate engaging content with AI assistance')}
       </div>
     </div>

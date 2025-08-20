@@ -1,3 +1,4 @@
+// Demo page retained; routed system is primary.
 "use client"
 
 import React, { useState, useEffect } from 'react'

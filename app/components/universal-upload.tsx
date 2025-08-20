@@ -34,10 +34,11 @@ import { createClient } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabase = (SUPABASE_URL && SUPABASE_ANON && !/localhost:54321/i.test(SUPABASE_URL) && !/dummy|placeholder/i.test(SUPABASE_ANON))
+  ? createClient(SUPABASE_URL, SUPABASE_ANON)
+  : ({ storage: { from: () => ({ upload: async () => ({ data: null, error: new Error('Supabase not configured') }) }) } } as any)
 
 export interface UploadedFile {
   id: string

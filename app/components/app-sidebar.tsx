@@ -27,6 +27,7 @@ import {
   Calendar
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { useRouter } from "next/navigation"
 
 type Section = "dashboard" | "calendar" | "ai-studio" | "interactions" | "ideas" | "settings"
 
@@ -38,6 +39,7 @@ interface AppSidebarProps {
 
 export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSidebarProps) {
   const { user, userProfile } = useAuth()
+  const router = useRouter()
 
   const menuItems = [
     { id: "dashboard" as Section, label: "Dashboard", icon: Home },
@@ -118,13 +120,51 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
         </div>
       </div>
 
+      {/* Legacy sidebar used by ClientPageRoot. New routing sidebar lives in components/app-nav-sidebar.tsx */}
+      <div className="p-6 pt-0">
+        <div className="flex items-center gap-2 mb-4">
+          <Shield className="w-4 h-4 text-red-500" />
+          <span className="text-sm text-red-600 font-medium">
+            Diese Seitenleiste ist veraltet. Neue Routing-Komponente befindet sich in <code>components/app-nav-sidebar.tsx</code>.
+          </span>
+        </div>
+        <Button 
+          variant="outline" 
+          className={`w-full justify-start gap-3 rounded-2xl transition-all duration-300 ${
+            isAIStudio 
+              ? 'border-white/20 text-white/80 hover:text-white hover:bg-white/15 backdrop-blur-lg' 
+              : 'border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <div className="relative">
+            <Bell className="w-5 h-5" />
+            <Badge className={`absolute -top-2 -right-2 w-4 h-4 p-0 flex items-center justify-center text-[10px] transition-all duration-300 ${
+              isAIStudio 
+                ? 'bg-red-400/90 backdrop-blur-lg text-white' 
+                : 'bg-red-500 text-white'
+            }`}>
+              3
+            </Badge>
+          </div>
+          <span className="tracking-tight">Notifications</span>
+        </Button>
+      </div>
+
       {/* Navigation */}
       <div className="flex-1 px-8">
         <nav className="space-y-2">
           {menuItems.map((item) => (
             <Button
               key={item.id}
-              onClick={() => setActiveSection(item.id)}
+              onClick={() => {
+                console.log('Sidebar clicked:', item.id)
+                if (item.id === 'ai-studio') {
+                  // Navigate to interior design by default
+                  router.push('/ai-studio/interior-design')
+                } else {
+                  setActiveSection(item.id)
+                }
+              }}
               variant="ghost"
               className={`w-full justify-start gap-3 px-4 py-3 text-sm rounded-2xl transition-all duration-300 ${
                 activeSection === item.id
@@ -298,30 +338,6 @@ export function AppSidebar({ activeSection, setActiveSection, onLogout }: AppSid
             </div>
           </PopoverContent>
         </Popover>
-      </div>
-
-      {/* Notifications */}
-      <div className="p-6 pt-0">
-        <Button 
-          variant="outline" 
-          className={`w-full justify-start gap-3 rounded-2xl transition-all duration-300 ${
-            isAIStudio 
-              ? 'border-white/20 text-white/80 hover:text-white hover:bg-white/15 backdrop-blur-lg' 
-              : 'border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-          }`}
-        >
-          <div className="relative">
-            <Bell className="w-5 h-5" />
-            <Badge className={`absolute -top-2 -right-2 w-4 h-4 p-0 flex items-center justify-center text-[10px] transition-all duration-300 ${
-              isAIStudio 
-                ? 'bg-red-400/90 backdrop-blur-lg text-white' 
-                : 'bg-red-500 text-white'
-            }`}>
-              3
-            </Badge>
-          </div>
-          <span className="tracking-tight">Notifications</span>
-        </Button>
       </div>
     </div>
   )

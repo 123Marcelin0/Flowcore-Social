@@ -37,11 +37,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Initialize Supabase client only if configured; otherwise provide a harmless stub
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabase = (SUPABASE_URL && SUPABASE_ANON && !/localhost:54321/i.test(SUPABASE_URL) && !/dummy|placeholder/i.test(SUPABASE_ANON))
+  ? createClient(SUPABASE_URL, SUPABASE_ANON)
+  : ({
+      auth: { getSession: async () => ({ data: { session: null } }) },
+    } as any)
 
 interface Interaction {
   id: number

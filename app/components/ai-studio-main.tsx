@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,15 +17,15 @@ import { useAuth } from '@/lib/auth-context'
 import { toast } from 'sonner'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabase = (SUPABASE_URL && SUPABASE_ANON && !/localhost:54321/i.test(SUPABASE_URL) && !/dummy|placeholder/i.test(SUPABASE_ANON))
+  ? createClient(SUPABASE_URL, SUPABASE_ANON)
+  : ({ from: () => ({ select: async () => ({ data: [], error: null }) }) } as any)
 import { AIInteriorDesigner } from './ai-interior-designer'
-import { AIStudioVideoGenerator } from './ai-studio-video-generator'
+// Removed AIStudioVideoGenerator import - component deleted
 import { AIStudioImageGenerator } from './ai-studio-image-generator'
 import { AIStudioVideoMerger } from './ai-studio-video-merger'
-import { AIStudioVideoEditor } from './ai-studio-video-editor'
 import WorkflowCanvas from '@/components/glassmorphic-workflow-canvas'
 import { ContentGallery } from './content-gallery'
 import { cn } from '@/lib/utils'
@@ -82,6 +83,20 @@ export function AIStudioMain({
   onFilesChange, 
   onProcessingComplete 
 }: AIStudioMainProps) {
+  // Removed debugging logs
+  const pathname = usePathname()
+  // derive tool from URL if present
+  const deepLinkedTool = useMemo(() => {
+    if (!pathname.startsWith('/ai-studio/')) return null
+    const seg = pathname.split('/')[2] || null
+    return seg as string | null
+  }, [pathname])
+  const effectiveTool = activeTool ?? deepLinkedTool ?? 'interior-design'
+  
+  // Force interior design tool when no specific tool is selected
+  const finalTool = effectiveTool || 'interior-design'
+  
+  // Removed debugging logs
   const { user } = useAuth()
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -182,7 +197,7 @@ export function AIStudioMain({
         onProcessingComplete?.()
         const aiMessage: ChatMessage = {
           id: `ai-${Date.now()}`,
-          content: `Processing complete! Your ${uploadedFiles.length} file(s) have been processed using ${activeTool}. Results are ready for download.`,
+          content: `Processing complete! Your ${uploadedFiles.length} file(s) have been processed using ${effectiveTool}. Results are ready for download.`,
           sender: 'ai',
           timestamp: new Date()
         }
@@ -192,7 +207,7 @@ export function AIStudioMain({
       
       return () => clearTimeout(timer)
     }
-  }, [isProcessing, onProcessingComplete, uploadedFiles.length, activeTool])
+  }, [isProcessing, onProcessingComplete, uploadedFiles.length, effectiveTool])
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -228,14 +243,14 @@ export function AIStudioMain({
     chatTimeoutRef.current = setTimeout(() => {
       let response = "I can help you with image enhancement, interior design, video editing, and content creation. What would you like to work on?"
       
-      if (activeTool) {
+      if (effectiveTool) {
         const toolNames = {
           'interior-design': 'interior design',
           'image-enhance': 'image enhancement', 
           'video-edit': 'video editing',
           'content-create': 'content creation'
         }
-        response = `Great! I see you've selected ${toolNames[activeTool as keyof typeof toolNames] || activeTool}. ${uploadedFiles.length > 0 ? `You have ${uploadedFiles.length} file(s) ready to process.` : 'Upload some files and I can help you get started!'}`
+        response = `Great! I see you've selected ${toolNames[effectiveTool as keyof typeof toolNames] || effectiveTool}. ${uploadedFiles.length > 0 ? `You have ${uploadedFiles.length} file(s) ready to process.` : 'Upload some files and I can help you get started!'}`
       }
       
       const aiMessage: ChatMessage = {
@@ -248,7 +263,7 @@ export function AIStudioMain({
       setIsChatLoading(false)
       chatTimeoutRef.current = null
     }, 1000)
-  }, [chatInput, activeTool, uploadedFiles.length])
+  }, [chatInput, effectiveTool, uploadedFiles.length])
 
   // Remove file
   const removeFile = useCallback((fileId: string) => {
@@ -266,7 +281,7 @@ export function AIStudioMain({
   // Enhanced page transitions with AnimatePresence
   return (
     <AnimatePresence mode="wait">
-      {activeTool === 'interior-design' && (
+      {finalTool === 'interior-design' && (
         <motion.div
           key="interior-design"
           variants={pageVariants}
@@ -279,7 +294,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {activeTool === 'video-edit' && (
+      {finalTool === 'video-edit' && (
         <motion.div
           key="video-edit"
           variants={pageVariants}
@@ -288,11 +303,16 @@ export function AIStudioMain({
           exit="exit"
           transition={pageTransition}
         >
-          <AIStudioVideoGenerator />
+          <div className="flex items-center justify-center h-full text-white">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold mb-4">Video Edit Tool</h2>
+              <p className="text-gray-400">This tool is currently being updated.</p>
+            </div>
+          </div>
         </motion.div>
       )}
 
-      {activeTool === 'image-generation' && (
+      {finalTool === 'image-generation' && (
         <motion.div
           key="image-generation"
           variants={pageVariants}
@@ -305,7 +325,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {activeTool === 'video-merger' && (
+      {finalTool === 'video-merger' && (
         <motion.div
           key="video-merger"
           variants={pageVariants}
@@ -318,7 +338,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {activeTool === 'video-editor' && (
+      {finalTool === 'video-editor' && (
         <motion.div
           key="video-editor"
           variants={pageVariants}
@@ -327,44 +347,17 @@ export function AIStudioMain({
           exit="exit"
           transition={pageTransition}
         >
-          {(() => {
-            // Ensure full-page dotted background is applied to html/body while editor is active
-            if (typeof document !== 'undefined') {
-              document.documentElement.classList.add('ai-studio-video-editor')
-              document.body.classList.add('ai-studio-video-editor')
-            }
-            const bgStyle = {
-              background:
-                "radial-gradient(1200px 800px at 70% 10%, rgba(0,0,0,0.04), transparent 45%), radial-gradient(1000px 600px at 20% 80%, rgba(0,0,0,0.045), transparent 50%), transparent",
-            } as React.CSSProperties
-            const dotLayerStyle = {
-              backgroundImage:
-                "radial-gradient(#d4d4d8 1.2px, transparent 1.2px), radial-gradient(#d4d4d8 1.2px, transparent 1.2px)",
-              backgroundSize: "22px 22px,22px 22px",
-              backgroundPosition: "0 0,11px 11px",
-              opacity: 0.6,
-            } as React.CSSProperties
-            return (
-              <main className="relative min-h-screen w-full overflow-hidden">
-                <section
-                  className={cn(
-                    "relative m-2 h-[calc(100vh-16px)] rounded-[28px] border",
-                    "border-black/5 bg-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.08)] backdrop-blur-xl",
-                  )}
-                  style={bgStyle}
-                >
-                  <div className="absolute inset-0 rounded-[28px]" style={dotLayerStyle} />
-                  <div className="absolute inset-0 rounded-[28px]">
-                    <WorkflowCanvas className="h-full w-full" />
-                  </div>
-                </section>
-              </main>
-            )
-          })()}
+          <section
+            className="relative z-[1] m-2 h-[calc(100vh-16px)] rounded-[28px] border border-black/5 bg-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.08)] backdrop-blur-xl"
+          >
+            <div className="absolute inset-0 rounded-[28px]">
+              <WorkflowCanvas className="h-full w-full" />
+            </div>
+          </section>
         </motion.div>
       )}
 
-      {activeTool === 'content-create' && (
+      {finalTool === 'content-create' && (
         <motion.div
           key="content-create"
           variants={pageVariants}
@@ -377,7 +370,7 @@ export function AIStudioMain({
         </motion.div>
       )}
 
-      {!activeTool && (
+      {false && ( // Disable the upload interface completely
         <motion.div
           key="default-upload"
           variants={pageVariants}

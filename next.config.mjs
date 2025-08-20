@@ -9,9 +9,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  experimental: {
-    optimizePackageImports: ['@/components/ui'],
-  },
+  // Disable package import optimization to avoid vendor-chunk fs lookups that
+  // can fail on Windows (ENOENT for vendor-chunks like lucide-react@x_y.js in dev)
+  experimental: {},
   // Simplified webpack config for better Vercel compatibility
   webpack: (config, { isServer }) => {
     // Only apply optimizations for client-side bundles
@@ -40,9 +40,14 @@ const nextConfig = {
   },
 }
 
-// Environment variables configuration
+// Environment variables configuration with safe defaults for local builds
 nextConfig.env = {
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || 'DUMMY_OPENAI_KEY',
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321',
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy-anon-key',
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-service-role',
+  APPLYDESIGN_API_KEY: process.env.APPLYDESIGN_API_KEY || 'dummy-applydesign',
+  REIMAGINEHOME_API_KEY: process.env.REIMAGINEHOME_API_KEY || 'dummy-reimagine'
 }
 
 export default nextConfig

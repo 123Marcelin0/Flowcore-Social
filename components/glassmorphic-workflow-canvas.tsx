@@ -28,6 +28,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+ 
 import AudioPopup from "@/components/audio-popup"
 import MediaPopup from "@/components/glassmorphic-media-popup"
 import MediaBoard, { type MediaBoardItem } from "@/components/glassmorphic-media-board"
@@ -35,6 +36,7 @@ import { MOCK_MEDIA } from "@/lib/glassmorphic-mock-media"
 import FilmStripEditor from "@/components/glassmorphic-film-strip-editor"
 import VideoEditPopup from "@/components/glassmorphic-video-edit-popup"
 import TemplatesDialog, { type PickerMedia, type TemplateAssignments } from "@/components/glassmorphic-templates-dialog"
+import GlassSurface from "@/components/ui/glass-surface"
 
 export type NodeData = {
   id: string
@@ -72,7 +74,7 @@ type Transform = { x: number; y: number; k: number }
 const SNAP_RADIUS = 42
 const EDGE_PAD = 4000
 const AUTOCONNECT_RADIUS = 72
-const NODE_WIDTH = 200
+const NODE_WIDTH = 180
 const GRID_GAP_X = 80
 const GRID_GAP_Y = 120
 
@@ -206,6 +208,14 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
   const [view, setView] = useState<ViewMode>("workflow")
   const [resetOpen, setResetOpen] = useState(false)
 
+  // Ensure media cards are present on first load even if something reset state
+  useEffect(() => {
+    if (nodes.length === 0) {
+      setNodes(seededNodes)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Video editing
   const [editing, setEditing] = useState<{
     nodeId: string
@@ -333,7 +343,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
     return () => el.removeEventListener("wheel", onWheel)
   }, [canvasRef, canvasSize, toWorld, transform.k, transform.x, transform.y])
 
-  // Global keys
+  // Global keys and page reload prevention
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") spacePressed.current = true
@@ -352,10 +362,12 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
         e.preventDefault()
         deleteSelection()
       }
+
     }
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === "Space") spacePressed.current = false
     }
+    
     window.addEventListener("keydown", onKeyDown)
     window.addEventListener("keyup", onKeyUp)
     return () => {
@@ -405,7 +417,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
     endInteractSoon()
   }
 
-  // MAIN POINTER MOVE HANDLER - Handles both node dragging and connection drawing
+  // ULTRA-FAST POINTER MOVE HANDLER - Optimized for instant response
   const onPointerMove = (e: React.PointerEvent) => {
     // NODE DRAGGING LOGIC
     if (dragInfo.current?.type === "node") {
@@ -413,7 +425,8 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
       const world = toWorld({ x: e.clientX, y: e.clientY })
       const dx = world.x - info.startWorld.x
       const dy = world.y - info.startWorld.y
-      // Direct update for ultra‑responsive dragging
+      
+      // Direct update for responsive dragging
       setNodes((prev) =>
         prev.map((n) =>
           info.nodeIds.includes(n.id)
@@ -445,7 +458,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
     }
   }
 
-  // NODE DRAG START HANDLER
+  // ULTRA-FAST DRAG START HANDLER - Optimized for instant response
   const startDragNode = (id: string, e: React.PointerEvent) => {
     if (spacePressed.current || connectMode || editing) return
 
@@ -482,7 +495,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
     }, 1300)
   }
 
-  // POINTER UP HANDLER - Finalizes drag operations
+  // ULTRA-FAST POINTER UP HANDLER - Optimized cleanup
   const onPointerUp = () => {
     if (dragInfo.current) {
       const moved = dragInfo.current.nodeIds
@@ -887,19 +900,26 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
   }
 
   // Library items from nodes for MediaBoard
-  const mediaItems: MediaBoardItem[] = useMemo(
-    () =>
-      nodes
-        .filter((n) => n.mediaType)
-        .map((n) => ({
-          id: n.id,
-          kind: n.mediaType as "photo" | "video",
-          src: n.mediaType === "video" ? n.src || "" : n.thumb || "",
-          label: n.label,
-          poster: n.mediaType === "video" ? n.thumb : undefined,
-        })),
-    [nodes],
-  )
+  const mediaItems: MediaBoardItem[] = useMemo(() => {
+    const fromNodes: MediaBoardItem[] = nodes
+      .filter((n) => n.mediaType)
+      .map((n) => ({
+        id: n.id,
+        kind: n.mediaType as "photo" | "video",
+        src: n.mediaType === "video" ? n.src || "" : n.thumb || "",
+        label: n.label,
+        poster: n.mediaType === "video" ? n.thumb : undefined,
+      }))
+    // Fallback to mock media if there are no node-based items yet
+    if (fromNodes.length > 0) return fromNodes
+    return MOCK_MEDIA.map((m) => ({
+      id: m.id,
+      kind: m.kind,
+      src: m.kind === "video" ? m.src : m.src,
+      label: m.label,
+      poster: m.poster,
+    }))
+  }, [nodes])
 
   // Available media for Templates (MOCK_MEDIA + nodes)
   const templatePickerMedia: PickerMedia[] = useMemo(() => {
@@ -1011,9 +1031,19 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
     <WorkflowContext.Provider value={ctx}>
       <div
         ref={wrapperRef}
-        className={cn("relative h-full w-full", className, (interacting || !!editing) && "perf-mode")}
+        className={cn("workflow-canvas relative h-full w-full", className, (interacting || !!editing) && "perf-mode")}
         data-perf={interacting ? "busy" : "idle"}
       >
+        {/* Ensure the turbulence-displacement filter exists for distortion effects */}
+        <svg width="0" height="0" aria-hidden="true" focusable="false" className="pointer-events-none">
+          <defs>
+            <filter id="turbulence-displacement" x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
+              <feTurbulence type="turbulence" baseFrequency="0.010" numOctaves="2" seed="2" result="noise" />
+              <feGaussianBlur in="noise" stdDeviation="3" result="softNoise" />
+              <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="10" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+          </defs>
+        </svg>
         <div
           ref={canvasRef}
           className="relative h-full w-full select-none touch-none"
@@ -1023,137 +1053,150 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
           onDrop={onDrop}
         >
           {/* Top toolbar */}
-          <div className={cn("absolute left-1/2 top-4 -translate-x-1/2", editing ? "z-[200200]" : "z-20")}>
-            <div ref={topBarRef} className="relative">
-              <GlassBar
-                aria-label="Top toolbar"
-                className={cn("px-2 py-2 toolbar-base", editing && "toolbar-base--morph")}
-                style={editing ? ({ width: barWidth ?? undefined } as React.CSSProperties) : undefined}
+          <div className={cn("fixed left-1/2 top-4 -translate-x-1/2", editing ? "z-[200200]" : "z-20")}> 
+            <div ref={topBarRef} className="relative"> 
+              <GlassSurface
+                width="auto"
+                height="auto"
+                borderRadius={100}
+                backgroundOpacity={0.02}
+                mixBlendMode="normal"
+                className="px-4 py-3 border-2 border-white/70"
+                contentClassName="flex items-center gap-2"
               >
-                {editing ? (
-                  <div className="w-full">
-                    <FilmStripEditor
-                      src={editing.src}
-                      poster={editing.poster}
-                      label={editing.label}
-                      initialStart={editing.start}
-                      initialEnd={editing.end}
-                      onScrub={(t) => setScrubTime(t)}
-                      onRangeChange={({ start, end }) => {
-                        setEditing((prev) => (prev && prev.nodeId === editing.nodeId ? { ...prev, start, end } : prev))
-                      }}
-                      onCancel={() => {
-                        setEditing(null)
-                        setScrubTime(null)
-                        clearBarWidth()
-                      }}
-                      onApply={({ start, end, duration }) => applyTrim(editing.nodeId, start, end, duration)}
-                    />
-                  </div>
-                ) : (
-                  <>
-                    {/* Single toggle for Workflow/Library */}
-                    <GlassButton
-                      aria-label={isLibrary ? "Switch to Workflow" : "Switch to Library"}
-                      onClick={() => setView(isLibrary ? "workflow" : "library")}
-                      className="mr-1"
-                    >
-                      {isLibrary ? (
-                        <>
-                          <Network className="h-4 w-4" />
-                          <span className="hidden sm:inline">Workflow</span>
-                        </>
-                      ) : (
-                        <>
-                          <GalleryHorizontalEnd className="h-4 w-4" />
-                          <span className="hidden sm:inline">Library</span>
-                        </>
-                      )}
-                    </GlassButton>
+                <div 
+                  aria-label="Top toolbar" 
+                  className={cn(
+                    "flex items-center gap-2",
+                    editing && "toolbar-base--morph"
+                  )} 
+                  style={editing ? ({ width: barWidth ?? undefined } as React.CSSProperties) : undefined} 
+                >
+                  {editing ? (
+                    <div className="w-full">
+                      <FilmStripEditor
+                        src={editing.src}
+                        poster={editing.poster}
+                        label={editing.label}
+                        initialStart={editing.start}
+                        initialEnd={editing.end}
+                        onScrub={(t) => setScrubTime(t)}
+                        onRangeChange={({ start, end }) => {
+                          setEditing((prev) => (prev && prev.nodeId === editing.nodeId ? { ...prev, start, end } : prev))
+                        }}
+                        onCancel={() => {
+                          setEditing(null)
+                          setScrubTime(null)
+                          clearBarWidth()
+                        }}
+                        onApply={({ start, end, duration }) => applyTrim(editing.nodeId, start, end, duration)}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Single toggle for Workflow/Library */}
+                      <GlassButton
+                        aria-label={isLibrary ? "Switch to Workflow" : "Switch to Library"}
+                        onClick={() => setView(isLibrary ? "workflow" : "library")}
+                        className="mr-1"
+                      >
+                        {isLibrary ? (
+                          <>
+                            <Network className="h-4 w-4" />
+                            <span className="hidden sm:inline">Workflow</span>
+                          </>
+                        ) : (
+                          <>
+                            <GalleryHorizontalEnd className="h-4 w-4" />
+                            <span className="hidden sm:inline">Library</span>
+                          </>
+                        )}
+                      </GlassButton>
 
-                    <GlassSep />
+                      <GlassSep />
 
-                    {/* Templates */}
-                    <GlassButton aria-label="Templates" onClick={() => setTemplatesOpen(true)}>
-                      <PanelsTopLeft className="h-4 w-4" />
-                      <span className="hidden sm:inline">Templates</span>
-                    </GlassButton>
+                      {/* Templates */}
+                      <GlassButton aria-label="Templates" onClick={() => setTemplatesOpen(true)}>
+                        <PanelsTopLeft className="h-4 w-4" />
+                        <span className="hidden sm:inline">Templates</span>
+                      </GlassButton>
 
-                    <GlassSep />
+                      <GlassSep />
 
-                    {/* Build tools (Add removed) */}
+                      {/* Build tools (Add removed) */}
 
-                    <GlassButton
-                      aria-label="Connect"
-                      onClick={ctx.toggleConnectMode}
-                      className={cn(connectMode && "ring-2 ring-violet-300/80")}
-                    >
-                      <Link2 className={cn("h-4 w-4", connectMode ? "text-violet-700" : "")} />
-                      <span className="hidden sm:inline">{connectMode ? "Connecting…" : "Connect"}</span>
-                    </GlassButton>
+                      <GlassButton
+                        aria-label="Connect"
+                        onClick={ctx.toggleConnectMode}
+                        className={cn(connectMode && "ring-2 ring-violet-300/80")}
+                      >
+                        <Link2 className={cn("h-4 w-4", connectMode ? "text-violet-700" : "")} />
+                        <span className="hidden sm:inline">{connectMode ? "Connecting…" : "Connect"}</span>
+                      </GlassButton>
 
-                    <GlassButton aria-label="Align" onClick={alignAllGrid}>
-                      <AlignCenter className="h-4 w-4" />
-                      <span className="hidden sm:inline">Align</span>
-                    </GlassButton>
+                      <GlassButton aria-label="Align" onClick={alignAllGrid}>
+                        <AlignCenter className="h-4 w-4" />
+                        <span className="hidden sm:inline">Align</span>
+                      </GlassButton>
 
-                    <GlassButton
-                      onClick={() => setSnapEnabled(!snapEnabled)}
-                      aria-label="Snap"
-                      className={cn(snapEnabled && "ring-1 ring-emerald-300/80")}
-                    >
-                      <Magnet className={cn("h-4 w-4", snapEnabled ? "text-emerald-600" : "text-zinc-500")} />
-                      <span className={cn("hidden sm:inline", snapEnabled ? "text-emerald-700" : undefined)}>
-                        {snapEnabled ? "Snap" : "Snap off"}
-                      </span>
-                    </GlassButton>
+                      <GlassButton
+                        onClick={() => setSnapEnabled(!snapEnabled)}
+                        aria-label="Snap"
+                        className={cn(snapEnabled && "ring-1 ring-emerald-300/80")}
+                      >
+                        <Magnet className={cn("h-4 w-4", snapEnabled ? "text-emerald-600" : "text-zinc-500")} />
+                        <span className={cn("hidden sm:inline", snapEnabled ? "text-emerald-700" : undefined)}>
+                          {snapEnabled ? "Snap" : "Snap off"}
+                        </span>
+                      </GlassButton>
 
-                    <GlassSep />
+                      <GlassSep />
 
-                    <GlassButton onClick={undo} aria-label="Undo">
-                      <Undo2 className="h-4 w-4" />
-                    </GlassButton>
-                    <GlassButton onClick={redo} aria-label="Redo">
-                      <Redo2 className="h-4 w-4" />
-                    </GlassButton>
+                      <GlassButton onClick={undo} aria-label="Undo">
+                        <Undo2 className="h-4 w-4" />
+                      </GlassButton>
+                      <GlassButton onClick={redo} aria-label="Redo">
+                        <Redo2 className="h-4 w-4" />
+                      </GlassButton>
 
-                    <GlassSep />
+                      <GlassSep />
 
-                    <GlassButton onClick={zoomOut} aria-label="Zoom out">
-                      <ZoomOut className="h-4 w-4" />
-                    </GlassButton>
-                    <span className="px-2 text-xs text-zinc-500">{Math.round(transform.k * 100)}%</span>
-                    <GlassButton onClick={zoomIn} aria-label="Zoom in">
-                      <ZoomIn className="h-4 w-4" />
-                    </GlassButton>
+                      <GlassButton onClick={zoomOut} aria-label="Zoom out">
+                        <ZoomOut className="h-4 w-4" />
+                      </GlassButton>
+                      <span className="px-2 text-xs text-zinc-500">{Math.round(transform.k * 100)}%</span>
+                      <GlassButton onClick={zoomIn} aria-label="Zoom in">
+                        <ZoomIn className="h-4 w-4" />
+                      </GlassButton>
 
-                    <GlassButton onClick={() => setResetOpen(true)} aria-label="Reset">
-                      <RotateCcw className="h-4 w-4" />
-                      {/* icon only */}
-                    </GlassButton>
+                      <GlassButton onClick={() => setResetOpen(true)} aria-label="Reset">
+                        <RotateCcw className="h-4 w-4" />
+                        {/* icon only */}
+                      </GlassButton>
 
-                    <GlassSep />
+                      <GlassSep />
 
-                    <GlassButton
-                      aria-label="Media"
-                      className="liquid-btn--tint-emerald"
-                      onClick={() => setMediaOpen(true)}
-                    >
-                      <ImageIcon className="h-4 w-4" />
-                      <span className="hidden sm:inline">Media</span>
-                    </GlassButton>
-                    <GlassButton
-                      aria-label="Music"
-                      className="liquid-btn--tint-violet"
-                      onClick={() => setAudioOpen(true)}
-                    >
-                      <Play className="h-4 w-4" />
-                      <span className="hidden sm:inline">Music</span>
-                    </GlassButton>
-                  </>
-                )}
-              </GlassBar>
-            </div>
+                      <GlassButton
+                        aria-label="Media"
+                        className="liquid-btn--tint-emerald"
+                        onClick={() => setMediaOpen(true)}
+                      >
+                        <ImageIcon className="h-4 w-4" />
+                        <span className="hidden sm:inline">Media</span>
+                      </GlassButton>
+                      <GlassButton
+                        aria-label="Music"
+                        className="liquid-btn--tint-violet"
+                        onClick={() => setAudioOpen(true)}
+                      >
+                        <Play className="h-4 w-4" />
+                        <span className="hidden sm:inline">Music</span>
+                      </GlassButton>
+                    </>
+                  )} 
+                </div> 
+              </GlassSurface>
+            </div> 
           </div>
 
           {/* Background handlers */}
@@ -1265,7 +1308,7 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
           {/* Nodes */}
           {view !== "library" && (
             <div
-              className="absolute left-1/2 top-1/2"
+              className="absolute left-1/2 top-1/2 z-30"
               style={worldTransformStyle}
             >
               {nodes.map((n) => (
@@ -1374,38 +1417,39 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
           )}
 
           {/* Bottom nav */}
-          <div className="absolute inset-x-0 bottom-5 z-20 flex justify-center">
-            <GlassBar aria-label="Bottom navigation" className="px-3 py-2">
-              <GlassButton aria-label="Back">
-                <ChevronLeft className="h-4 w-4" />
-                Back
-              </GlassButton>
-              <GlassButton aria-label="Preview" className="liquid-btn--tint-violet">
-                <Play className="h-4 w-4" />
-                Preview
-              </GlassButton>
-              <GlassButton aria-label="Publish" className="liquid-btn--tint-emerald">
-                <UploadCloud className="h-4 w-4" />
-                Publish
-              </GlassButton>
-              <GlassButton aria-label="Next">
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </GlassButton>
-            </GlassBar>
+          <div className="fixed inset-x-0 bottom-5 z-20 flex justify-center">
+            <GlassSurface
+              width="auto"
+              height="auto"
+              borderRadius={100}
+              backgroundOpacity={0.02}
+              mixBlendMode="normal"
+              className="px-4 py-3 border-2 border-white/70"
+              contentClassName="flex items-center gap-2"
+            >
+              <div aria-label="Bottom navigation" className="flex items-center gap-2">
+                <GlassButton aria-label="Back">
+                  <ChevronLeft className="h-4 w-4" />
+                  Back
+                </GlassButton>
+                <GlassButton aria-label="Preview" className="liquid-btn--tint-violet">
+                  <Play className="h-4 w-4" />
+                  Preview
+                </GlassButton>
+                <GlassButton aria-label="Publish" className="liquid-btn--tint-emerald">
+                  <UploadCloud className="h-4 w-4" />
+                  Publish
+                </GlassButton>
+                <GlassButton aria-label="Next">
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </GlassButton>
+              </div>
+            </GlassSurface>
           </div>
 
           {/* Hint */}
-          {view !== "library" ? (
-            <div className="pointer-events-none absolute left-4 top-4 mt-14 text-xs text-zinc-600 canvas-hint">
-              Toggle Library • Use Templates for quick starts • Drag media from the Media panel • Double‑click a video
-              to trim
-            </div>
-          ) : (
-            <div className="pointer-events-none absolute left-4 top-4 mt-14 text-xs text-zinc-600 canvas-hint">
-              Library: search, filter, and open media. Switch back to Workflow any time.
-            </div>
-          )}
+          {/* Removed hint text as requested */}
         </div>
       </div>
     </WorkflowContext.Provider>
@@ -1434,6 +1478,8 @@ function NodeViewBase({
   interacting: boolean
   onStartEditVideo: (node: NodeData) => void
 }) {
+  const [previewOpen, setPreviewOpen] = useState(false)
+  
   const pastel =
     data.tint === "violet"
       ? "from-violet-50 to-white"
@@ -1443,7 +1489,7 @@ function NodeViewBase({
           ? "from-emerald-50 to-white"
           : "from-rose-50 to-white"
 
-  // MAIN DRAG HANDLER - This is where the drag starts
+  // SIMPLE DRAG HANDLER - Just prevent defaults and start drag
   const onPointerDownNode = (e: React.PointerEvent) => {
     e.preventDefault()
     onDragStart(data.id, e)
@@ -1458,75 +1504,158 @@ function NodeViewBase({
     }
   }
 
-  return (
-    <div
-      className={cn(
-        "node node-draggable absolute -translate-x-1/2 -translate-y-1/2 rounded-2xl p-[1px] will-change-[left,top,transform]",
-        selected && "ring-2 ring-violet-300/70",
-        connectMode && "ring-1 ring-violet-200/70",
-      )}
-      style={{ left: data.x, top: data.y }}
-      onPointerDown={onPointerDownNode}
-      onDoubleClick={onDouble}
-      onClick={() => onConnectClick(data.id)}
-      onDragStart={(e) => e.preventDefault()}
-      role="group"
-      aria-label={data.label}
-    >
-      <div className={cn("node-glow relative w-[200px] select-none rounded-2xl border bg-gradient-to-b", pastel)}>
-        {data.mediaType ? (
-          <div className="relative overflow-hidden rounded-t-2xl border-b border-white/20 bg-white/40">
-            <div className="relative aspect-[4/3] w-full">
-              {data.mediaType === "video" ? (
-                <video
-                  src={data.src}
-                  poster={data.thumb}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  className="h-full w-full object-cover"
-                  style={{ pointerEvents: "none" }}
-                  disablePictureInPicture
-                  controlsList="nodownload noplaybackrate"
-                  data-node-preview="1"
-                  draggable={false}
-                />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={data.thumb || "/placeholder.svg"}
-                  alt={data.label}
-                  className="h-full w-full object-cover"
-                  draggable={false}
-                />
-              )}
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/10 to-black/20" />
-            </div>
-          </div>
-        ) : null}
+  const handlePreviewClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setPreviewOpen(true)
+  }
 
-        <div className="px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500">
-              {data.mediaType ? (data.mediaType === "photo" ? "Photo" : "Video") : data.groupId ? "Group" : "Text"}
-            </div>
-            {data.mediaType && (
-              <div className="flex items-center gap-1 text-zinc-500">
-                {data.mediaType === "photo" ? (
-                  <ImageIcon className="h-3.5 w-3.5" />
-                ) : (
-                  <VideoIcon className="h-3.5 w-3.5" />
+  return (
+    <>
+      <div
+        className={cn(
+          "workflow-node node node-draggable absolute -translate-x-1/2 -translate-y-1/2 rounded-2xl p-[1px] will-change-[left,top,transform]",
+          selected && "ring-2 ring-violet-300/70",
+          connectMode && "ring-1 ring-violet-200/70",
+        )}
+        style={{ left: data.x, top: data.y }}
+        data-node-id={data.id}
+        onPointerDown={onPointerDownNode}
+        onDoubleClick={onDouble}
+        onClick={() => onConnectClick(data.id)}
+        onDragStart={(e) => e.preventDefault()}
+        role="group"
+        aria-label={data.label}
+      >
+        <GlassSurface
+          width={180}
+          height="auto"
+          borderRadius={20}
+          backgroundOpacity={0.04}
+          mixBlendMode="normal"
+          className="select-none border-2 border-white/70"
+          contentClassName="items-stretch justify-start p-0 overflow-visible"
+        >
+          <div className="relative w-full rounded-2xl overflow-visible">
+            {data.mediaType ? (
+              <div className="relative overflow-hidden rounded-2xl border-2 border-white/60 bg-white/10 m-2">
+                <div className="relative aspect-square w-full rounded-xl">
+                  {data.mediaType === "video" ? (
+                    <video
+                      src={data.src}
+                      poster={data.thumb}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover rounded-xl"
+                      style={{ pointerEvents: "none" }}
+                      disablePictureInPicture
+                      controlsList="nodownload noplaybackrate"
+                      data-node-preview="1"
+                      draggable={false}
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={data.thumb || "/placeholder.svg"}
+                      alt={data.label}
+                      className="h-full w-full object-cover rounded-xl"
+                      draggable={false}
+                    />
+                  )}
+                  
+                  {/* Subtle gradient overlay */}
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/10 to-transparent rounded-xl" />
+                  
+                  {/* Preview button with light glassmorphic white effect */}
+                  <div className="absolute top-3 right-3">
+                    <div className="w-8 h-8 rounded-full bg-white/60 backdrop-blur-md border border-white/40 shadow-[0_2px_8px_rgba(255,255,255,0.3)] hover:bg-white/80 hover:shadow-[0_4px_12px_rgba(255,255,255,0.4)] transition-all duration-200 flex items-center justify-center cursor-pointer">
+                      <button
+                        onClick={handlePreviewClick}
+                        className="w-full h-full flex items-center justify-center group"
+                        aria-label="Preview media"
+                      >
+                        <svg 
+                          className="w-4 h-4 text-white group-hover:text-white/90 transition-colors" 
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round" 
+                            strokeWidth={2} 
+                            d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" 
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="px-4 py-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] uppercase tracking-wide text-white/80">
+                  {data.mediaType ? (data.mediaType === "photo" ? "Photo" : "Video") : data.groupId ? "Group" : "Text"}
+                </div>
+                {data.mediaType && (
+                  <div className="flex items-center gap-1 text-white/80">
+                    {data.mediaType === "photo" ? (
+                      <ImageIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <VideoIcon className="h-3.5 w-3.5" />
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-          <div className="mt-1 truncate text-sm font-medium text-zinc-800">{data.label}</div>
-        </div>
+              <div className="mt-1 truncate text-sm font-medium text-white/90">{data.label}</div>
+            </div>
 
-        <Handle side="left" onPointerDown={onHandlePointerDown(data.id, "left")} />
-        <Handle side="right" onPointerDown={onHandlePointerDown(data.id, "right")} />
+            <Handle side="left" onPointerDown={onHandlePointerDown(data.id, "left")} />
+            <Handle side="right" onPointerDown={onHandlePointerDown(data.id, "right")} />
+          </div>
+        </GlassSurface>
       </div>
-    </div>
+
+      {/* Media Preview Dialog */}
+      {previewOpen && data.mediaType && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="relative max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden bg-white/95 backdrop-blur-xl border border-white/20 shadow-2xl">
+            <button
+              onClick={() => setPreviewOpen(false)}
+              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm border border-white/30 shadow-sm hover:bg-white transition-colors duration-200 flex items-center justify-center"
+              aria-label="Close preview"
+            >
+              <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">{data.label}</h3>
+              <div className="relative rounded-xl overflow-hidden bg-gray-100">
+                {data.mediaType === "video" ? (
+                  <video
+                    src={data.src}
+                    poster={data.thumb}
+                    controls
+                    className="w-full h-auto max-h-[70vh] object-contain"
+                    autoPlay
+                  />
+                ) : (
+                  <img
+                    src={data.thumb || data.src || "/placeholder.svg"}
+                    alt={data.label}
+                    className="w-full h-auto max-h-[70vh] object-contain"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -1560,9 +1689,9 @@ function Handle({ side, onPointerDown }: { side: HandleSide; onPointerDown: (e: 
         "border-white/80 bg-white/90 text-violet-500 shadow-[0_6px_16px_rgba(0,0,0,.12)]",
         "after:hidden hover:after:block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300",
         "handle-pulse",
-        isLeft ? "-left-3" : "-right-3",
+        isLeft ? "-left-2" : "-right-2",
       )}
-      style={{ width: 16, height: 16 }}
+      style={{ width: 14, height: 14 }}
     />
   )
 }

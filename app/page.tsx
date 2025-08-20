@@ -54,7 +54,7 @@ export default function LandingPage() {
               <ShinyBrand leftSizeClass="text-base" rightSizeClass="text-sm" speed={2.5} />
             </div>
             <nav className="flex items-center gap-4">
-              <a className="opacity-90 hover:opacity-100" href="/dashboard">Home</a>
+              <a className="opacity-90 hover:opacity-100" href="/dashboard">Dashboard</a>
               <a className="opacity-90 hover:opacity-100" href="#">Docs</a>
             </nav>
           </div>

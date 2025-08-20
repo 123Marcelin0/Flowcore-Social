@@ -27,12 +27,16 @@ export function ClientPageRoot() {
     isProcessing: false
   })
 
+  // Removed debugging logs
+
   // Auto-set interior tool when AI Studio is activated
   useEffect(() => {
     if (activeSection === "ai-studio" && !aiStudioState.activeTool) {
       setAiStudioState(prev => ({ ...prev, activeTool: 'interior-design' }))
     }
   }, [activeSection, aiStudioState.activeTool])
+
+  // Removed custom event listener since we're not using routed pages anymore
 
   // Update body and html class based on AI Studio tool
   useEffect(() => {
@@ -157,8 +161,8 @@ export function ClientPageRoot() {
       <div 
         className="fixed inset-0 z-0"
         style={{
-          backgroundImage: activeSection === "ai-studio" && aiStudioState.activeTool === 'interior-design'
-            ? 'url(/vecteezy_ai-generated-real-estate-advertisment-background-with-copy_36725233.jpg)'
+          backgroundImage: activeSection === "ai-studio"
+              ? 'url(/vecteezy_ai-generated-real-estate-advertisment-background-with-copy_36725233.jpg)'
             : activeSection === "ai-studio" && aiStudioState.activeTool === 'video-editor'
             ? 'url(/abstract-liquid-marble-white-background-handmade-experimental-art.jpg)'
             : activeSection === "ai-studio" && aiStudioState.activeTool === 'content-create'
@@ -173,10 +177,10 @@ export function ClientPageRoot() {
           backgroundColor: activeSection === "ai-studio" && aiStudioState.activeTool === 'video-edit'
             ? '#080a13'
             : '#f9fafb', // Default bg-gray-50
-          backgroundSize: (activeSection === "ai-studio" && (aiStudioState.activeTool === 'interior-design' || aiStudioState.activeTool === 'video-editor')) ? 'cover' : 'auto',
-          backgroundPosition: (activeSection === "ai-studio" && (aiStudioState.activeTool === 'interior-design' || aiStudioState.activeTool === 'video-editor')) ? 'center' : 'initial',
-          backgroundRepeat: (activeSection === "ai-studio" && (aiStudioState.activeTool === 'interior-design' || aiStudioState.activeTool === 'video-editor')) ? 'no-repeat' : 'initial',
-          backgroundAttachment: (activeSection === "ai-studio" && (aiStudioState.activeTool === 'interior-design' || aiStudioState.activeTool === 'video-editor')) ? 'fixed' : 'initial'
+          backgroundSize: activeSection === "ai-studio" ? 'cover' : 'auto',
+          backgroundPosition: activeSection === "ai-studio" ? 'center' : 'initial',
+          backgroundRepeat: activeSection === "ai-studio" ? 'no-repeat' : 'initial',
+          backgroundAttachment: activeSection === "ai-studio" ? 'fixed' : 'initial'
         }}
       />
       

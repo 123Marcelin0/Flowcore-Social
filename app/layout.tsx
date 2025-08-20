@@ -1,25 +1,17 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import dynamic from 'next/dynamic'
 import { Suspense } from 'react'
 import { ErrorBoundaryWrapper } from '@/app/error-boundary-wrapper'
+import { AuthProvider } from '@/lib/auth-context'
+import { PostProvider } from '@/lib/post-context'
+import { DateProvider } from '@/lib/date-context'
+import { Toaster as ToasterProvider } from '@/components/ui/toaster'
 import { Inter, Great_Vibes } from 'next/font/google'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const signature = Great_Vibes({ subsets: ['latin'], weight: '400', variable: '--font-signature' })
 
-const AuthProvider = dynamic(() => import('@/lib/auth-context').then(mod => mod.AuthProvider), {
-  ssr: true
-})
-
-const PostProvider = dynamic(() => import('@/lib/post-context').then(mod => mod.PostProvider), {
-  ssr: true
-})
-
-// Create a client-side only wrapper for Toaster
-const ToasterProvider = dynamic(() => import('@/components/ui/toaster').then(mod => mod.Toaster), {
-  ssr: true
-})
+// Providers are imported statically to preserve hook order across renders
 
 export const metadata: Metadata = {
   title: 'FlowCore Social - Social Media Dashboard',
@@ -35,6 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} ${signature.variable}`}>
+        <a href="#main" className="sr-only focus:not-sr-only">Skip to content</a>
         <div id="cursor-glow" aria-hidden="true"></div>
         <ErrorBoundaryWrapper>
           <Suspense fallback={
@@ -44,8 +37,10 @@ export default function RootLayout({
           }>
             <AuthProvider>
               <PostProvider>
-                {children}
-                <ToasterProvider />
+                <DateProvider>
+                  {children}
+                  <ToasterProvider />
+                </DateProvider>
               </PostProvider>
             </AuthProvider>
           </Suspense>

@@ -3,14 +3,16 @@
 import React from "react"
 import { ProtectedRoute } from "@/lib/auth-context"
 import LoginPage from "@/components/auth/login-page"
-import { ClientPageRoot } from "../client-root"
+import { DashboardOverviewOptimized } from "@/app/components/dashboard-overview-optimized"
 
-export default function DashboardPage() {
+export default function DashboardRoutedPage() {
   return (
     <ProtectedRoute fallback={<LoginPage />}>
-      <ClientPageRoot />
+      <DashboardOverviewOptimized />
     </ProtectedRoute>
   )
 }
+
+
 
 

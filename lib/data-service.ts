@@ -43,9 +43,13 @@ class UserProfileService {
         .eq('id', user.id)
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.warn('Database error fetching user profile:', error)
+        return null
+      }
       return data
     } catch (error) {
+      console.warn('Error loading user profile:', error)
       return null
     }
   }
@@ -156,10 +160,10 @@ class PostsService {
         // Handle specific error cases
         const errorMessage = String(error.message || '')
         if (errorMessage.includes('JWT') || errorMessage.includes('invalid token')) {
-          console.log('Authentication error, returning empty posts array')
+          console.warn('Authentication error, returning empty posts array')
           return []
         }
-        console.log('Database error fetching posts:', error)
+        console.warn('Database error fetching posts:', error)
         return []
       }
 

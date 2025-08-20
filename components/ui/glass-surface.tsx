@@ -280,22 +280,22 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
         if (!backdropFilterSupported) {
           return {
             ...baseStyles,
-            background: "rgba(255, 255, 255, 0.4)",
-            border: "1px solid rgba(255, 255, 255, 0.3)",
-            boxShadow: `inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
-                        inset 0 -1px 0 0 rgba(255, 255, 255, 0.3)`,
+            background: "rgba(255, 255, 255, 0.2)",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            boxShadow: `inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+                        inset 0 -1px 0 0 rgba(255, 255, 255, 0.1)`,
           };
         } else {
           return {
             ...baseStyles,
-            background: "rgba(255, 255, 255, 0.25)",
+            background: "rgba(255, 255, 255, 0.15)",
             backdropFilter: "blur(12px) saturate(1.8) brightness(1.1)",
             WebkitBackdropFilter: "blur(12px) saturate(1.8) brightness(1.1)",
-            border: "1px solid rgba(255, 255, 255, 0.3)",
-            boxShadow: `0 8px 32px 0 rgba(31, 38, 135, 0.2),
-                        0 2px 16px 0 rgba(31, 38, 135, 0.1),
-                        inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
-                        inset 0 -1px 0 0 rgba(255, 255, 255, 0.2)`,
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            boxShadow: `0 8px 32px 0 rgba(31, 38, 135, 0.1),
+                        0 2px 16px 0 rgba(31, 38, 135, 0.05),
+                        inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+                        inset 0 -1px 0 0 rgba(255, 255, 255, 0.1)`,
           };
         }
       }
@@ -303,7 +303,7 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
   };
 
   const glassSurfaceClasses =
-    "relative flex items-center justify-center overflow-hidden transition-opacity duration-[260ms] ease-out";
+    "relative flex items-center justify-center overflow-visible transition-opacity duration-[260ms] ease-out";
 
   const focusVisibleClasses = isDarkMode
     ? "focus-visible:outline-2 focus-visible:outline-[#0A84FF] focus-visible:outline-offset-2"

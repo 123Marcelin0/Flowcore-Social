@@ -8,6 +8,7 @@ import { ImageIcon, VideoIcon, Search, X } from "lucide-react"
 import NextImage from "next/image"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import SpeedRampingDialog from "@/components/glassmorphic-speed-ramping-dialog"
+import GlassSurface from "@/components/ui/glass-surface"
 
 export type MediaBoardItem = {
   id: string
@@ -129,11 +130,14 @@ export default function MediaBoard({
   return (
     <div className={cn("absolute inset-0 p-4 sm:p-6 md:p-8", className)}>
       {/* Header */}
-      <div
-        className={cn(
-          "distort backdrop-boost mx-auto flex w-full max-w-6xl items-center gap-3 rounded-2xl border",
-          "border-white/20 bg-white/10 px-3 py-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.25)]",
-        )}
+      <GlassSurface
+        width="100%"
+        height="auto"
+        borderRadius={20}
+        backgroundOpacity={0}
+        mixBlendMode="normal"
+        className="mx-auto w-full max-w-6xl"
+        contentClassName="items-center"
       >
         <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 p-1">
           <button
@@ -189,12 +193,12 @@ export default function MediaBoard({
             </button>
           )}
         </div>
-      </div>
+      </GlassSurface>
 
       {/* Grid */}
       <div className="mx-auto mt-4 w-full max-w-6xl">
         {filtered.length === 0 ? (
-          <div className="distort backdrop-boost mx-auto mt-10 max-w-lg rounded-3xl border border-white/20 bg-white/10 p-10 text-center text-white/80">
+          <div className="distort backdrop-boost mx-auto mt-10 max-w-lg rounded-3xl border border-white/20 p-10 text-center text-white/80">
             <div className="mx-auto mb-4 h-12 w-12 rounded-2xl border border-white/20 bg-white/15" />
             <div className="text-lg font-medium text-white/95">No media found</div>
             <div className="mt-1 text-sm text-white/70">
@@ -374,13 +378,13 @@ function MediaCard({
       onClick={handleClick}
       onKeyDown={onKeyDownOpen}
       className={cn(
-        "group distort backdrop-boost block overflow-hidden rounded-2xl border border-white/18 bg-white/10 text-left",
+        "group distort backdrop-boost block overflow-hidden rounded-2xl border border-white/18 text-left",
         "shadow-[0_12px_40px_rgba(0,0,0,0.25)] transition-transform hover:-translate-y-0.5",
         "will-change-transform",
       )}
       aria-label={`Open ${item.kind}: ${item.label}`}
     >
-      <div className="relative aspect-[4/3] w-full overflow-hidden">
+      <div className="relative aspect-square w-full overflow-hidden">
         {item.kind === "video" ? (
           <video
             className="h-full w-full object-cover opacity-95"
@@ -404,7 +408,7 @@ function MediaCard({
             className="object-cover"
           />
         )}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/30" />
+        {/* Removed gradient overlay to eliminate two-layer effect */}
         <div className="absolute left-3 top-3 flex flex-col items-start gap-3 z-10">
           <span className="grid h-8 w-8 place-items-center rounded-full border border-white/30 bg-white/25 text-white/95 backdrop-blur-md shadow-lg">
             {item.kind === "photo" ? <ImageIcon className="h-4 w-4" /> : <VideoIcon className="h-4 w-4" />}
@@ -428,7 +432,9 @@ function MediaCard({
           <div className="truncate text-sm font-medium text-white/95">{item.label}</div>
           <div className="text-xs text-white/70">{item.kind === "photo" ? "Image" : "Video"}</div>
         </div>
-        <span className="rounded-full border border-white/25 bg-white/15 px-2 py-1 text-xs text-white/85">Open</span>
+        <span className="rounded-full border border-white/25 bg-white/20 px-2 py-1 text-xs text-white/95 backdrop-blur-md shadow">
+          Open
+        </span>
       </div>
     </div>
   )

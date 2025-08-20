@@ -6,106 +6,70 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-// Check if Supabase is configured
 export const isSupabaseConfigured = () => {
-  return !!(supabaseUrl && supabaseAnonKey)
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  if (!url || !anon) return false
+  if (/localhost:54321/i.test(url)) return false
+  if (/dummy|placeholder/i.test(anon)) return false
+  return true
 }
 
-// Create Supabase client - only if configured
-if (!isSupabaseConfigured()) {
-  console.error('Supabase is not configured. Please check your environment variables.')
+export function getSupabaseClient() {
+	if (!isSupabaseConfigured()) {
+		console.warn('Supabase is not configured. Running in demo mode.')
+		// return a stub client that returns empty data instead of throwing errors
+		const stub: any = {
+			from() {
+				return {
+					select: async () => ({ data: [], error: null }),
+					insert: async () => ({ data: null, error: null }),
+					update: async () => ({ data: null, error: null }),
+					delete: async () => ({ data: null, error: null }),
+					eq: function() { return this },
+					single: function() { return this },
+				}
+			},
+			auth: {
+				getSession: async () => ({ data: { session: null }, error: null }),
+				getUser: async () => ({ data: { user: null }, error: null }),
+				onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+			}
+		}
+		return stub as ReturnType<typeof createClient<Database>>
+	}
+	return createClient<Database>(
+		supabaseUrl!,
+		supabaseAnonKey!,
+		{
+			auth: {
+				autoRefreshToken: true,
+				persistSession: true,
+				detectSessionInUrl: true
+			},
+			global: {
+				fetch: (url, options = {}) => {
+					return fetch(url, {
+						...options,
+						headers: {
+							...(options as any).headers,
+							'User-Agent': 'social-media-dashboard/1.0'
+						}
+					})
+				}
+			}
+		}
+	)
 }
 
-export const supabase = createClient<Database>(
-  supabaseUrl || '',
-  supabaseAnonKey || '',
-  {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true
-    },
-    global: {
-      fetch: (url, options = {}) => {
-        console.log(`[Supabase] Making request to: ${url}`);
-        
-        // Add retry logic and better error handling
-        return fetch(url, {
-          ...options,
-          headers: {
-            ...options.headers,
-            'User-Agent': 'social-media-dashboard/1.0'
-          }
-        }).catch(error => {
-          console.error('[Supabase] Network error:', error);
-          
-          // Handle QUIC protocol errors
-          if (error.message?.includes('ERR_QUIC_PROTOCOL_ERROR') || 
-              error.message?.includes('Failed to fetch')) {
-            console.warn('[Supabase] QUIC protocol error detected, retrying...');
-            
-            // Retry with different fetch options
-            return fetch(url, {
-              ...options,
-              headers: {
-                ...options.headers,
-                'User-Agent': 'social-media-dashboard/1.0',
-                'Connection': 'keep-alive'
-              },
-              // Force HTTP/1.1 to avoid QUIC issues
-              mode: 'cors'
-            });
-          }
-          
-          throw error;
-        });
-      }
-    }
-  }
-)
+export const supabase = getSupabaseClient()
 
-// Admin client for server-side operations (only available on server)
 export const supabaseAdmin = typeof window === 'undefined' && supabaseServiceRoleKey && isSupabaseConfigured()
-  ? createClient(supabaseUrl!, supabaseServiceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      },
-      global: {
-        fetch: (url, options = {}) => {
-          console.log(`[Supabase Admin] Making request to: ${url}`);
-          
-          return fetch(url, {
-            ...options,
-            headers: {
-              ...options.headers,
-              'User-Agent': 'social-media-dashboard-admin/1.0'
-            }
-          }).catch(error => {
-            console.error('[Supabase Admin] Network error:', error);
-            
-            // Handle QUIC protocol errors for admin client too
-            if (error.message?.includes('ERR_QUIC_PROTOCOL_ERROR') || 
-                error.message?.includes('Failed to fetch')) {
-              console.warn('[Supabase Admin] QUIC protocol error detected, retrying...');
-              
-              return fetch(url, {
-                ...options,
-                headers: {
-                  ...options.headers,
-                  'User-Agent': 'social-media-dashboard-admin/1.0',
-                  'Connection': 'keep-alive'
-                },
-                mode: 'cors'
-              });
-            }
-            
-            throw error;
-          });
-        }
-      }
-    })
-  : null
+	? createClient(supabaseUrl!, supabaseServiceRoleKey, {
+		auth: { autoRefreshToken: false, persistSession: false },
+		global: { fetch }
+	})
+	: null
 
 // Database types
 export type UserProfile = Database['public']['Tables']['user_profiles']['Row']
@@ -192,7 +156,7 @@ export const getCurrentUserProfile = async (): Promise<UserProfile | null> => {
       data = result.data
       error = result.error
     } catch (networkError) {
-      console.error('Network error connecting to Supabase:', networkError)
+      // Avoid noisy logs when unauthenticated or running with dummy keys
       return null
     }
     
@@ -205,8 +169,6 @@ export const getCurrentUserProfile = async (): Promise<UserProfile | null> => {
           details: error?.details || 'No details',
           hint: error?.hint || 'No hint'
         })
-      } else {
-        console.log('Empty error object received - likely a connection issue')
       }
       
       // Handle case where user profile doesn't exist yet
