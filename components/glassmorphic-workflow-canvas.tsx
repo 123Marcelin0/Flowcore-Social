@@ -37,6 +37,7 @@ import FilmStripEditor from "@/components/glassmorphic-film-strip-editor"
 import VideoEditPopup from "@/components/glassmorphic-video-edit-popup"
 import TemplatesDialog, { type PickerMedia, type TemplateAssignments } from "@/components/glassmorphic-templates-dialog"
 import GlassSurface from "@/components/ui/glass-surface"
+import PipelineEditorPanel from "@/components/pipeline-editor-panel"
 
 export type NodeData = {
   id: string
@@ -1208,6 +1209,11 @@ export default function WorkflowCanvas({ className }: { className?: string }) {
               onPointerUp={onBackgroundPointerUp}
             />
           )}
+
+          {/* Pipeline Panel - speaker-to-camera pipeline controls */}
+          <div className="absolute right-3 top-24 z-40">
+            <PipelineEditorPanel />
+          </div>
 
           {/* Reset confirmation dialog */}
           <Dialog open={resetOpen} onOpenChange={setResetOpen}>

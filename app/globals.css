@@ -50,6 +50,13 @@ html {
   height: 100%;
 }
 
+/* Caption pop animation for word-by-word effects */
+@keyframes captionPop {
+  0% { opacity: 0; transform: translateY(8px) scale(0.9); }
+  60% { opacity: 1; transform: translateY(-2px) scale(1.06); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* AI Workflow Custom Styles */
 @import url('../styles/ai-workflow.css');
 /* Glassmorphic Workflow Builder Styles */
@@ -93,6 +100,15 @@ body {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
+  }
+
+  /* Hide native scrollbars but keep scrolling */
+  .no-scrollbar {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
   }
   
   /* Offscreen rendering hint for long lists/panels */

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 // Helper function to verify authentication
 async function verifyAuth(request: NextRequest) {
@@ -11,7 +12,12 @@ async function verifyAuth(request: NextRequest) {
   const token = authHeader.replace('Bearer ', '')
   
   try {
-    const { data: { user }, error } = await supabase.auth.getUser(token)
+    // Use a fresh anon client for auth verification to avoid stubbed states
+    const anonClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    const { data: { user }, error } = await anonClient.auth.getUser(token)
     
     if (error || !user) {
       return { authenticated: false, user: null, error: 'Invalid or expired token' }
@@ -40,26 +46,23 @@ export async function GET(request: NextRequest) {
     // Get query parameters
     const { searchParams } = new URL(request.url)
     const file_type = searchParams.get('file_type')
-    const processing_status = searchParams.get('processing_status')
-    const optimization_status = searchParams.get('optimization_status')
     const limit = searchParams.get('limit')
+    const id = searchParams.get('id')
 
-    // Build query
-    let query = supabase
+    // Build query (only filter by fields that exist in enhanced-database.ts schema)
+    const db = supabaseAdmin || supabase
+    let query = db
       .from('media_files')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     // Apply filters
+    if (id) {
+      query = query.eq('id', id)
+    }
     if (file_type) {
       query = query.eq('file_type', file_type)
-    }
-    if (processing_status) {
-      query = query.eq('processing_status', processing_status)
-    }
-    if (optimization_status) {
-      query = query.eq('optimization_status', optimization_status)
     }
     if (limit) {
       query = query.limit(parseInt(limit))
@@ -141,7 +144,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Create media file record
-    const { data: mediaFile, error } = await supabase
+    const db = supabaseAdmin || supabase
+    const { data: mediaFile, error } = await db
       .from('media_files')
       .insert({
         user_id: user.id,
@@ -211,11 +215,10 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Remove any fields that shouldn't be updated
+    // Remove any fields that shouldn't be updated (only fields from enhanced-database.ts schema)
     const allowedFields = [
-      'filename', 'file_path', 'storage_url', 'width', 'height', 'duration', 
-      'processing_status', 'optimization_status', 'thumbnail_url', 'compressed_url', 
-      'alt_text', 'metadata'
+      'filename', 'storage_url', 'width', 'height', 'duration', 
+      'thumbnail_url', 'alt_text', 'metadata'
     ]
     const filteredData: any = {}
     
@@ -233,7 +236,8 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update media file record
-    const { data: mediaFile, error } = await supabase
+    const db = supabaseAdmin || supabase
+    const { data: mediaFile, error } = await db
       .from('media_files')
       .update(filteredData)
       .eq('id', id)

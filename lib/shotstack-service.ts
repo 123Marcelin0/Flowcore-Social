@@ -348,10 +348,20 @@ export class ShotstackService {
         const errorText = await response.text()
         let errorMessage = `Shotstack API error: ${response.status} ${response.statusText}`
         
+        if (this.config.debug) {
+          console.log(`[Shotstack] Error response body:`, errorText)
+        }
+        
         try {
           const errorJson = JSON.parse(errorText)
           if (errorJson.message) {
             errorMessage += ` - ${errorJson.message}`
+          }
+          if (errorJson.errors) {
+            errorMessage += ` - Errors: ${JSON.stringify(errorJson.errors)}`
+          }
+          if (this.config.debug) {
+            console.log(`[Shotstack] Parsed error:`, errorJson)
           }
         } catch {
           errorMessage += ` - ${errorText}`

@@ -6,6 +6,7 @@ import { ProtectedRoute } from "@/lib/auth-context"
 import LoginPage from "@/components/auth/login-page"
 import WorkflowCanvas from "@/components/glassmorphic-workflow-canvas"
 import { AIStudioToolbar } from "@/app/components/ai-studio-toolbar"
+import { Button } from "@/components/ui/button"
 
 export default function VideoEditorToolPage() {
   const router = useRouter()
@@ -59,6 +60,18 @@ export default function VideoEditorToolPage() {
               hasFiles={false}
             />
           </div>
+        </div>
+
+        {/* Quick link to the new editor */}
+        <div className="absolute top-4 right-4 z-50 pointer-events-auto">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => router.push('/video-editorneu')}
+            title="Open the new editor"
+          >
+            New Editor
+          </Button>
         </div>
       </div>
     </ProtectedRoute>

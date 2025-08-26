@@ -47,17 +47,8 @@ export function getSupabaseClient() {
 				persistSession: true,
 				detectSessionInUrl: true
 			},
-			global: {
-				fetch: (url, options = {}) => {
-					return fetch(url, {
-						...options,
-						headers: {
-							...(options as any).headers,
-							'User-Agent': 'social-media-dashboard/1.0'
-						}
-					})
-				}
-			}
+			// Note: Avoid overriding fetch in a way that drops Supabase auth headers.
+			// If you need to customize fetch, ensure existing headers from Supabase are preserved.
 		}
 	)
 }

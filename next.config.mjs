@@ -14,6 +14,16 @@ const nextConfig = {
   experimental: {},
   // Simplified webpack config for better Vercel compatibility
   webpack: (config, { isServer }) => {
+    // Exclude FFmpeg installer packages from webpack bundling to avoid README.md parse errors
+    if (isServer) {
+      config.externals = config.externals || []
+      config.externals.push({
+        '@ffmpeg-installer/ffmpeg': 'commonjs @ffmpeg-installer/ffmpeg',
+        '@ffprobe-installer/ffprobe': 'commonjs @ffprobe-installer/ffprobe',
+        'fluent-ffmpeg': 'commonjs fluent-ffmpeg'
+      })
+    }
+    
     // Only apply optimizations for client-side bundles
     if (!isServer) {
       config.optimization = {

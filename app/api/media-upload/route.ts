@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '@/lib/supabase'
 
 // Initialize Supabase clients
 const supabase = createClient(
@@ -15,13 +17,56 @@ const supabaseClient = createClient(
 // Authentication helper
 async function verifyAuth(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return { authenticated: false, user: null, error: 'Missing or invalid authorization header' }
+    console.log('🔍 Starting auth verification...')
+    
+    // Accept token from Authorization, x-supabase-auth, or Supabase cookies
+    const hdr = (name: string) => {
+      try {
+        return request.headers.get(name)
+      } catch (e) {
+        console.error('Failed to get header:', name, e)
+        return null
+      }
+    }
+    
+    const authHeader = hdr('authorization') || hdr('Authorization') || hdr('x-supabase-auth') || ''
+    let token = ''
+    
+    if (authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7)
+    } else if (authHeader.length > 20) {
+      token = authHeader
+    }
+    
+    console.log('🔍 Header token check:', { hasAuthHeader: !!authHeader, tokenFromHeader: !!token })
+    
+    if (!token) {
+      try {
+        const jar = await cookies()
+        token = jar.get('sb-access-token')?.value || jar.get('sb:token')?.value || ''
+        console.log('🔍 Cookie token check:', { tokenFromCookies: !!token })
+      } catch (cookieError) {
+        console.error('Failed to read cookies:', cookieError)
+      }
+    }
+    
+    console.log('🔍 Final token check:', { hasToken: !!token, tokenLength: token.length })
+    
+    if (!token) {
+      return { authenticated: false, user: null, error: 'Missing access token' }
     }
 
-    const token = authHeader.substring(7)
-    const { data: { user }, error } = await supabaseClient.auth.getUser(token)
+    // Use admin client for server-side token validation if available
+    console.log('🔍 Using auth client:', { hasAdmin: !!supabaseAdmin, hasClient: !!supabaseClient })
+    const authClient = supabaseAdmin || supabaseClient
+    
+    if (!authClient) {
+      console.error('No Supabase client available!')
+      return { authenticated: false, user: null, error: 'Supabase client not available' }
+    }
+    
+    const { data: { user }, error } = await authClient.auth.getUser(token)
+    console.log('🔍 Auth validation result:', { error: error?.message, hasUser: !!user, userId: user?.id })
     
     if (error || !user) {
       return { authenticated: false, user: null, error: 'Invalid token or user not found' }
@@ -29,7 +74,8 @@ async function verifyAuth(request: NextRequest) {
 
     return { authenticated: true, user, error: null }
   } catch (error) {
-    return { authenticated: false, user: null, error: 'Authentication verification failed' }
+    console.error('🔥 Auth verification exception:', error)
+    return { authenticated: false, user: null, error: `Authentication verification failed: ${error instanceof Error ? error.message : 'Unknown error'}` }
   }
 }
 
@@ -92,8 +138,22 @@ export async function POST(request: NextRequest) {
       filename: file?.name,
       size: file?.size,
       type: file?.type,
-      fileType
+      fileType,
+      sizeMB: Math.round(file?.size / 1024 / 1024)
     })
+
+    // Check file size (50MB limit for Supabase free tier)
+    const maxSize = 50 * 1024 * 1024 // 50MB in bytes
+    if (file.size > maxSize) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `File too large: ${Math.round(file.size / 1024 / 1024)}MB. Maximum allowed: 50MB`,
+          suggestion: 'Please compress your video or upgrade to Supabase Pro for larger file limits'
+        },
+        { status:413 }
+      )
+    }
 
     if (!file) {
       console.error('❌ No file provided')
@@ -111,14 +171,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate file size (100MB limit)
-    const maxSize = 100 * 1024 * 1024 // 100MB
-    if (file.size > maxSize) {
-      return NextResponse.json(
-        { success: false, error: 'File size exceeds 100MB limit' },
-        { status: 400 }
-      )
-    }
+    // File size already validated above (50MB limit)
 
     // Validate file type
     const validFileTypes = ['image', 'video', 'audio']
@@ -174,12 +227,39 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ File uploaded to storage successfully')
 
-    // Get public URL
+    // Get public URL and ensure it is reachable; fallback to signed URL if bucket is private
     const { data: { publicUrl } } = supabase.storage
       .from('media-files')
       .getPublicUrl(filename)
 
-    console.log('🔗 Generated public URL:', publicUrl)
+    let finalUrl = publicUrl
+    let urlType: 'public' | 'signed' = 'public'
+    let signedExpiresAt: string | null = null
+
+    try {
+      const head = await fetch(publicUrl, { method: 'HEAD' })
+      if (!head.ok) {
+        throw new Error(`${head.status} ${head.statusText}`)
+      }
+      console.log('✅ Public URL reachable')
+    } catch (e) {
+      console.log('ℹ️ Public URL not reachable, creating signed URL instead:', String(e))
+      const expiresIn = 60 * 60 * 24 * 7 // 7 days (max for Supabase signed URLs)
+      const { data: signed, error: signErr } = await supabase.storage
+        .from('media-files')
+        .createSignedUrl(filename, expiresIn)
+      if (signErr || !signed?.signedUrl) {
+        console.error('❌ Failed to create signed URL:', signErr?.message)
+        return NextResponse.json(
+          { success: false, error: 'Failed to create accessible URL for file' },
+          { status: 500 }
+        )
+      }
+      finalUrl = signed.signedUrl
+      urlType = 'signed'
+      signedExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString()
+      console.log('🔐 Using signed URL for file access')
+    }
 
     // Get file dimensions/duration (basic implementation)
     let width = null
@@ -195,27 +275,26 @@ export async function POST(request: NextRequest) {
       // For now, leave as null and let the frontend handle it
     }
 
-    // Create database record
+    // Create database record (matching actual database schema)
     const mediaFileData = {
       user_id: user.id,
       filename: `${timestamp}-${randomId}.${fileExtension}`,
       original_filename: file.name,
-      file_path: filename,
-      storage_url: publicUrl,
+      file_path: filename, // Direct column as required by DB
+      storage_url: finalUrl,
       file_size: file.size,
       mime_type: file.type,
       file_type: fileType,
       width,
       height,
       duration,
-      processing_status: 'completed',
-      optimization_status: 'pending',
       thumbnail_url: thumbnailUrl,
-      compressed_url: null,
       alt_text: null,
       metadata: {
         uploaded_at: new Date().toISOString(),
-        upload_method: 'direct'
+        upload_method: 'direct',
+        source_url_type: urlType,
+        source_url_expires_at: signedExpiresAt
       }
     }
 
@@ -256,8 +335,10 @@ export async function POST(request: NextRequest) {
       data: {
         ...mediaFile,
         // Ensure public URL is included for Shotstack compatibility
-        public_url: publicUrl,
-        is_public: true
+        public_url: finalUrl,
+        is_public: urlType === 'public',
+        is_signed_url: urlType === 'signed',
+        signed_expires_at: signedExpiresAt
       },
       message: 'File uploaded successfully'
     })
