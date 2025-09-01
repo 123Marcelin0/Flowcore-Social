@@ -571,8 +571,10 @@ export async function createCleanVideoFromDecision(
     console.log(`📊 Total valid duration: ${totalValidDuration.toFixed(1)}s`)
     console.log(`🎨 Fade effects: ${shouldApplyFades ? 'ENABLED' : 'DISABLED'} (total duration ${totalValidDuration > 1.0 ? '>' : '≤'} 1.0s)`)
     
-    // Calculate duration information
-    const originalDuration_s = editingDecision.editingStats.totalDuration_ms / 1000
+    // Calculate duration information (harden against missing stats)
+    const originalDuration_s = (editingDecision as any).editingStats?.totalDuration_ms
+      ? ((editingDecision as any).editingStats.totalDuration_ms / 1000)
+      : (validSegments.reduce((sum, seg) => sum + (seg.end_ms - seg.start_ms), 0) / 1000)
     const finalDuration_s = totalValidDuration
 
     // SAFE SEGMENT CUTTING: Use -ss start -to end with re-encoding
@@ -744,7 +746,7 @@ export async function createCleanVideoFromDecision(
                 originalDuration: originalDuration_s,
                 finalDuration: finalDuration_s,
                 segmentsKept: validSegments.length,
-                segmentsRemoved: editingDecision.editingStats.segmentsRemoved + (allSegments.length - validSegments.length),
+                segmentsRemoved: (((editingDecision as any).editingStats?.segmentsRemoved) || 0) + (allSegments.length - validSegments.length),
                 reductionPercentage: ((originalDuration_s - finalDuration_s) / originalDuration_s) * 100,
                 segmentsSkippedTooShort: allSegments.length - validSegments.length
               }

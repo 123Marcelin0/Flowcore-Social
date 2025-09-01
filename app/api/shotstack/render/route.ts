@@ -6,12 +6,16 @@ const Shotstack = require('shotstack-sdk')
 
 // For video duration retrieval
 import ffmpeg from 'fluent-ffmpeg'
-import ffmpegPath from 'ffmpeg-static'
-// @ts-ignore
+// Prefer @ffmpeg-installer/ffmpeg (present in dependencies) over ffmpeg-static
+// @ts-ignore - package provides a CJS export with a `path` property
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
+// @ts-ignore - this package exposes a CJS export with a `path` property
 import ffprobePath from 'ffprobe-static'
 
 // Set FFmpeg paths for serverless environments
-if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath)
+if ((ffmpegInstaller as any)?.path) {
+  ffmpeg.setFfmpegPath((ffmpegInstaller as any).path)
+}
 if (ffprobePath) ffmpeg.setFfprobePath(ffprobePath)
 
 // Initialize Supabase client

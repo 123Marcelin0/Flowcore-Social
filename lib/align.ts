@@ -280,8 +280,14 @@ async function embed(text: string): Promise<number[] | null> {
 }
 
 function getOpenAI(): OpenAI | null {
-  if (!process.env.OPENAI_API_KEY) return null
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  const apiKeyRaw = process.env.OPENAI_API_KEY
+  if (!apiKeyRaw) return null
+  const apiKey = apiKeyRaw.trim().replace(/^["']|["']$/g, '')
+  return new OpenAI({ 
+    apiKey,
+    organization: process.env.OPENAI_ORG_ID || undefined,
+    project: process.env.OPENAI_PROJECT_ID || undefined,
+  })
 }
 
 /**
@@ -1387,6 +1393,7 @@ export async function updateSpeakerToCameraPipeline(params: {
   outputQuality?: 'low' | 'medium' | 'high'
   generateFiles?: boolean // Whether to generate EDL/SRT files
   instagramFormat?: 'portrait' | 'square' // Instagram format preference
+  skipSubtitles?: boolean // Whether to skip subtitle generation completely
 }): Promise<{
   success: boolean
   videoPath?: string
@@ -1394,7 +1401,7 @@ export async function updateSpeakerToCameraPipeline(params: {
   edlPath?: string
   error?: string
 }> {
-  const { uploadId, script, outputQuality = 'medium', generateFiles = true, instagramFormat = 'portrait' } = params
+  const { uploadId, script, outputQuality = 'medium', generateFiles = true, instagramFormat = 'portrait', skipSubtitles = false } = params
 
   // Create output directory early for file generation and debug outputs
   const outputDir = `/tmp/video-edit-${uploadId}`
@@ -1456,16 +1463,12 @@ export async function updateSpeakerToCameraPipeline(params: {
       }
       
       // Import OpenAI transcription service
-      const { transcribeWithEnhancedTiming } = await import('./transcribe')
-      
-      console.log(`🔧 OpenAI Whisper with enhanced timing`)
+      console.log(`🔧 OpenAI Whisper with enhanced timing (rebuilt)`)
       console.log('⚡ Word-level timestamp analysis')
       
-      // Transcribe with OpenAI enhanced timing
-      const transcriptionResult = await transcribeWithEnhancedTiming({
-        uploadId: uploadId,
-        fileUrl: videoUrl
-      })
+      // Transcribe with rebuilt OpenAI logic
+      const { transcribeWithEnhancedTimingRebuild } = await import('./transcribe-rebuilt')
+      const transcriptionResult = await transcribeWithEnhancedTimingRebuild(videoUrl)
       
       if (!transcriptionResult.segments || transcriptionResult.segments.length === 0) {
         throw new Error(`❌ OpenAI transcription failed: No segments returned`)
@@ -1585,11 +1588,15 @@ export async function updateSpeakerToCameraPipeline(params: {
       await require('fs').promises.writeFile(edlPath, edlContent)
       console.log(`📄 EDL saved: ${edlPath}`)
       
-      // Generate SRT (will be updated later for Instagram format)
-      const srtContent = generateSRT(editingDecision)
-      srtPath = `${outputDir}/subtitles.srt`
-      await require('fs').promises.writeFile(srtPath, srtContent)
-      console.log(`📄 SRT saved: ${srtPath}`)
+      // Generate SRT only if not skipping subtitles
+      if (!skipSubtitles) {
+        const srtContent = generateSRT(editingDecision)
+        srtPath = `${outputDir}/subtitles.srt`
+        await require('fs').promises.writeFile(srtPath, srtContent)
+        console.log(`📄 SRT saved: ${srtPath}`)
+      } else {
+        console.log(`🚫 Skipping SRT generation as requested`)
+      }
       
       console.log('✅ Files generated successfully')
     }
@@ -1677,8 +1684,8 @@ export async function updateSpeakerToCameraPipeline(params: {
     await writeFile(tempCleanVideoPath, Buffer.from(editingResult.outputBuffer))
     console.log(`💾 Temp clean video saved: ${tempCleanVideoPath}`)
     
-    // Create SRT file from clean kept text if not already created
-    if (!srtPath && generateFiles) {
+    // Create SRT file from clean kept text if not already created and not skipping subtitles
+    if (!srtPath && generateFiles && !skipSubtitles) {
       const cleanSrtContent = generateSRT(editingDecision)
       await writeFile(srtFilePath, cleanSrtContent)
       console.log(`📄 SRT file created: ${srtFilePath}`)
@@ -1703,8 +1710,8 @@ export async function updateSpeakerToCameraPipeline(params: {
         ])
         .format('mp4')
       
-      // Burn in subtitles if SRT file exists
-      if (srtPath && generateFiles) {
+      // Burn in subtitles if SRT file exists and not skipping subtitles
+      if (srtPath && generateFiles && !skipSubtitles) {
         console.log(`🔥 Burning subtitles from: ${srtPath}`)
         // Adjust font size based on format (smaller for square, larger for portrait)
         const fontSize = instagramFormat === 'square' ? '20' : '24'

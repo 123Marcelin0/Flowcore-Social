@@ -4,7 +4,6 @@
  */
 
 const { createClient } = require('@supabase/supabase-js');
-const fetch = require('node-fetch');
 
 // Konfiguration aus Umgebungsvariablen laden
 require('dotenv').config({ path: '.env.local' });
@@ -12,6 +11,8 @@ require('dotenv').config({ path: '.env.local' });
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const openaiApiKey = process.env.OPENAI_API_KEY;
+const openaiOrgId = process.env.OPENAI_ORG_ID;
+const openaiProjectId = process.env.OPENAI_PROJECT_ID;
 
 console.log('🧪 Chat-Funktionalität Volltest\n');
 
@@ -29,7 +30,11 @@ if (!openaiApiKey) {
   console.error('❌ OPENAI_API_KEY fehlt in .env.local');
   process.exit(1);
 }
-console.log('✅ Alle Umgebungsvariablen sind gesetzt\n');
+// Safe print key diagnostics
+const sanitizedKey = openaiApiKey.trim().replace(/^["']|["']$/g, '');
+console.log('✅ Alle Umgebungsvariablen sind gesetzt');
+console.log(`   OPENAI_API_KEY: present=${!!sanitizedKey}, len=${sanitizedKey.length}, startsWithSk=${sanitizedKey.startsWith('sk-')}, prefix=${sanitizedKey.slice(0,10)}`);
+console.log('');
 
 // Test 2: Supabase-Verbindung prüfen
 console.log('📋 Schritt 2: Supabase-Verbindung prüfen...');
@@ -74,12 +79,18 @@ async function testChatMessagesTable() {
 async function testOpenAIConnection() {
   console.log('\n📋 Schritt 4: OpenAI API-Verbindung prüfen...');
   try {
-    const response = await fetch('https://api.openai.com/v1/models', {
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
+    if (typeof fetch !== 'function') {
+      const mod = await import('node-fetch');
+      global.fetch = mod.default || mod;
+    }
+    const headers = {
+      'Authorization': `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json'
+    };
+    if (openaiOrgId) headers['OpenAI-Organization'] = openaiOrgId;
+    if (openaiProjectId) headers['OpenAI-Project'] = openaiProjectId;
+
+    const response = await fetch('https://api.openai.com/v1/models', { headers });
     
     if (!response.ok) {
       console.error('❌ OpenAI API-Verbindung fehlgeschlagen:', response.status, response.statusText);
@@ -93,6 +104,51 @@ async function testOpenAIConnection() {
     return true;
   } catch (error) {
     console.error('❌ OpenAI API-Verbindung fehlgeschlagen:', error.message);
+    return false;
+  }
+}
+
+// Optional: Direct tiny chat completion
+async function testOpenAIChatDirect() {
+  console.log('\n📋 Schritt 4b: OpenAI Chat Completion direkt testen...');
+  try {
+    if (typeof fetch !== 'function') {
+      const mod = await import('node-fetch');
+      global.fetch = mod.default || mod;
+    }
+    const headers = {
+      'Authorization': `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json'
+    };
+    if (openaiOrgId) headers['OpenAI-Organization'] = openaiOrgId;
+    if (openaiProjectId) headers['OpenAI-Project'] = openaiProjectId;
+
+    const body = {
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'Be concise.' },
+        { role: 'user', content: 'Say ok.' }
+      ],
+      max_tokens: 5
+    };
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      console.error('❌ Chat Completion fehlgeschlagen:', response.status, response.statusText);
+      console.error(text);
+      return false;
+    }
+    const data = JSON.parse(text);
+    const content = data?.choices?.[0]?.message?.content || '';
+    console.log('✅ Chat Completion erfolgreich:', content);
+    return true;
+  } catch (error) {
+    console.error('❌ Chat Completion Fehler:', error.message);
     return false;
   }
 }
@@ -127,6 +183,10 @@ async function testAuthentication() {
 async function testChatAPI() {
   console.log('\n📋 Schritt 6: Chat API Route testen...');
   try {
+    if (typeof fetch !== 'function') {
+      const mod = await import('node-fetch');
+      global.fetch = mod.default || mod;
+    }
     const response = await fetch('http://localhost:3000/api/chat', {
       method: 'POST',
       headers: {
@@ -167,6 +227,7 @@ async function runTests() {
   results.push(await testSupabaseConnection());
   results.push(await testChatMessagesTable());
   results.push(await testOpenAIConnection());
+  results.push(await testOpenAIChatDirect());
   results.push(await testAuthentication());
   results.push(await testChatAPI());
   

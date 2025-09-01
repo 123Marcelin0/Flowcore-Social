@@ -12,6 +12,12 @@ interface TranscriptSegment {
   endTime: number
   speaker?: string
   confidence?: number
+  words?: Array<{
+    word: string
+    start: number
+    end: number
+    kept?: boolean
+  }>
 }
 
 interface TranscriptEditorProps {
@@ -25,6 +31,12 @@ interface TranscriptEditorProps {
   onSegmentSplit: (id: string, splitTime: number) => void
   onSegmentRemove: (id: string) => void
   className?: string
+  onWordClick?: (args: { segmentId: string; wordIndex: number; start: number; end: number }) => void
+  onWordToggle?: (args: { segmentId: string; wordIndex: number }) => void
+  onClean?: () => void
+  onWordAction?: (args: { segmentId: string; wordIndex: number; action: 'add' | 'remove' | 'keepOnly' }) => void
+  pauses?: Array<{ start: number; end: number; duration: number; segmentId?: string; beforeWordIndex?: number; type: 'initial' | 'interWord' | 'interSegment' }>
+  onAddVisuals?: () => void
 }
 
 export function TranscriptEditor({
@@ -37,7 +49,13 @@ export function TranscriptEditor({
   onSegmentEdit,
   onSegmentSplit,
   onSegmentRemove,
-  className = ""
+  className = "",
+  onWordClick,
+  onWordToggle,
+  onClean,
+  onWordAction
+  , pauses = []
+  , onAddVisuals
 }: TranscriptEditorProps) {
   const [editingSegment, setEditingSegment] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
@@ -74,6 +92,18 @@ export function TranscriptEditor({
     onSeek(segment.startTime)
   }
 
+  // Fast render: memoize segment words to avoid splitting text repeatedly
+  const memoWords = (segment: TranscriptSegment) => {
+    if (segment.words && segment.words.length) return segment.words
+    const tokens = segment.text.split(/\s+/).filter(Boolean)
+    const total = Math.max(0.001, segment.endTime - segment.startTime)
+    return tokens.map((w, idx) => ({
+      word: w,
+      start: segment.startTime + (idx / tokens.length) * total,
+      end: segment.startTime + ((idx + 1) / tokens.length) * total
+    }))
+  }
+
   const handleEditStart = (segment: TranscriptSegment) => {
     setEditingSegment(segment.id)
     setEditText(segment.text)
@@ -92,6 +122,8 @@ export function TranscriptEditor({
     setEditText("")
   }
 
+  const [menu, setMenu] = useState<{ segId: string; idx: number; x: number; y: number } | null>(null)
+
   return (
     <div className={`h-full flex flex-col ${className}`}>
       {/* Header */}
@@ -103,6 +135,15 @@ export function TranscriptEditor({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {onClean && (
+            <button
+              onClick={onClean}
+              className="px-3 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-[12px] text-white/85"
+              title="One‑click clean (remove filler words, trim pauses)"
+            >
+              Clean
+            </button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -115,6 +156,15 @@ export function TranscriptEditor({
               <Play className="w-4 h-4 text-white/90" />
             )}
           </Button>
+          {onAddVisuals && (
+            <button
+              onClick={onAddVisuals}
+              className="px-3 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-[12px] text-white/85"
+              title="Add visuals"
+            >
+              Add visuals
+            </button>
+          )}
         </div>
       </div>
 
@@ -134,7 +184,16 @@ export function TranscriptEditor({
           segments.map((segment) => {
             const isActive = segment.id === activeSegmentId
             const isEditing = editingSegment === segment.id
-            
+            // Use provided detected pauses; map to word boundaries for inline rendering
+            const segPauses = (pauses || []).filter(p => p.segmentId === segment.id)
+            const inlinePauses = segPauses.filter(p => p.type === 'initial' || p.type === 'interWord')
+            const pausesByIndex: Record<number, typeof inlinePauses> = inlinePauses.reduce((acc: Record<number, typeof inlinePauses>, p) => {
+              const idx = Math.max(0, (p.beforeWordIndex as number) ?? 0)
+              if (!acc[idx]) acc[idx] = [] as any
+              ;(acc[idx] as any).push(p)
+              return acc
+            }, {} as Record<number, typeof inlinePauses>)
+
             return (
               <motion.div
                 key={segment.id}
@@ -212,23 +271,57 @@ export function TranscriptEditor({
                       className="cursor-pointer"
                     >
                       <p className="text-white/90 text-sm leading-relaxed">
-                        {segment.text.split(' ').map((word, wordIndex) => {
-                          // Highlight current word based on playback position
-                          const wordStartTime = segment.startTime + (wordIndex / segment.text.split(' ').length) * (segment.endTime - segment.startTime)
-                          const wordEndTime = segment.startTime + ((wordIndex + 1) / segment.text.split(' ').length) * (segment.endTime - segment.startTime)
+                        {memoWords(segment).map((w, wordIndex) => {
+                          const wordStartTime = w.start
+                          const wordEndTime = w.end
                           const isCurrentWord = currentTime >= wordStartTime && currentTime < wordEndTime && isActive
-                          
+                          const kept = (segment.words && (segment.words as any)[wordIndex]?.kept !== false) || segment.words === undefined
+
                           return (
-                            <span
-                              key={wordIndex}
-                              className={`transition-colors duration-100 ${
-                                isCurrentWord ? 'bg-red-500/30 text-white' : ''
-                              }`}
-                            >
-                              {word}{' '}
-                            </span>
+                            <React.Fragment key={wordIndex}>
+                              {(pausesByIndex[wordIndex] || []).map((p, i) => (
+                                <span
+                                  key={`p-${wordIndex}-${i}`}
+                                  className={`mr-1 inline-flex items-center px-1.5 py-[1px] rounded text-[10px] select-none border ${p.type === 'interWord' ? 'bg-white/10 border-white/15 text-white/70' : 'bg-blue-500/15 border-blue-400/30 text-blue-300/90'}`}
+                                  title={`${p.type} ${p.duration.toFixed(3)}s (${formatTime(p.start)}–${formatTime(p.end)})`}
+                                >
+                                  {p.duration.toFixed(3)}s
+                                </span>
+                              ))}
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (e.altKey || e.ctrlKey || e.metaKey) {
+                                    onWordToggle && onWordToggle({ segmentId: segment.id, wordIndex })
+                                  } else {
+                                    onWordClick && onWordClick({ segmentId: segment.id, wordIndex, start: wordStartTime, end: wordEndTime })
+                                  }
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  setMenu({ segId: segment.id, idx: wordIndex, x: e.clientX, y: e.clientY })
+                                }}
+                                className={`select-none px-0.5 rounded transition-colors duration-100 ${
+                                  isCurrentWord ? 'bg-red-500/30 text-white' : ''
+                                } ${kept ? '' : 'line-through opacity-60'}`}
+                                title={kept ? 'Click to seek (Alt/Ctrl to remove)' : 'Removed (Alt/Ctrl to restore)'}
+                              >
+                                {w.word}{' '}
+                              </span>
+                            </React.Fragment>
                           )
                         })}
+                        {/* Inter-segment pause after this segment */}
+                        {(() => {
+                          const segEndPause = (pauses || []).find(p => p.type === 'interSegment' && p.segmentId === segment.id)
+                          if (!segEndPause) return null
+                          return (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-[1px] rounded bg-amber-500/15 text-amber-300/90 text-[10px] align-middle select-none border border-amber-400/30" title={`inter-segment ${segEndPause.duration.toFixed(3)}s (${formatTime(segEndPause.start)}–${formatTime(segEndPause.end)})`}>
+                              {`${segEndPause.duration.toFixed(3)}s`}
+                            </span>
+                          )
+                        })()}
                       </p>
                       {segment.speaker && (
                         <div className="mt-1 text-xs text-white/50">
@@ -243,6 +336,40 @@ export function TranscriptEditor({
           })
         )}
       </div>
+
+      {menu && (() => {
+        const seg = segments.find(s => s.id === menu.segId)
+        const wKept = (seg?.words && (seg.words as any)[menu.idx]?.kept !== false) || seg?.words === undefined
+        return (
+        <div
+          className="fixed z-50 rounded-md border border-white/15 bg-black/70 backdrop-blur-md text-white text-sm"
+          style={{ left: menu.x + 8, top: menu.y + 8 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {!wKept ? (
+            <button
+              className="block w-full text-left px-3 py-2 hover:bg-white/10"
+              onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'add' }); setMenu(null) }}
+            >
+              + Add to selection
+            </button>
+          ) : (
+            <button
+              className="block w-full text-left px-3 py-2 hover:bg-white/10"
+              onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'remove' }); setMenu(null) }}
+            >
+              − Remove from selection
+            </button>
+          )}
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-white/10"
+            onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'keepOnly' }); setMenu(null) }}
+          >
+            ✓ Keep only selected
+          </button>
+        </div>
+        )
+      })()}
     </div>
   )
 }

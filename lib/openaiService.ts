@@ -11,8 +11,11 @@ function getOpenAIClient(): OpenAI {
     }
 
     // Initialize OpenAI client
+    const apiKey = String(process.env.OPENAI_API_KEY).trim().replace(/^["']|["']$/g, '')
     openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey,
+      organization: process.env.OPENAI_ORG_ID || undefined,
+      project: process.env.OPENAI_PROJECT_ID || undefined,
       dangerouslyAllowBrowser: true, // Enable browser usage with appropriate security measures
     });
   }

@@ -1,5 +1,10 @@
 import { supabase, supabaseAdmin } from './supabase'
 import OpenAI from 'openai'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// Use global File if present (Node 20+ with fetch); otherwise pass Buffer to OpenAI client
+const NodeFile: any = (typeof File !== 'undefined') ? (File as any) : undefined
 // Use FFmpeg-backed extractor on server with fallback
 import { extractAudioServerSide, createLowQualityAudio, createSimpleAudioFallback } from './server-audio-extractor-ffmpeg'
 import { Word, Segment, Transcript } from './types'
@@ -90,6 +95,8 @@ function getOpenAI(): OpenAI | null {
     // Create OpenAI client with explicit configuration
     const client = new OpenAI({ 
       apiKey,
+      organization: process.env.OPENAI_ORG_ID || undefined,
+      project: process.env.OPENAI_PROJECT_ID || undefined,
       dangerouslyAllowBrowser: false // Ensure we're not in browser mode
     })
     console.log('✅ OpenAI client created successfully')
@@ -97,6 +104,67 @@ function getOpenAI(): OpenAI | null {
   } catch (error) {
     console.error('❌ Failed to initialize OpenAI client:', error)
     return null
+  }
+}
+
+// Return a sanitized OpenAI API key (trimmed, quotes removed)
+function getCleanOpenAIKey(): string | null {
+  let apiKey = process.env.OPENAI_API_KEY || ''
+  apiKey = apiKey.trim().replace(/^['"]|['"]$/g, '')
+  if (!apiKey) return null
+  return apiKey
+}
+
+// Fallback: Call OpenAI transcriptions HTTP endpoint directly using FormData
+async function transcribeViaHttp(params: {
+  blob: Blob
+  fileName: string
+  responseFormat: 'verbose_json' | 'text'
+}): Promise<{ ok: boolean; data?: any; error?: string }> {
+  try {
+    const apiKey = getCleanOpenAIKey()
+    if (!apiKey) return { ok: false, error: 'Missing OPENAI_API_KEY for HTTP fallback' }
+
+    // Prepare multipart/form-data for Node.js
+    const form = new FormData()
+    // Convert blob to buffer for Node.js compatibility
+    const buf = await params.blob.arrayBuffer()
+    const buffer = Buffer.from(buf)
+    // Create a Blob-like object for FormData compatibility
+    const fileBlob = new Blob([buffer], { type: params.blob.type || 'audio/mpeg' })
+    form.append('file', fileBlob, params.fileName)
+    form.append('model', 'whisper-1')
+    form.append('response_format', params.responseFormat)
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${apiKey}`,
+    }
+    // Optional org/project headers if provided
+    if (process.env.OPENAI_ORG_ID) headers['OpenAI-Organization'] = String(process.env.OPENAI_ORG_ID)
+    if (process.env.OPENAI_PROJECT_ID) headers['OpenAI-Project'] = String(process.env.OPENAI_PROJECT_ID)
+
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers,
+      body: form as any,
+    })
+
+    const bodyText = await res.text()
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status}: ${bodyText}` }
+    }
+
+    if (params.responseFormat === 'text') {
+      return { ok: true, data: { text: bodyText } }
+    }
+    try {
+      const json = JSON.parse(bodyText)
+      return { ok: true, data: json }
+    } catch (e) {
+      return { ok: false, error: `Failed to parse JSON: ${String(e)}; body=${bodyText.slice(0, 500)}` }
+    }
+  } catch (e) {
+    return { ok: false, error: String(e) }
   }
 }
 
@@ -112,91 +180,108 @@ async function callOpenAITranscription(
     console.log(`🎤 Calling OpenAI transcriptions.create with enhanced timing for: ${fileName}`)
     console.log(`📊 File details: size=${blob.size}, type=${blob.type}`)
     console.log(`🔑 OpenAI client config:`, { 
-      hasApiKey: !!openai.apiKey,
-      apiKeyPrefix: openai.apiKey ? openai.apiKey.substring(0, 10) + '...' : 'none'
+      // Some SDKs do not expose apiKey; we only log presence safely via env
+      hasApiKey: !!getCleanOpenAIKey(),
+      apiKeyPrefix: (getCleanOpenAIKey() || '').slice(0, 10) + (getCleanOpenAIKey() ? '...' : '')
     })
-    
-    // Primary attempt: Request both word and segment level timestamps
+
+    // Use in-memory File to avoid fs ENOENT issues across retries
+    const rawData = Buffer.from(await blob.arrayBuffer())
+    const safeName = fileName && /\.[a-z0-9]+$/i.test(fileName) ? fileName : `audio.mp3`
+    const nodeFile = NodeFile ? new NodeFile([rawData], safeName, { type: blob.type || 'audio/mpeg' }) : (rawData as any)
+
+    // Primary attempt: use fs.createReadStream (most reliable in Node)
     try {
-      const primaryResult = await openai.audio.transcriptions.create({
-        file: new File([blob], fileName, { type: 'audio/mpeg' }),
+      const stream = nodeFile
+      const primaryResult: any = await openai.audio.transcriptions.create({
+        file: stream as any,
         model: 'whisper-1',
-        response_format: 'verbose_json'
-      })
-      
-      console.log(`✅ Primary transcription successful with word-level timing`)
-      return { success: true, data: primaryResult as OpenAITranscriptionResponse }
-      
-    } catch (primaryError) {
-      console.log(`⚠️ Primary transcription with word+segment timing failed:`, primaryError)
-      
-      // Fallback 1: Try with just segment-level timestamps
-      try {
-        console.log(`🔄 Fallback 1: Trying segment-level timing only...`)
-        const segmentResult = await openai.audio.transcriptions.create({
-          file: new File([blob], fileName, { type: 'audio/mpeg' }),
-          model: 'whisper-1',
-          response_format: 'verbose_json'
-        })
-        
-        console.log(`✅ Fallback 1 successful with segment-level timing`)
-        return { success: true, data: segmentResult as OpenAITranscriptionResponse }
-        
-      } catch (segmentError) {
-        console.log(`⚠️ Fallback 1 (segment-only) failed:`, segmentError)
-        
-        // Fallback 2: Basic verbose_json without granularities
-        try {
-          console.log(`🔄 Fallback 2: Trying basic verbose_json...`)
-          const basicResult = await openai.audio.transcriptions.create({
-            file: new File([blob], fileName, { type: 'audio/mpeg' }),
+        response_format: 'verbose_json',
+        // Ask for word-level timing when supported by the backend
+        // Casting to any to avoid SDK type restrictions across versions
+        timestamp_granularities: ['word', 'segment'] as any
+      } as any)
+
+      if (primaryResult) {
+        // If no words were returned, try a second pass hint
+        const hasWords = Array.isArray(primaryResult.segments) && primaryResult.segments.some((s: any) => Array.isArray(s.words) && s.words.length)
+        if (!hasWords) {
+          console.log('ℹ️ No word-level timestamps in primary result, trying secondary hint...')
+          const stream2 = nodeFile
+          const hinted: any = await openai.audio.transcriptions.create({
+            file: stream2 as any,
             model: 'whisper-1',
-            response_format: 'verbose_json'
-          })
-          
-          console.log(`✅ Fallback 2 successful with basic timing`)
-          return { success: true, data: basicResult as OpenAITranscriptionResponse }
-          
-        } catch (basicError) {
-          console.log(`⚠️ Fallback 2 (basic) failed:`, basicError)
-          
-          // Fallback 3: Plain text response (last resort)
-          try {
-            console.log(`🔄 Fallback 3: Trying plain text response...`)
-            const textResult = await openai.audio.transcriptions.create({
-              file: new File([blob], fileName, { type: 'audio/mpeg' }),
-              model: 'whisper-1',
-              response_format: 'text'
-            })
-            
-            console.log(`✅ Fallback 3 successful with text-only response`)
-            
-            // Create minimal response structure for text-only result
-            return { 
-              success: true, 
-              data: {
-                text: typeof textResult === 'string' ? textResult : (textResult as any).text || '',
-                segments: [] // No timing information available
-              }
-            }
-            
-          } catch (textError) {
-            console.error(`❌ All transcription methods failed:`, textError)
-            return { 
-              success: false, 
-              error: `All transcription methods failed. Last error: ${textError}` 
-            }
-          }
+            response_format: 'verbose_json',
+            timestamp_granularities: ['word', 'segment'] as any
+          } as any)
+          return { success: true, data: hinted as any }
         }
+        return { success: true, data: primaryResult as any }
       }
+    } catch (e) {
+      console.warn('⚠️ Primary transcription attempt failed, falling back...', e)
     }
-    
-  } catch (error) {
-    console.error(`❌ Transcription call failed:`, error)
-    return { 
-      success: false, 
-      error: `Transcription failed: ${error}` 
+
+    // Fallback 0: try gpt-4o-transcribe (often more permissive)
+    try {
+      console.log(`🔄 Fallback 0: Trying gpt-4o-transcribe with same file...`)
+      const streamG = nodeFile
+      const g4o: any = await openai.audio.transcriptions.create({
+        file: streamG as any,
+        model: 'gpt-4o-transcribe',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['word', 'segment'] as any
+      } as any)
+      return { success: true, data: g4o as any }
+    } catch (e) {
+      console.warn('⚠️ Fallback 0 failed, trying next...', e)
     }
+
+    // Fallback 1: Try SDK again (segment-level request) using stream
+    try {
+      console.log(`🔄 Fallback 1: Trying segment-level timing only...`)
+      const stream2 = nodeFile
+      const segmentResult: any = await openai.audio.transcriptions.create({
+        file: stream2 as any,
+        model: 'whisper-1',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['segment'] as any
+      } as any)
+      return { success: true, data: segmentResult as any }
+    } catch (e) {
+      console.warn('⚠️ Fallback 1 failed, trying next...', e)
+    }
+
+    // Fallback 2: Minimal JSON (some SDKs/models)
+    try {
+      console.log(`🔄 Fallback 2: Trying minimal JSON...`)
+      const stream = nodeFile
+      const minimal: any = await openai.audio.transcriptions.create({
+        file: stream as any,
+        model: 'whisper-1',
+        response_format: 'json'
+      } as any)
+      return { success: true, data: minimal as any }
+    } catch (e) {
+      console.warn('⚠️ Fallback 2 failed, trying plain text...', e)
+    }
+
+    // Fallback 3: Plain text response (last resort) using stream
+    try {
+      console.log(`🔄 Fallback 3: Trying plain text response...`)
+      const stream3 = nodeFile
+      const textResult: any = await openai.audio.transcriptions.create({
+        file: stream3 as any,
+        model: 'whisper-1',
+        response_format: 'text'
+      } as any)
+      return { success: true, data: textResult as any }
+    } catch (e) {
+      console.warn('⚠️ Plain text fallback failed.', e)
+    }
+    return { success: false, error: 'All transcription attempts failed' }
+  } catch (e) {
+    return { success: false, error: String(e) }
   }
 }
 
@@ -255,16 +340,31 @@ function processTranscriptionResponse(response: OpenAITranscriptionResponse): Tr
     // Fallback: Create segments from word-level data
     console.log(`🔄 Creating segments from word-level data...`)
     segments.push(...createSegmentsFromWords(response.words, text))
-  } else {
-    // Last resort: Create single segment with no timing details
-    console.log(`⚠️ No timing information available, creating single segment`)
-    segments.push({
-      start: 0,
-      end: 0, // Duration unknown
-      text: text,
-      confidence: 0.5, // Low confidence due to lack of timing data
-      words: undefined
+  } else if (response.segments && response.segments.length > 0) {
+    // Fallback: No word arrays anywhere. Allocate uniform word timing within each segment.
+    console.log(`🔄 No word arrays found, allocating uniform timings per segment...`)
+    response.segments.forEach((segment) => {
+      const start = segment.start || 0
+      const end = segment.end || Math.max(start + 0.001, start)
+      const tokens = String(segment.text || '').split(/\s+/).filter(Boolean)
+      const total = Math.max(0.001, end - start)
+      const words: Word[] = tokens.map((t, i) => ({
+        word: t,
+        start: start + (i / tokens.length) * total,
+        end: start + ((i + 1) / tokens.length) * total
+      }))
+      segments.push({
+        start,
+        end,
+        text: segment.text,
+        confidence: calculateSegmentConfidence(segment),
+        words
+      })
     })
+  } else {
+    // Last resort: no segments, no words — single untimed segment
+    console.log(`⚠️ No timing information available, creating single untimed segment`)
+    segments.push({ start: 0, end: 0, text, confidence: 0.5, words: undefined })
   }
   
   const result: TranscriptionResult = {
@@ -366,7 +466,7 @@ async function saveTranscriptionResult(uploadId: string, result: TranscriptionRe
   const db = supabaseAdmin || supabase
   
   // Get current metadata
-  const { data: currentMedia } = await db
+  const { data: currentMedia } = await (db as any)
     .from('media_files')
     .select('metadata')
     .eq('id', uploadId)
@@ -374,17 +474,21 @@ async function saveTranscriptionResult(uploadId: string, result: TranscriptionRe
   
   const existingMetadata = (currentMedia as any)?.metadata || {}
   
+  const globalWords = (result.segments || []).flatMap(s => (s.words || [])).map(w => ({ word: w.word, start: w.start, end: w.end }))
+
   const newMetadata = {
     ...existingMetadata,
     processing_status: 'completed',
     asr: {
       text: result.text,
       segments: result.segments,
+      // Store flattened global words for easy hydration and pause analysis
+      words: globalWords,
       language: result.language,
       duration: result.duration,
       provider: 'openai.whisper-1',
       enhanced_timing: result.segments.some(s => s.words && s.words.length > 0),
-      word_count: result.segments.reduce((sum, s) => sum + (s.words?.length || 0), 0),
+      word_count: globalWords.length,
       updated_at: new Date().toISOString(),
     },
     ffmpeg_path: ffmpegPath, // Store FFmpeg path for later video cutting
@@ -399,7 +503,7 @@ async function saveTranscriptionResult(uploadId: string, result: TranscriptionRe
     duration: result.duration
   })
   
-  const { error: updateError } = await db
+  const { error: updateError } = await (db as any)
     .from('media_files')
     .update({
       metadata: newMetadata,
@@ -422,7 +526,7 @@ export async function transcribeFromUrl(params: {
   const openai = getOpenAI()
   if (!openai) {
     // Graceful fallback: mark error on media_files.metadata
-    const db = supabaseAdmin || supabase
+    const db = (supabaseAdmin as any) || (supabase as any)
     
     // Get current metadata to preserve it
     const { data: currentMedia } = await db
@@ -440,7 +544,7 @@ export async function transcribeFromUrl(params: {
       ? 'OpenAI API key format is invalid (should start with sk-)'
       : 'OpenAI client initialization failed'
     
-    await db
+    await (db as any)
       .from('media_files')
       .update({
         metadata: {
@@ -619,10 +723,10 @@ export async function transcribeFromUrl(params: {
   }
 
   // All format attempts failed
-  const db = supabaseAdmin || supabase
+  const db = (supabaseAdmin as any) || (supabase as any)
   
   // Get current metadata to preserve it
-  const { data: currentMedia } = await db
+  const { data: currentMedia } = await (db as any)
     .from('media_files')
     .select('metadata')
     .eq('id', uploadId)
@@ -630,7 +734,7 @@ export async function transcribeFromUrl(params: {
   
   const existingMetadata = (currentMedia as any)?.metadata || {}
   
-  await db
+  await (db as any)
     .from('media_files')
     .update({
       metadata: {

@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get('category') || undefined
     const minWidth = searchParams.get('minWidth') ? parseInt(searchParams.get('minWidth')!) : undefined
     const minHeight = searchParams.get('minHeight') ? parseInt(searchParams.get('minHeight')!) : undefined
+    const imageType = (searchParams.get('imageType') as 'all'|'photo'|'illustration'|'vector') || undefined
 
     console.log('🖼️ Pixabay search details:', {
       query,
@@ -76,7 +77,8 @@ export async function GET(request: NextRequest) {
       order,
       category,
       minWidth,
-      minHeight
+      minHeight,
+      imageType
     })
 
     // Initialize Pixabay service
@@ -92,7 +94,8 @@ export async function GET(request: NextRequest) {
         order: order as 'popular' | 'latest',
         category,
         minWidth,
-        minHeight
+        minHeight,
+        imageType
       })
       results.images = imageResults
     }

@@ -34,7 +34,8 @@ export async function POST(request: NextRequest) {
       script, 
       outputQuality = 'medium',
       generateFiles = true,
-      instagramFormat = 'portrait'
+      instagramFormat = 'portrait',
+      skipSubtitles = false
     } = body || {}
     
     if (!uploadId) {
@@ -49,10 +50,11 @@ export async function POST(request: NextRequest) {
     console.log('🎨 Output quality:', outputQuality)
     console.log('📄 Generate files:', generateFiles)
     console.log('📱 Instagram format:', instagramFormat)
+    console.log('🚫 Skip subtitles:', skipSubtitles)
     
     // Add timeout handling
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Pipeline timeout after 5 minutes')), 300000)
+      setTimeout(() => reject(new Error('Pipeline timeout after 10 minutes')), 600000)
     })
     
     // Run the updated pipeline with timeout
@@ -61,8 +63,9 @@ export async function POST(request: NextRequest) {
         uploadId,
         script,
         outputQuality: outputQuality as 'low' | 'medium' | 'high',
-        generateFiles,
-        instagramFormat: instagramFormat as 'portrait' | 'square'
+        generateFiles: skipSubtitles ? false : generateFiles, // Force false if skipping subtitles
+        instagramFormat: instagramFormat as 'portrait' | 'square',
+        skipSubtitles
       }),
       timeoutPromise
     ]) as any
@@ -185,14 +188,23 @@ export async function POST(request: NextRequest) {
     // More specific error handling
     let errorMessage = error?.message || 'Pipeline failed'
     let statusCode = 500
-    
-    if (errorMessage.includes('timeout')) {
+    const lowerMsg = errorMessage.toLowerCase()
+
+    if (lowerMsg.includes('timeout')) {
       errorMessage = 'Pipeline processing timed out. Please try with a shorter video.'
       statusCode = 408
-    } else if (errorMessage.includes('OpenAI')) {
-      errorMessage = 'AI transcription service unavailable. Please try again later.'
+    } else if (
+      // Treat OpenAI-related issues (including enhanced transcription wrapper) as service unavailable
+      lowerMsg.includes('openai') ||
+      lowerMsg.includes('invalid_api_key') ||
+      lowerMsg.includes('missing openai_api_key') ||
+      lowerMsg.includes('enhanced transcription failed') ||
+      lowerMsg.includes('https://platform.openai.com/account/api-keys') ||
+      /\b401\b/.test(lowerMsg)
+    ) {
+      errorMessage = 'AI transcription service is unavailable or not configured. Set a valid OpenAI API key and try again.'
       statusCode = 503
-    } else if (errorMessage.includes('FFmpeg')) {
+    } else if (lowerMsg.includes('ffmpeg')) {
       errorMessage = 'Video processing failed. Please check your video format.'
       statusCode = 422
     }
@@ -201,6 +213,9 @@ export async function POST(request: NextRequest) {
       { 
         success: false, 
         error: errorMessage,
+        suggestion: statusCode === 503 
+          ? 'Add OPENAI_API_KEY to your environment. See: https://platform.openai.com/account/api-keys'
+          : undefined,
         details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
       },
       { status: statusCode }

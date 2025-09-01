@@ -7,6 +7,31 @@ import { supabase, supabaseAdmin } from '@/lib/supabase'
 export const runtime = 'nodejs'
 export const preferredRegion = 'auto'
 
+// HEAD /api/jobs/transcribe - Health check
+export async function HEAD() {
+  try {
+    // Basic health check - verify OpenAI key exists
+    const hasOpenAI = !!process.env.OPENAI_API_KEY
+    
+    if (!hasOpenAI) {
+      return new NextResponse(null, { 
+        status: 503, 
+        statusText: 'OpenAI API key not configured' 
+      })
+    }
+    
+    return new NextResponse(null, { 
+      status: 200,
+      statusText: 'Service available'
+    })
+  } catch (error) {
+    return new NextResponse(null, { 
+      status: 503, 
+      statusText: 'Service unavailable' 
+    })
+  }
+}
+
 // POST /api/jobs/transcribe
 // Body: { uploadId: string, fileUrl: string }
 export async function POST(request: NextRequest) {
@@ -55,7 +80,107 @@ export async function POST(request: NextRequest) {
       textLength: result.text.length
     })
 
-    return NextResponse.json({ success: true, segments: result.segments })
+    // Auto-trigger AI caption segmentation if word-level timing is available
+    console.log('🔍 Checking for AI caption segmentation trigger...')
+    let enhancedSegments = result.segments
+    try {
+      // Extract all words with timing
+      const allWords = result.segments.flatMap(seg => 
+        Array.isArray(seg.words) ? seg.words : []
+      ).filter(w => w && typeof w.word === 'string')
+      
+      console.log('📊 Found', allWords.length, 'words for AI processing')
+      
+      if (allWords.length > 0) {
+        console.log('🤖 Auto-running AI Caption Segmentation for', allWords.length, 'words...')
+        
+        // Prefer in-process call to avoid headers timeout in dev
+        const { runAICaptionSegmentation } = await import('@/lib/ai-caption-segmentation')
+        const aiResult = await runAICaptionSegmentation({
+          words: allWords,
+          audioUrl: fileUrl,
+          settings: {
+            minWordsPerCard: 1,
+            maxWordsPerCard: 6,
+            targetCpsRange: [12, 17],
+            globalMinPause: 0.24,
+            lingerSec: 0.6
+          }
+        })
+        
+        if (aiResult && Array.isArray(aiResult.cards)) {
+          
+          // Handle both possible response formats
+          let cards = null
+          if (aiResult.success && Array.isArray(aiResult.cards)) {
+            cards = aiResult.cards
+          } else if (aiResult.success && aiResult.data && Array.isArray(aiResult.data.cards)) {
+            cards = aiResult.data.cards
+          }
+          
+          if (cards && cards.length > 0) {
+            console.log('✅ AI generated', cards.length, 'perfect subtitle cards')
+            
+            // Convert AI cards to segment format
+            enhancedSegments = cards.map((card: any) => ({
+              start: card.start || card.renderStart || 0,
+              end: card.end || card.renderEnd || 0,
+              text: card.text || '',
+              words: card.words || [],
+              confidence: card.confidence || 0.95,
+              speaker: 'SPEAKER_00'
+            }))
+            
+            console.log('🎯 AI-enhanced segments ready for frontend!')
+
+            // Persist AI-enhanced cards/segments to media_files metadata for reliable hydration
+            try {
+              const db = supabaseAdmin || supabase
+              const { data: current } = await db
+                .from('media_files')
+                .select('metadata')
+                .eq('id', uploadId)
+                .single()
+
+              const existing = (current as any)?.metadata || {}
+              await db
+                .from('media_files')
+                .update({
+                  metadata: {
+                    ...existing,
+                    ai_subtitles: {
+                      cards,
+                      updated_at: new Date().toISOString(),
+                    },
+                    // Also reflect enhanced segments for simple consumers
+                    asr: {
+                      ...(existing.asr || {}),
+                      enhanced_segments: enhancedSegments,
+                      ai_captioned: true,
+                    }
+                  } as any
+                })
+                .eq('id', uploadId)
+              console.log('💾 Persisted AI subtitle cards to metadata.ai_subtitles')
+            } catch (persistErr) {
+              console.warn('⚠️ Failed to persist AI subtitles to DB (non-fatal):', persistErr)
+            }
+          } else {
+            console.warn('⚠️ AI segmentation returned invalid format:', JSON.stringify(aiResult).substring(0, 200))
+          }
+        } else {
+          console.warn('⚠️ AI segmentation failed, using original segments')
+        }
+      } else {
+        console.warn('⚠️ No word-level timing found, skipping AI segmentation')
+      }
+    } catch (aiError) {
+      console.error('❌ AI Caption Segmentation failed:', aiError)
+      console.log('🔄 Using original segments as fallback')
+    }
+
+    console.log('📤 Returning', enhancedSegments.length, 'segments to frontend')
+    return NextResponse.json({ success: true, segments: enhancedSegments })
   } catch (error: any) {
     // Persist error for diagnostics
     try {

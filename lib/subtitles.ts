@@ -29,7 +29,7 @@ export const DEFAULT_SUBTITLE_OPTIONS: SubtitleOptions = {
   minCueDuration_ms: 300,
   maxCueDuration_ms: 7000,
   maxCharsPerLine: 42,
-  maxLinesPerCue: 2,
+  maxLinesPerCue: 3,
   mergeThreshold_ms: 200,
   readingSpeed_wpm: 180,
   preserveLineBreaks: false,

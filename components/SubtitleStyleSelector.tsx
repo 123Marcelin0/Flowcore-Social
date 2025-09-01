@@ -14,6 +14,8 @@ interface Props {
   onColorChange?: (hex: string) => void
   accentColor?: string
   onAccentColorChange?: (hex: string) => void
+  animation?: 'pop' | 'fade' | 'slideUp'
+  onAnimationChange?: (anim: 'pop' | 'fade' | 'slideUp') => void
 }
 
 type StyleCard = { id: string; name: string; preview: React.ReactNode }
@@ -25,6 +27,17 @@ const viralPresets: StyleCard[] = [
     preview: (
       <div className={`px-3 py-2 rounded-md bg-black text-yellow-300 ${anton.className}`} style={{ WebkitTextStroke: '2px #000', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         THIS IS A PREVIEW
+      </div>
+    )
+  },
+  {
+    id: 'karaoke-accent',
+    name: 'Karaoke Accent',
+    preview: (
+      <div className={`px-3 py-2 rounded-md bg-neutral-900 ${mont.className}`} style={{ color: '#fff', fontWeight: 900 }}>
+        <span>WILLST DU</span>{' '}
+        <span className="inline-block" style={{ color: '#22c55e' }}>IMMOBILIE</span>{' '}
+        <span>KAUFEN</span>
       </div>
     )
   },
@@ -123,7 +136,7 @@ const viralPresets: StyleCard[] = [
   }
 ]
 
-export function SubtitleStyleSelector({ value, onChange, color = '#ffffff', onColorChange, accentColor = '#22c55e', onAccentColorChange }: Props) {
+export function SubtitleStyleSelector({ value, onChange, color = '#ffffff', onColorChange, accentColor = '#22c55e', onAccentColorChange, animation = 'pop', onAnimationChange }: Props) {
   const [options, setOptions] = React.useState<{ id: string; name: string }[]>([])
   const [open, setOpen] = React.useState(false)
 
@@ -156,6 +169,16 @@ export function SubtitleStyleSelector({ value, onChange, color = '#ffffff', onCo
         >
           Subtitle style: <span className="font-medium">{currentName || 'Select'}</span>
         </button>
+        {onAnimationChange && (
+          <div className="flex items-center gap-2 text-white/70 text-xs">
+            <span>Anim</span>
+            <select value={animation} onChange={(e) => onAnimationChange(e.target.value as any)} className="h-7 rounded border border-white/20 bg-transparent">
+              <option value="pop">Pop</option>
+              <option value="fade">Fade</option>
+              <option value="slideUp">Slide up</option>
+            </select>
+          </div>
+        )}
         {onColorChange && (
           <div className="flex items-center gap-1 text-white/70 text-xs">
             <span>Base</span>

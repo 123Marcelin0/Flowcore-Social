@@ -15,8 +15,14 @@ export interface TranscriptionResult {
 }
 
 function getOpenAI(): OpenAI | null {
-  if (!process.env.OPENAI_API_KEY) return null
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  const apiKeyRaw = process.env.OPENAI_API_KEY
+  if (!apiKeyRaw) return null
+  const apiKey = apiKeyRaw.trim().replace(/^["']|["']$/g, '')
+  return new OpenAI({ 
+    apiKey, 
+    organization: process.env.OPENAI_ORG_ID || undefined,
+    project: process.env.OPENAI_PROJECT_ID || undefined,
+  })
 }
 
 /**
@@ -86,8 +92,14 @@ async function transcribeSingleBlob(
   // Determine file format
   const fileName = getFileNameFromBlob(blob, originalUrl)
   
+  // Convert blob to buffer for Node.js compatibility
+  const arrayBuffer = await blob.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+  
   const form = new FormData()
-  form.append('file', blob, fileName)
+  // Create a Blob-like object for FormData compatibility
+  const fileBlob = new Blob([buffer], { type: blob.type || 'audio/mpeg' })
+  form.append('file', fileBlob, fileName)
   form.append('model', 'whisper-1')
   form.append('response_format', 'verbose_json')
 
@@ -95,6 +107,8 @@ async function transcribeSingleBlob(
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      ...(process.env.OPENAI_ORG_ID ? { 'OpenAI-Organization': String(process.env.OPENAI_ORG_ID) } : {}),
+      ...(process.env.OPENAI_PROJECT_ID ? { 'OpenAI-Project': String(process.env.OPENAI_PROJECT_ID) } : {}),
     },
     body: form,
   })
@@ -127,8 +141,14 @@ async function transcribeChunk(chunk: Blob, index: number): Promise<{ text: stri
   
   const fileName = `chunk_${index}.mp4`
   
+  // Convert chunk to buffer for Node.js compatibility
+  const arrayBuffer = await chunk.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+  
   const form = new FormData()
-  form.append('file', chunk, fileName)
+  // Create a Blob-like object for FormData compatibility
+  const fileBlob = new Blob([buffer], { type: chunk.type || 'audio/mpeg' })
+  form.append('file', fileBlob, fileName)
   form.append('model', 'whisper-1')
   form.append('response_format', 'verbose_json')
 
@@ -136,6 +156,8 @@ async function transcribeChunk(chunk: Blob, index: number): Promise<{ text: stri
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      ...(process.env.OPENAI_ORG_ID ? { 'OpenAI-Organization': String(process.env.OPENAI_ORG_ID) } : {}),
+      ...(process.env.OPENAI_PROJECT_ID ? { 'OpenAI-Project': String(process.env.OPENAI_PROJECT_ID) } : {}),
     },
     body: form,
   })

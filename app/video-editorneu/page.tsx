@@ -50,10 +50,15 @@ import {
 import { Copy } from "lucide-react"
 import { SkipBack, SkipForward } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Waves } from "lucide-react"
+import { Waves, Plus } from "lucide-react"
 import { Plus_Jakarta_Sans, Anton, Bebas_Neue, Oswald, Montserrat } from "next/font/google"
 import SubtitleStyleSelector from "@/components/SubtitleStyleSelector"
+import { CleanTimeline } from "@/components/video-editor/CleanTimeline"
+import { MediaProcessingPanel } from "@/components/video-editor/MediaProcessingPanel"
 import { TranscriptEditor } from "@/components/transcript-editor"
+import { SubtitleProcessor } from "@/lib/subtitle-processor"
+import { WorkflowStateMachine, classifyAsset } from "@/lib/workflow-state"
+import { findBestEmoji } from "@/lib/emoji"
 // import { VideoEditorLayout } from "@/components/video-editor/VideoEditorLayout"
 
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"] })
@@ -80,9 +85,9 @@ type Segment = {
   }>
 }
 
-type TextOverlay = { id: string; start: number; duration: number; text: string; style?: { position?: "top" | "center" | "bottom"; fontSize?: number; color?: string } }
+type TextOverlay = { id: string; start: number; duration: number; text: string; tokens?: Array<{ w: string; offset: number; dur: number }>; style?: { position?: "top" | "center" | "bottom"; fontSize?: number; color?: string } }
 
-function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration = 60, onSeek, initialClips, textOverlays = [], onTextChange, showTextElements = true, showVideoClips = true, showAudioElements = true, onToggleTextElements, onToggleVideoClips, onToggleAudioElements }: { rightOffset?: number; gapPx?: number; currentTime?: number; duration?: number; onSeek?: (sec: number) => void; initialClips?: Array<{ id: string; src: string; start: number; duration: number }>; textOverlays?: Array<{ id: string; start: number; duration: number; text: string }>; onTextChange?: (id: string, updates: Partial<{ start: number; duration: number }>) => void; showTextElements?: boolean; showVideoClips?: boolean; showAudioElements?: boolean; onToggleTextElements?: () => void; onToggleVideoClips?: () => void; onToggleAudioElements?: () => void }) {
+function LegacyCleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration = 60, onSeek, initialClips, textOverlays = [], onTextChange, showTextElements = true, showVideoClips = true, showAudioElements = true, onToggleTextElements, onToggleVideoClips, onToggleAudioElements }: { rightOffset?: number; gapPx?: number; currentTime?: number; duration?: number; onSeek?: (sec: number) => void; initialClips?: Array<{ id: string; src: string; start: number; duration: number }>; textOverlays?: Array<{ id: string; start: number; duration: number; text: string }>; onTextChange?: (id: string, updates: Partial<{ start: number; duration: number }>) => void; showTextElements?: boolean; showVideoClips?: boolean; showAudioElements?: boolean; onToggleTextElements?: () => void; onToggleVideoClips?: () => void; onToggleAudioElements?: () => void }) {
   const blockRef = useRef<HTMLDivElement | null>(null)
   const [blockHeight, setBlockHeight] = useState<number>(0)
 
@@ -114,7 +119,7 @@ function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration 
   const [assetDurById, setAssetDurById] = useState<Record<string, number>>({})
   const [thumbsById, setThumbsById] = useState<Record<string, string[]>>({})
 
-  const generateThumbnails = useCallback(async (id: string, src: string, frames: number = 4) => {
+  const generateThumbnails = useCallback(async (id: string, src: string, frames: number = 48) => {
     try {
       const video = document.createElement('video')
       video.crossOrigin = 'anonymous'
@@ -135,7 +140,8 @@ function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration 
       const ctx = canvas.getContext('2d')!
       const captures: string[] = []
 
-      const times = Array.from({ length: frames }, (_, i) => (assetDur * (i + 1)) / (frames + 1))
+      const safeFrames = Math.max(8, Math.min(240, frames))
+      const times = Array.from({ length: safeFrames }, (_, i) => (assetDur * i) / Math.max(1, safeFrames - 1))
       for (const t of times) {
         await new Promise<void>((resolve) => {
           const seekHandler = () => {
@@ -155,13 +161,17 @@ function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration 
     }
   }, [])
 
-  // Generate thumbs on mount or when sources change
+  // Generate thumbs based on current zoom so each frame tile can be dense at high zoom
   useEffect(() => {
     demoClips.forEach(c => {
-      if (!thumbsById[c.id]) generateThumbnails(c.id, c.src)
+      const widthPx = c.duration * pixelsPerSecond
+      const targetFrames = Math.min(240, Math.max(12, Math.ceil(widthPx / 8)))
+      if (!thumbsById[c.id] || thumbsById[c.id].length < targetFrames * 0.7) {
+        generateThumbnails(c.id, c.src, targetFrames)
+      }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demoClips.map(c => c.src).join('|')])
+  }, [demoClips.map(c => `${c.id}:${c.src}:${c.duration}`).join('|'), pixelsPerSecond])
 
   const snapTo = useCallback((value: number, step = 0.25) => Math.round(value / step) * step, [])
 
@@ -473,17 +483,22 @@ function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration 
                         <div className="w-[4px] h-[32px] rounded-full bg-gray-400/80" />
                       </div>
                       <div className="absolute left-2 right-2 top-[2px] bottom-[2px] rounded-[10px] overflow-hidden flex z-0">
-                        {Array.isArray(thumbsById[clip.id]) && thumbsById[clip.id].length > 0 ? (
-                          thumbsById[clip.id].map((thumb, idx) => (
+                        {(() => {
+                          const frames = thumbsById[clip.id]
+                          if (!frames || frames.length === 0) {
+                            return <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-pink-100" />
+                          }
+                          // Aim for ~1 tile every 6px so at high zoom user can inspect almost frame-by-frame
+                          const count = Math.max(12, Math.ceil((clip.duration * pixelsPerSecond) / 6))
+                          const tiles = Array.from({ length: count }).map((_, i) => frames[i % frames.length])
+                          return tiles.map((thumb, idx) => (
                             thumb ? (
                               <img key={idx} src={thumb} alt="frame" className="flex-1 object-cover" />
                             ) : (
                               <div key={idx} className="flex-1 bg-gradient-to-br from-indigo-100 to-pink-100" />
                             )
                           ))
-                        ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-pink-100" />
-                        )}
+                        })()}
                       </div>
                       <div className="absolute -bottom-5 right-2 text-[11px] text-white/70">{clip.duration.toFixed(1)}s</div>
                       <div className="absolute inset-0 cursor-move" onMouseDown={(e) => beginMove(i, e)} />
@@ -500,11 +515,12 @@ function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration 
               <div className="flex items-center gap-4">
                 <div className="flex-1 relative" style={{ height: '60px' }}>
                   {/* Multiple audio segments instead of one long bar */}
-                  {[
-                    { start: 5, duration: 15, label: "Intro Audio" },
-                    { start: 25, duration: 20, label: "Main Audio" },
-                    { start: 50, duration: 10, label: "Outro" }
-                  ].map((segment, i) => (
+                  {(() => {
+                    const audioList: Array<{ start: number; duration: number; label: string }> = [
+                      { start: 0, duration: Math.max(0.1, duration || 0), label: 'Audio' }
+                    ]
+                    return audioList
+                  })().map((segment: any, i: number) => (
                     <div
                       key={`audio-${i}`}
                       className="absolute bottom-0 h-[52px] rounded-[18px] text-white/90 overflow-hidden flex items-center"
@@ -530,23 +546,25 @@ function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration 
                               <stop offset="100%" stopColor="#fecaca" />
                             </linearGradient>
                           </defs>
-                          {/* Compact waveform bars */}
-                          {Array.from({ length: Math.floor((segment.duration * pixelsPerSecond) / 2.5) }).map((_, j) => {
-                            const x = j * 2.5
-                            const height = Math.max(0.5, Math.sin((i * 50 + j) * 0.15) * 6 + Math.random() * 4 + 3)
+                          {/* Smoothed pseudo-waveform based on transcript word density (fallback) */}
+                          {(() => {
+                            const bars = Math.floor((segment.duration * pixelsPerSecond) / 3)
+                            const points: string[] = []
+                            for (let j = 0; j <= bars; j++) {
+                              const x = j * 3
+                              const height = 8 + 6 * Math.sin((i * 17 + j) * 0.22)
+                              points.push(`${x},${16 - height}`)
+                            }
                             return (
-                              <rect
-                                key={j}
-                                x={x}
-                                y={16 - height / 2}
-                                width="2"
-                                height={height}
-                                fill={`url(#audioWaveGrad${i})`}
-                                opacity="0.8"
-                                rx="0.5"
+                              <polyline
+                                points={points.join(' ')}
+                                fill="none"
+                                stroke={`url(#audioWaveGrad${i})`}
+                                strokeWidth="2"
+                                opacity="0.9"
                               />
                             )
-                          })}
+                          })()}
                         </svg>
                       </div>
                     </div>
@@ -566,6 +584,7 @@ export default function VideoEditorNeuPage() {
   const router = useRouter()
   const searchParams = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search)
   const initialMediaId = searchParams?.get('mediaId') || null
+  const [currentUploadId, setCurrentUploadId] = useState<string | null>(initialMediaId)
 
   // Demo segments; real projects will hydrate from DB
   const [segments, setSegments] = useState<Segment[]>([
@@ -601,40 +620,55 @@ export default function VideoEditorNeuPage() {
   const [subtitleStyle, setSubtitleStyle] = useState<string>("default")
   const [subtitleColor, setSubtitleColor] = useState<string>("#ffffff")
   const [subtitleAccentColor, setSubtitleAccentColor] = useState<string>("#22c55e")
+  // Subtitles behavior tuning
+  const [subtitleWordsPerCard, setSubtitleWordsPerCard] = useState<number>(5) // 4–5 for two-line flow
+  const [subtitleGapThreshold, setSubtitleGapThreshold] = useState<number>(0.08) // seconds (lower for more accurate sentence splits)
+  // Advanced timing/segmentation controls
+  const [subtitleMinWordsPerCard] = useState<number>(2)
+  const [subtitleMaxWordsPerCard] = useState<number>(6)
+  const [subtitleReadingCpsMin] = useState<number>(12) // characters per second lower bound (slower reading)
+  const [subtitleReadingCpsMax] = useState<number>(17) // characters per second upper bound (faster reading)
+  const [subtitleLineCharMax] = useState<number>(40)
+  const [subtitleMaxLines, setSubtitleMaxLines] = useState<number>(3)
+  const [subtitleFontSize, setSubtitleFontSize] = useState<number>(28)
+  const [subtitleFontWeight, setSubtitleFontWeight] = useState<'Light' | 'Regular' | 'Medium' | 'Bold' | 'Heavy'>('Heavy')
+  const [subtitleUppercase, setSubtitleUppercase] = useState<boolean>(false)
+  const [subtitlePositionY, setSubtitlePositionY] = useState<number>(55)
+  const [subtitleStrokeWeight, setSubtitleStrokeWeight] = useState<'none' | 'small' | 'medium' | 'large'>('small')
+  const [subtitleStrokeColor, setSubtitleStrokeColor] = useState<string>('#000000')
+  const [subtitleShadow, setSubtitleShadow] = useState<'none' | 'small' | 'medium' | 'large'>('medium')
+  const [subtitleAnimEnabled, setSubtitleAnimEnabled] = useState<boolean>(true)
+  const [subtitleKeepPunctuation, setSubtitleKeepPunctuation] = useState<boolean>(true)
+  const [subtitleAutoEmojiMode, setSubtitleAutoEmojiMode] = useState<'auto' | 'top' | 'none'>('auto')
+  const [subtitleEmojiAnimation, setSubtitleEmojiAnimation] = useState<boolean>(true)
+  const [subtitleGapFree, setSubtitleGapFree] = useState<boolean>(false)
+  const [subtitleSecondColor, setSubtitleSecondColor] = useState<string>('#ffffff')
+  const [subtitleThirdColor, setSubtitleThirdColor] = useState<string>('#ffffff')
+  const [subtitleStagger, setSubtitleStagger] = useState<number>(0.06) // seconds per word
+  const [subtitleBottomOffset, setSubtitleBottomOffset] = useState<number>(8) // % from bottom
+  const [subtitleAnimation, setSubtitleAnimation] = useState<'pop' | 'fade' | 'slideUp'>('pop')
+  const [subtitleWordLead, setSubtitleWordLead] = useState<number>(0.03) // seconds to show word slightly early
+  const [subtitleWordTrail, setSubtitleWordTrail] = useState<number>(0.00) // seconds to keep after end
+  const [subtitleCardLinger, setSubtitleCardLinger] = useState<number>(1.0) // seconds overlap between cards (max 2s)
   const [showTranscriptView, setShowTranscriptView] = useState<boolean>(true) // Default to true for transcript-first layout
   const [showProjectVideoPanel, setShowProjectVideoPanel] = useState<boolean>(false)
+  const [isProcessingSubtitles, setIsProcessingSubtitles] = useState<boolean>(false)
+
+
 
   // Transcript segments state
-  const [transcriptSegments, setTranscriptSegments] = useState([
-    {
-      id: "ts1",
-      text: "Welcome to our video editor. This is a revolutionary new way to edit videos using transcript-first workflow.",
-      startTime: 0,
-      endTime: 4.5,
-      speaker: "Narrator"
-    },
-    {
-      id: "ts2",
-      text: "You can click on any word or phrase to jump directly to that point in the video.",
-      startTime: 4.5,
-      endTime: 8.2,
-      speaker: "Narrator"
-    },
-    {
-      id: "ts3",
-      text: "Edit, cut, and split segments directly from the transcript. Changes are reflected instantly in the video preview.",
-      startTime: 8.2,
-      endTime: 13.8,
-      speaker: "Narrator"
-    },
-    {
-      id: "ts4",
-      text: "This workflow is inspired by tools like Submagic and makes video editing much more intuitive and efficient.",
-      startTime: 13.8,
-      endTime: 19.5,
-      speaker: "Narrator"
-    }
-  ])
+  type TranscriptSegmentUI = {
+    id: string
+    text: string
+    startTime: number
+    endTime: number
+    speaker?: string
+    confidence?: number
+    words?: Array<{ word: string; start: number; end: number; kept?: boolean }>
+    isAiCard?: boolean
+    lineBreakIndex?: number | null
+  }
+  const [transcriptSegments, setTranscriptSegments] = useState<TranscriptSegmentUI[]>([])
   const [showChatPopup, setShowChatPopup] = useState<boolean>(false)
   const [showTextElements, setShowTextElements] = useState<boolean>(true)
   const [showVideoClips, setShowVideoClips] = useState<boolean>(true)
@@ -657,11 +691,238 @@ export default function VideoEditorNeuPage() {
     { id: 'c3', src: 'https://media.w3.org/2010/05/sintel/trailer.mp4', start: 14, duration: 3.5 },
   ])
 
-  const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([
-    { id: 't1', start: 1, duration: 4, text: 'Welcome to the video editor' },
-    { id: 't2', start: 6, duration: 3, text: 'This is a demo text overlay' },
-    { id: 't3', start: 10, duration: 5, text: 'You can edit and move these text elements' }
-  ])
+  const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([])
+
+  // Visual icon/vector overlays synced to word times
+  type VisualOverlay = {
+    id: string
+    start: number
+    duration: number
+    mediaUrl: string
+    placement?: 'aboveSub' | 'belowSub' | 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight'
+    size?: number
+    offsetX?: number
+    offsetY?: number
+  }
+  const [visualOverlays, setVisualOverlays] = useState<VisualOverlay[]>([])
+  const [autoIconsGenerated, setAutoIconsGenerated] = useState<boolean>(false)
+
+  // Audio lane segments (synced to current media duration)
+  const [audioSegments, setAudioSegments] = useState<Array<{ start: number; duration: number; label: string }>>([])
+  // Detected pauses across transcript (initial, inter-word, inter-segment)
+  const [detectedPauses, setDetectedPauses] = useState<Array<{ start: number; end: number; duration: number; segmentId?: string; beforeWordIndex?: number; type: 'initial' | 'interWord' | 'interSegment' }>>([])
+  // Build clean subtitle overlays from transcript (one overlay per segment or per sentence)
+  useEffect(() => {
+    if (!transcriptSegments || transcriptSegments.length === 0) {
+      setTextOverlays([])
+      setDetectedPauses([])
+      return
+    }
+    // Strategy: robust grouping:
+    //  - sanitize punctuation for display
+    //  - group by hard sentence terminators and pauses > GAP_S
+    //  - avoid orphan single-word cards by merging with neighbors
+    //  - cap words per card by subtitleWordsPerCard but prefer sentence boundaries
+    const overlays: TextOverlay[] = []
+    const GAP_S = subtitleGapThreshold
+    const isHardStop = (token: string) => /[.!?…]+$/.test(token)
+    const cleanToken = (token: string) => (subtitleKeepPunctuation ? token : token.replace(/[.,;:!?…]+$/g, ''))
+    for (const seg of transcriptSegments) {
+      // Use raw ASR word timings for pause accuracy (do not filter kept flags)
+      const words = (seg.words || [])
+      if (!words.length) {
+        console.log(`⚠️ Segment "${seg.text.substring(0, 30)}..." has no word timing, skipping`)
+        continue
+      }
+      console.log(`📊 Processing segment with ${words.length} words: "${seg.text.substring(0, 30)}..."`)
+      // Compute local median inter-word gap to detect natural pauses (speech-rate aware)
+      const gaps = [] as number[]
+      for (let gi = 0; gi < words.length - 1; gi++) gaps.push(Math.max(0, words[gi + 1].start - words[gi].end))
+      const sortedGaps = gaps.slice().sort((a, b) => a - b)
+      const medianGap = sortedGaps.length ? (sortedGaps[Math.floor(sortedGaps.length / 2)] || 0) : 0
+      const localPauseThreshold = Math.max(GAP_S, medianGap * 1.8)
+      let runStart = words[0].start
+      let runEnd = words[0].end
+      let tokens: string[] = [cleanToken(words[0].word)]
+      let tokenTimes: Array<{ w: string; offset: number; dur: number }> = [{ w: cleanToken(words[0].word), offset: 0, dur: Math.max(0.04, words[0].end - words[0].start) }]
+      let prevToken = words[0].word
+      for (let i = 1; i < words.length; i++) {
+        const w = words[i]
+        const gap = w.start - runEnd
+        const boundaryByPause = gap >= localPauseThreshold
+        const boundaryByHardPunct = isHardStop(prevToken)
+        const targetMaxWords = Math.min(subtitleMaxWordsPerCard, Math.max(subtitleWordsPerCard, subtitleMinWordsPerCard))
+        const boundaryByCount = tokens.length >= targetMaxWords
+        // Keep within two-line character budget
+        const currentChars = tokens.join(' ').length
+        const nextChars = currentChars + (currentChars ? 1 : 0) + cleanToken(w.word).length
+        const lineBudget = Math.max(1, subtitleMaxLines) * subtitleLineCharMax
+        const boundaryByChars = nextChars > lineBudget
+        // Split if sentence ends or there's a real pause or we exceed count
+        const shouldSplit = seg.isAiCard ? false : (boundaryByHardPunct || boundaryByPause || boundaryByCount || boundaryByChars)
+        if (!shouldSplit) {
+          runEnd = Math.max(runEnd, w.end)
+          tokens.push(cleanToken(w.word))
+          tokenTimes.push({ w: cleanToken(w.word), offset: Math.max(0, w.start - runStart), dur: Math.max(0.04, w.end - w.start) })
+        } else {
+          // Avoid orphan cards: if tokens would be 1, try to append to previous overlay instead
+          if (tokens.length === 1 && overlays.length > 0) {
+            const last = overlays[overlays.length - 1]
+            last.text = `${last.text} ${tokens[0]}`.trim()
+            // shift durations to extend last card end
+            last.duration = Math.max(0.08, (runEnd - last.start))
+            last.tokens = (last.tokens || []).concat(tokenTimes.map(tt => ({ ...tt, offset: (tt.offset + (runStart - last.start)) })))
+          } else {
+            overlays.push({ id: `sub_${seg.id}_${overlays.length}`, start: runStart, duration: Math.max(0.08, runEnd - runStart), text: tokens.join(' '), tokens: tokenTimes })
+          }
+          runStart = w.start
+          runEnd = w.end
+          tokens = [cleanToken(w.word)]
+          tokenTimes = [{ w: cleanToken(w.word), offset: 0, dur: Math.max(0.04, w.end - w.start) }]
+        }
+        prevToken = w.word
+      }
+      if (tokens.length === 1 && overlays.length > 0) {
+        const last = overlays[overlays.length - 1]
+        last.text = `${last.text} ${tokens[0]}`.trim()
+        last.duration = Math.max(0.08, (runEnd - last.start))
+        last.tokens = (last.tokens || []).concat(tokenTimes.map(tt => ({ ...tt, offset: (tt.offset + (runStart - last.start)) })))
+      } else {
+        overlays.push({ id: `sub_${seg.id}_${overlays.length}`, start: runStart, duration: Math.max(0.08, runEnd - runStart), text: tokens.join(' '), tokens: tokenTimes })
+      }
+    }
+    // Bridge connector quantifiers like "mit rund" into their own micro-card before numbers/measurements
+    // This avoids phrases being semantically attached to the wrong card or visually skipped
+    try {
+      const isNumericStart = (s: string) => /^(\d|\d+[.,]\d+)/.test(String(s || '').trim())
+      const isConnector = (w: string) => {
+        const t = String(w || '').toLowerCase()
+        return t === 'mit' || t === 'with' || t === 'ohne' || t === 'über' || t === 'unter' || t === 'bis' || t === 'ab'
+      }
+      const isQuantifier = (w: string) => {
+        const t = String(w || '').toLowerCase()
+        return t === 'rund' || t === 'circa' || t === 'etwa' || t === 'ungefähr' || t === 'about' || t === 'around' || t === 'approximately' || t === 'knapp' || t === 'fast' || t === 'mindestens' || t === 'höchstens'
+      }
+      for (let i = 0; i < overlays.length - 1; i++) {
+        const curr = overlays[i] as any
+        const next = overlays[i + 1] as any
+        if (!curr.tokens || !curr.tokens.length || !next.tokens || !next.tokens.length) continue
+        const lastIdx = curr.tokens.length - 1
+        const lastWord = curr.tokens[lastIdx].w
+        const secondLast = lastIdx > 0 ? curr.tokens[lastIdx - 1].w : undefined
+        const pairConnector = Boolean(secondLast) && isConnector(secondLast as string) && isQuantifier(lastWord)
+        const singleConnector = isConnector(lastWord)
+        const nextStartsNumeric = isNumericStart(next.text) || /^(\d|\d+[.,]\d+)/.test(String(next.tokens[0]?.w || ''))
+        if (pairConnector || (singleConnector && nextStartsNumeric)) {
+          const moveCount = pairConnector ? 2 : 1
+          const startTok = curr.tokens[lastIdx - moveCount + 1]
+          const endTok = curr.tokens[lastIdx]
+          const newStart = curr.start + startTok.offset
+          const newEnd = curr.start + endTok.offset + endTok.dur
+          const movedTokens = curr.tokens.slice(lastIdx - moveCount + 1)
+          const movedText = movedTokens.map((t: any) => t.w).join(' ')
+          // Trim current card tokens/text/duration
+          curr.tokens = curr.tokens.slice(0, lastIdx - moveCount + 1)
+          curr.text = curr.tokens.map((t: any) => t.w).join(' ')
+          const lastRemainEnd = curr.tokens.length
+            ? curr.start + curr.tokens[curr.tokens.length - 1].offset + curr.tokens[curr.tokens.length - 1].dur
+            : curr.start
+          curr.duration = Math.max(0.08, lastRemainEnd - curr.start)
+          // Insert new micro-card immediately after current
+          const micro = { id: `micro_${i}_${Date.now()}`, start: newStart, duration: Math.max(0.08, newEnd - newStart), text: movedText, tokens: movedTokens }
+          overlays.splice(i + 1, 0, micro as any)
+          i++ // Skip over the inserted card
+        }
+      }
+    } catch (e) {
+      console.warn('subtitle bridge micro-card pass failed:', e)
+    }
+    // Apply contextual card linger or gap-free behavior
+    // If gap-free is enabled, extend each card to the next start exactly (no silent gaps)
+    // Otherwise extend to min(next.start, start + duration + subtitleCardLinger), capping overlap to 1–2s
+    const linger = Math.max(0, Math.min(2, subtitleCardLinger))
+    for (let i = 0; i < overlays.length - 1; i++) {
+      const curr = overlays[i]
+      const next = overlays[i + 1]
+      // Always end at or before next.start to avoid blocking next segment
+      const hardEnd = Math.max(0.08, next.start - curr.start)
+      if (subtitleGapFree) {
+        curr.duration = hardEnd
+      } else {
+        const desiredEnd = Math.min(next.start, curr.start + curr.duration + linger)
+        curr.duration = Math.min(hardEnd, Math.max(0.08, desiredEnd - curr.start))
+      }
+    }
+    // Reading-speed adjustment: ensure each overlay supports ~12–17 chars/sec and max 7s
+    for (const ov of overlays) {
+      const charCount = ov.text.length
+      const minDur = Math.max(0.4, charCount / subtitleReadingCpsMax) // allow shorter cards
+      const maxDur = Math.min(6.0, charCount / subtitleReadingCpsMin) // avoid overlong blocking
+      if (ov.duration < minDur) ov.duration = minDur
+      if (ov.duration > maxDur) ov.duration = maxDur
+      // Ensure the overlay does not end before the last spoken word plus small trail
+      if (ov.tokens && ov.tokens.length) {
+        const speechEnd = ov.start + Math.max(...ov.tokens.map(t => t.offset + t.dur))
+        const minSpeechDur = (speechEnd - ov.start) + Math.max(0.00, subtitleWordTrail)
+        if (ov.duration < minSpeechDur) ov.duration = minSpeechDur
+        // Clamp to not exceed next card start if any
+        const next = overlays[overlays.indexOf(ov) + 1]
+        if (next) {
+          ov.duration = Math.min(ov.duration, Math.max(0.08, next.start - ov.start))
+        }
+      }
+    }
+    console.log(`✅ Generated ${overlays.length} textOverlays with precise word timing`)
+    setTextOverlays(overlays)
+    
+    // Compute pauses (beginning, between words, and between segments)
+    const pauses: Array<{ start: number; end: number; duration: number; segmentId?: string; beforeWordIndex?: number; type: 'initial' | 'interWord' | 'interSegment' }> = []
+    const threshold = GAP_S
+    // Initial pause from t=0 to very first word across transcript
+    const ordered = [...transcriptSegments].sort((a, b) => a.startTime - b.startTime)
+    const firstWithWord = ordered.find(s => (s.words && s.words.length) || s.text.trim().length)
+    if (firstWithWord) {
+      const fw = (firstWithWord.words && firstWithWord.words.length)
+        ? (firstWithWord.words as any)[0]
+        : null
+      const firstStart = fw ? fw.start : firstWithWord.startTime
+      if (firstStart > threshold) {
+        pauses.push({ start: 0, end: firstStart, duration: firstStart - 0, segmentId: firstWithWord.id, beforeWordIndex: 0, type: 'initial' })
+      }
+    }
+    // Per-segment pauses
+    for (let si = 0; si < ordered.length; si++) {
+      const seg = ordered[si]
+      const words = (seg.words || [])
+      if (words.length) {
+        // Initial pause within segment (segment start to first word)
+        const segInitial = words[0].start - seg.startTime
+        if (segInitial >= threshold) {
+          pauses.push({ start: seg.startTime, end: words[0].start, duration: segInitial, segmentId: seg.id, beforeWordIndex: 0, type: 'initial' })
+        }
+        // Inter-word pauses
+        for (let wi = 0; wi < words.length - 1; wi++) {
+          const gap = words[wi + 1].start - words[wi].end
+          if (gap >= threshold) {
+            pauses.push({ start: words[wi].end, end: words[wi + 1].start, duration: gap, segmentId: seg.id, beforeWordIndex: wi + 1, type: 'interWord' })
+          }
+        }
+      }
+      // Inter-segment pause (end of this -> start of next)
+      const next = ordered[si + 1]
+      if (next) {
+        const thisEnd = (seg.words && seg.words.length) ? (seg.words as any)[(seg.words as any).length - 1].end : seg.endTime
+        const nextStart = (next.words && next.words.length) ? (next.words as any)[0].start : next.startTime
+        const gap = nextStart - thisEnd
+        if (gap >= threshold) {
+          pauses.push({ start: thisEnd, end: nextStart, duration: gap, segmentId: seg.id, type: 'interSegment' })
+        }
+      }
+    }
+    setDetectedPauses(pauses)
+  }, [JSON.stringify(transcriptSegments), subtitleGapThreshold, subtitleWordsPerCard, subtitleCardLinger, subtitleKeepPunctuation, subtitleGapFree])
+
+
 
   const snapTo = useCallback((value: number, step = 0.25) => {
     return Math.round(value / step) * step
@@ -797,6 +1058,9 @@ export default function VideoEditorNeuPage() {
   const [standardGap, setStandardGap] = useState<number>(8)
   const [musicVolume, setMusicVolume] = useState<number>(0.75)
   const volumeTrackRef = useRef<HTMLDivElement | null>(null)
+  const [showMusicPopup, setShowMusicPopup] = useState<boolean>(false)
+  const [showSubtitlesPanel, setShowSubtitlesPanel] = useState<boolean>(false)
+  const [playbackWindows, setPlaybackWindows] = useState<Array<{ start: number; end: number }>>([])
 
   // Left Project panel positioning
   const [projectTop, setProjectTop] = useState<number>(0)
@@ -821,7 +1085,58 @@ export default function VideoEditorNeuPage() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false)
   const [processingProgress, setProcessingProgress] = useState<number>(0)
   const [processingStep, setProcessingStep] = useState<string>('')
+  const workflowRef = useRef<WorkflowStateMachine | null>(null)
+  if (!workflowRef.current) workflowRef.current = new WorkflowStateMachine()
   const [videoDuration, setVideoDuration] = useState<number>(0)
+  const onTimeHandlerRef = useRef<((this: HTMLVideoElement, ev: Event) => any) | null>(null)
+
+  // Helper: build naive word timing if ASR lacks word-level timestamps
+  const buildWordTiming = useCallback((text: string, start: number, end: number) => {
+    const tokens = text.split(/\s+/).filter(Boolean)
+    if (tokens.length === 0) return [] as Array<{ word: string; start: number; end: number }>
+    const total = Math.max(0.001, end - start)
+    return tokens.map((w, i) => {
+      const ws = start + (i / tokens.length) * total
+      const we = start + ((i + 1) / tokens.length) * total
+      return { word: w, start: ws, end: we }
+    })
+  }, [])
+
+  // Unified transcript+timeline hydration for a given uploadId
+  const hydrateFromUpload = useCallback(async (uploadId: string) => {
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+      const check = await fetch(`/api/media-files?id=${encodeURIComponent(uploadId)}`, { headers })
+      const j = await check.json().catch(() => null)
+      const rec = j?.data?.id ? j.data : (Array.isArray(j?.data) ? j.data[0] : null)
+      if (!rec) return
+      if (rec.storage_url) setLoadedMediaUrl(rec.storage_url)
+
+      const asr = rec?.metadata?.asr
+      const ai = rec?.metadata?.ai_subtitles
+      // Prefer AI-enhanced segments if available
+      const aiCards = Array.isArray(ai?.cards) ? ai.cards : []
+      const segs = aiCards.length
+        ? aiCards.map((c: any) => ({ start: c.start || c.renderStart || 0, end: c.end || c.renderEnd || 0, text: c.text || '', words: c.words || [], isAiCard: true, lineBreakIndex: (typeof c.lineBreakIndex === 'number' ? c.lineBreakIndex : null) }))
+        : (Array.isArray(asr?.segments) ? asr.segments : [])
+      const words = Array.isArray(asr?.words) ? asr.words : []
+      if (Array.isArray(segs) && segs.length) {
+        const merged = segs
+          .map((s: any) => ({ start: Math.max(0, Number(s.start||0)), end: Math.max(0, Number(s.end||0)), text: String(s.text||''), words: Array.isArray(s.words) ? s.words : [], isAiCard: !!s.isAiCard, lineBreakIndex: (typeof s.lineBreakIndex === 'number' ? s.lineBreakIndex : null) }))
+          .filter((s: any) => s.end > s.start && s.text.trim().length > 0)
+          .sort((a: any,b: any) => a.start - b.start)
+        const tSegs = merged.map((s: any, idx: number) => {
+          const segWords = s.words.length
+            ? s.words
+            : (words.length ? words.filter((w: any) => w.start >= s.start && w.end <= s.end) : buildWordTiming(s.text, s.start, s.end))
+          return { id: `ts-${idx+1}`, text: s.text, startTime: s.start, endTime: s.end, speaker: 'Speaker 1', confidence: 0.95, words: segWords as any, isAiCard: !!s.isAiCard, lineBreakIndex: (typeof s.lineBreakIndex === 'number' ? s.lineBreakIndex : null) }
+        })
+        setTranscriptSegments(tSegs as any)
+        setShowTranscriptView(true)
+      }
+    } catch {}
+  }, [buildWordTiming])
 
   const formatClock = useCallback((sec: number) => {
     const s = Math.max(0, Math.floor(sec))
@@ -878,6 +1193,302 @@ export default function VideoEditorNeuPage() {
   const handleTranscriptSegmentRemove = useCallback((id: string) => {
     setTranscriptSegments(prev => prev.filter(segment => segment.id !== id))
   }, [])
+
+  // Submagic-style: click a word to preview only that clip
+  const handleTranscriptWordClick = useCallback((args: { segmentId: string; wordIndex: number; start: number; end: number }) => {
+    let { start, end } = args
+    // Tighten boundaries to avoid bleeding into neighbor words
+    const EPS = 0.004 // 4ms
+    if (end - start < 0.010) end = start + 0.010 // ensure at least 10ms
+    start = Math.max(0, start + EPS)
+    end = Math.max(end - EPS, start + 0.008)
+    setCurrentTime(start)
+    setPreviewCurrent(start)
+    if (previewVideoRef.current) {
+      const v = previewVideoRef.current
+      v.currentTime = start
+      v.play().catch(() => {})
+      const stopAt = end
+      // Stop playback automatically at word end
+      const onTime = () => {
+        if (v.currentTime >= stopAt) {
+          v.pause()
+          v.currentTime = stopAt
+          v.removeEventListener('timeupdate', onTime)
+        }
+      }
+      v.addEventListener('timeupdate', onTime)
+    }
+  }, [])
+
+  // Toggle keep/remove for a word (Alt/Ctrl click)
+  const handleTranscriptWordToggle = useCallback((args: { segmentId: string; wordIndex: number }) => {
+    const { segmentId, wordIndex } = args
+    setTranscriptSegments(prev => prev.map(seg => {
+      if (seg.id !== segmentId) return seg
+      const words = seg.words ? [...seg.words] : undefined
+      if (!words || !words[wordIndex]) return seg
+      const w = words[wordIndex]
+      words[wordIndex] = { ...w, kept: w.kept === false ? true : false }
+      // Rebuild text from kept words for visual coherence
+      const newText = words.map(x => x.word).join(' ')
+      return { ...seg, words, text: newText }
+    }))
+    // Update playback windows to reflect new kept words
+    setTimeout(() => {
+      try { recomputePlaybackWindows() } catch {}
+    }, 0)
+  }, [])
+
+  // Build keep segments from toggled words
+  const buildKeepSegmentsFromTranscript = useCallback((): Array<{ start_ms: number; end_ms: number; transcript: string }> => {
+    const segments: Array<{ start_ms: number; end_ms: number; transcript: string }> = []
+    const GAP_S = 0.12
+    for (const seg of transcriptSegments) {
+      const words = seg.words && seg.words.length ? seg.words.filter(w => w.kept !== false) : null
+      if (words && words.length) {
+        let runStart = words[0].start
+        let runEnd = words[0].end
+        let runText = [words[0].word]
+        for (let i = 1; i < words.length; i++) {
+          const w = words[i]
+          if (w.start - runEnd <= GAP_S) {
+            runEnd = Math.max(runEnd, w.end)
+            runText.push(w.word)
+          } else {
+            segments.push({ start_ms: Math.round(runStart * 1000), end_ms: Math.round(runEnd * 1000), transcript: runText.join(' ') })
+            runStart = w.start
+            runEnd = w.end
+            runText = [w.word]
+          }
+        }
+        // flush
+        segments.push({ start_ms: Math.round(runStart * 1000), end_ms: Math.round(runEnd * 1000), transcript: runText.join(' ') })
+      } else {
+        // No word timing → keep whole segment
+        segments.push({ start_ms: Math.round(seg.startTime * 1000), end_ms: Math.round(seg.endTime * 1000), transcript: seg.text })
+      }
+    }
+    // Merge adjacent segments separated by tiny gaps
+    segments.sort((a, b) => a.start_ms - b.start_ms)
+    const merged: typeof segments = []
+    for (const s of segments) {
+      const last = merged[merged.length - 1]
+      if (last && s.start_ms - last.end_ms <= GAP_S * 1000) {
+        last.end_ms = Math.max(last.end_ms, s.end_ms)
+        last.transcript = `${last.transcript} ${s.transcript}`.trim()
+      } else {
+        merged.push({ ...s })
+      }
+    }
+    return merged
+  }, [transcriptSegments])
+
+  // Recompute clean playback windows from current transcript (kept words)
+  const recomputePlaybackWindows = useCallback(() => {
+    const ks = buildKeepSegmentsFromTranscript()
+    const wins = ks.map(k => ({ start: k.start_ms / 1000, end: k.end_ms / 1000 })).filter(w => w.end > w.start)
+    setPlaybackWindows(wins)
+    if (loadedMediaUrl && wins.length) {
+      setInitialClips(wins.map((w, i) => ({ id: `clip-${i + 1}`, src: loadedMediaUrl, start: w.start, duration: Math.max(0.1, w.end - w.start) })))
+    }
+  }, [buildKeepSegmentsFromTranscript, loadedMediaUrl])
+
+  const renderWordCut = useCallback(async (overrideKeepSegments?: Array<{ start_ms: number; end_ms: number; transcript: string }>) => {
+    if (!currentUploadId) {
+      alert('No upload selected')
+      return
+    }
+    const keepSegments = (overrideKeepSegments && overrideKeepSegments.length)
+      ? overrideKeepSegments
+      : buildKeepSegmentsFromTranscript()
+    if (!keepSegments.length) {
+      alert('Nothing to render')
+      return
+    }
+    const token = (await supabase.auth.getSession()).data.session?.access_token
+    const res = await fetch('/api/jobs/custom-cut', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ uploadId: currentUploadId, keepSegments })
+    })
+    const j = await res.json().catch(() => null)
+    if (!res.ok) {
+      alert(j?.error || 'Render failed')
+      return
+    }
+    if (j?.storageUrl) {
+      setLoadedMediaUrl(j.storageUrl)
+      setVideoAspectRatio(null)
+    }
+  }, [currentUploadId, buildKeepSegmentsFromTranscript])
+
+  
+
+  // Auto actions: remove filler words (local), trim pauses (LLM-powered via API)
+  const removeFillerWords = useCallback(() => {
+    const FILLERS = new Set(['um','uh','ah','like','you','know','well','erm','hmm','sort','of','kind','of'])
+    setTranscriptSegments(prev => prev.map(seg => {
+      if (!seg.words || seg.words.length === 0) return seg
+      const words = seg.words.map((w: any) => ({ ...w }))
+      for (let i = 0; i < words.length; i++) {
+        const token = String(words[i].word || '').toLowerCase().replace(/[^a-z']+/g,'')
+        if (FILLERS.has(token)) {
+          words[i].kept = false
+        }
+      }
+      return { ...seg, words }
+    }))
+    // Also regenerate playback windows and timeline clips
+    recomputePlaybackWindows()
+  }, [recomputePlaybackWindows])
+
+  const trimLongPauses = useCallback(async (thresholdSec: number = 0.5) => {
+    try {
+      if (!transcriptSegments.length) return
+      const transcript = {
+        text: transcriptSegments.map(s => s.text).join(' '),
+        duration: videoDuration || previewDuration || 0,
+        segments: transcriptSegments.map(s => ({
+          start: s.startTime,
+          end: s.endTime,
+          text: s.text,
+          confidence: s.confidence || 0.8,
+          words: (s.words || []).map(w => ({ word: w.word, start: w.start, end: w.end }))
+        }))
+      }
+      const res = await fetch('/api/jobs/clean', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript,
+          policy: {
+            removeFiller: true,
+            removeHesitations: true,
+            removeLongPauses: true,
+            maxPauseDuration_ms: Math.round(thresholdSec * 1000),
+            targetReductionPercentage: 30,
+            preserveTransitions: true,
+            maintainNaturalFlow: true,
+            enableDeduplication: true,
+            preferLaterTakes: true,
+            similarityThresholdForDupes: 0.7
+          }
+        })
+      })
+      const j = await res.json().catch(() => null)
+      if (!res.ok || !j?.success || !j?.decision) {
+        console.warn('Clean API failed', j)
+        return
+      }
+      const decision = j.decision as {
+        keepSegments: Array<{ start_ms: number; end_ms: number; transcript: string }>
+        pauseList: Array<{ start_ms: number; end_ms: number; duration_ms: number }>
+      }
+
+      // Update UI: mark words outside of keep windows as removed and attach pause markers to segments
+      const keepWindows = decision.keepSegments.map(k => ({ start: k.start_ms / 1000, end: k.end_ms / 1000 }))
+      setTranscriptSegments(prev => prev.map(seg => {
+        if (!seg.words || seg.words.length === 0) return seg
+        const words = seg.words.map(w => {
+          const mid = (w.start + w.end) / 2
+          const inside = keepWindows.some(win => mid >= win.start && mid <= win.end)
+          return { ...w, kept: inside }
+        })
+        const newText = words.filter(w => w.kept !== false).map(w => w.word).join(' ')
+        return { ...seg, words, text: newText }
+      }))
+
+      // Update playback windows and timeline clips to reflect clean result
+      setPlaybackWindows(keepWindows)
+      if (loadedMediaUrl && keepWindows.length) {
+        setInitialClips(keepWindows.map((w, i) => ({ id: `clip-${i + 1}`, src: loadedMediaUrl, start: w.start, duration: Math.max(0.1, w.end - w.start) })))
+      }
+
+      // Persist pause metadata locally for rendering (optional: store in state if needed)
+      // We already render inline pause chips per word; this complements that with precise LLM pauses if desired.
+      console.log('Detected pauses:', decision.pauseList)
+
+      // Immediately render cleaned selection to update preview source
+      await renderWordCut(decision.keepSegments)
+    } catch (e) {
+      console.warn('Clean trim failed', e)
+    }
+  }, [transcriptSegments, videoDuration, previewDuration, loadedMediaUrl])
+
+  // Local re-segmentation using SubtitleProcessor (no network)
+  const resegmentLocally = useCallback(() => {
+    try {
+      if (!transcriptSegments.length) return
+      // Flatten all words; if missing, approximate evenly within segment
+      const allWords: Array<{ word: string; start: number; end: number; confidence?: number }> = []
+      for (const seg of transcriptSegments) {
+        const segWords = (seg.words && seg.words.length)
+          ? seg.words
+          : buildWordTiming(seg.text, seg.startTime, seg.endTime)
+        for (const w of (segWords as any)) {
+          allWords.push({ word: w.word, start: w.start, end: w.end, confidence: w.confidence ?? seg.confidence ?? 0.9 })
+        }
+      }
+      if (!allWords.length) return
+
+      const proc = new SubtitleProcessor({
+        maxCharsPerLine: 40,
+        maxLines: 3,
+        minDuration: 1.0,
+        preferredMinDuration: 1.5,
+        maxDuration: 4.0,
+        endPadding: 0.2,
+        mergeIfShorterThan: 0.6,
+        silenceThreshold: 0.45,
+        collapseShortPausesBelow: 0.15,
+        wordConfidenceThreshold: 0.3
+      })
+      const chunks = proc.process(allWords)
+      // Map to TranscriptSegmentUI
+      const nextSegments = chunks.map((c, i) => {
+        const words = (c.words || []).map(w => ({ word: w.word, start: w.start, end: w.end, kept: true }))
+        return {
+          id: `seg-${i + 1}`,
+          text: (c.text || '').replace(/\n/g, ' ').trim(),
+          startTime: c.start,
+          endTime: c.end,
+          speaker: c.speaker || 'Speaker 1',
+          confidence: c.confidence ?? 0.9,
+          words
+        }
+      })
+      setTranscriptSegments(nextSegments as any)
+      // Update playback windows to match new segmentation
+      setPlaybackWindows(chunks.map(c => ({ start: c.start, end: c.end })))
+    } catch (e) {
+      console.warn('Local re-segmentation failed', e)
+    }
+  }, [transcriptSegments])
+
+  // Auto-hydrate latest media on page open if nothing is loaded
+  useEffect(() => {
+    (async () => {
+      if (loadedMediaUrl || transcriptSegments.length > 0) return
+      try {
+        const token = (await supabase.auth.getSession()).data.session?.access_token
+        const headers: Record<string,string> = token ? { Authorization: `Bearer ${token}` } : {}
+        const res = await fetch('/api/media-files?file_type=video&limit=1', { headers })
+        const json = await res.json().catch(() => null)
+        const rec = json?.data?.[0]
+        if (rec?.id) {
+          setCurrentUploadId(rec.id)
+          // If transcript exists, hydrate; else call transcribe and then hydrate
+          const hasAsr = !!rec?.metadata?.asr?.segments?.length
+          if (!hasAsr && rec.storage_url) {
+            await fetch('/api/jobs/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uploadId: rec.id, fileUrl: rec.storage_url }) })
+          }
+          await hydrateFromUpload(rec.id)
+          if (rec.storage_url) setLoadedMediaUrl(rec.storage_url)
+        }
+      } catch {}
+    })()
+  }, [loadedMediaUrl, transcriptSegments])
 
   const handleTextOverlayChange = useCallback((id: string, updates: Partial<{ start: number; duration: number }>) => {
     setTextOverlays(prev => prev.map(t => t.id === id ? { ...t, ...updates } as TextOverlay : t))
@@ -982,9 +1593,53 @@ export default function VideoEditorNeuPage() {
       setPreviewDuration(v.duration || 0)
       setIsPreviewMuted(v.muted)
       setIsPreviewPlaying(!v.paused)
+      // If we have keep windows, snap to the first allowed start
+      if (playbackWindows.length) {
+        const first = playbackWindows[0]
+        try { v.currentTime = Math.max(0, first.start) } catch {}
+      }
     }
-    const onTime = () => setPreviewCurrent(v.currentTime || 0)
-    const onPlay = () => setIsPreviewPlaying(true)
+    const onTime = () => {
+      const t = v.currentTime || 0
+      setPreviewCurrent(t)
+      if (playbackWindows.length) {
+        // If current time is outside any allowed window, jump to next allowed start
+        const inside = playbackWindows.some(w => t >= w.start && t <= w.end)
+        if (!inside) {
+          const next = playbackWindows.find(w => t < w.start)
+          if (next) {
+            try { v.currentTime = next.start } catch {}
+          } else {
+            // Past all windows: pause at end of last window
+            const last = playbackWindows[playbackWindows.length - 1]
+            try { v.pause(); v.currentTime = last.end } catch {}
+          }
+        } else {
+          // If at or beyond the end boundary of current window, advance to next
+          const current = playbackWindows.find(w => t >= w.start && t <= w.end)
+          if (current && t >= current.end - 0.01) {
+            const idx = playbackWindows.indexOf(current)
+            const nextWin = playbackWindows[idx + 1]
+            if (nextWin) {
+              try { v.currentTime = nextWin.start } catch {}
+            } else {
+              try { v.pause(); v.currentTime = current.end } catch {}
+            }
+          }
+        }
+      }
+    }
+    const onPlay = () => {
+      setIsPreviewPlaying(true)
+      if (playbackWindows.length) {
+        const t = v.currentTime || 0
+        const inside = playbackWindows.some(w => t >= w.start && t <= w.end)
+        if (!inside) {
+          const next = playbackWindows.find(w => t < w.start) || playbackWindows[0]
+          try { v.currentTime = next.start } catch {}
+        }
+      }
+    }
     const onPause = () => setIsPreviewPlaying(false)
     v.addEventListener('loadedmetadata', onLoaded)
     v.addEventListener('timeupdate', onTime)
@@ -996,7 +1651,7 @@ export default function VideoEditorNeuPage() {
       v.removeEventListener('play', onPlay)
       v.removeEventListener('pause', onPause)
     }
-  }, [previewVideoRef.current])
+  }, [previewVideoRef.current, playbackWindows && JSON.stringify(playbackWindows)])
 
   // Sync timeline scrubbing -> video element
   useEffect(() => {
@@ -1137,6 +1792,14 @@ export default function VideoEditorNeuPage() {
   // Visible text overlays for the current time
   const activeOverlays = useMemo(() => textOverlays.filter(t => previewCurrent >= t.start && previewCurrent <= t.start + t.duration), [textOverlays, previewCurrent])
 
+  // Visible visual overlays (icons/vectors) for the current time
+  const activeVisualOverlays = useMemo(
+    () => visualOverlays.filter(v => previewCurrent >= v.start && previewCurrent <= v.start + v.duration),
+    [visualOverlays, previewCurrent]
+  )
+
+  // Removed auto-run of icon generation on transcript available.
+
   // Smooth caption entrance animation keyframes (css-in-js fallback)
   // We rely on globals.css @keyframes captionPop (already present from previous work). If missing, fall back via inline scale+fade.
 
@@ -1148,6 +1811,197 @@ export default function VideoEditorNeuPage() {
   const onTextChange = useCallback((id: string, updates: Partial<{ start: number; duration: number }>) => {
     setTextOverlays(prev => prev.map(t => t.id === id ? { ...t, ...updates } as TextOverlay : t))
   }, [])
+
+  // Minimal noun-ish selector; replace with LLM cue extractor later
+  const STOPWORDS = useMemo(() => new Set([
+    'the','a','an','and','or','but','if','then','so','because','as','of','to','in','on','for','at','by','with','about','into','through','during','before','after','above','below','from','up','down','out','over','under','again','further','then','once','here','there','when','where','why','how','all','any','both','each','few','more','most','other','some','such','no','nor','not','only','own','same','than','too','very','can','will','just','should','now','i','you','he','she','it','we','they','this','that','these','those'
+  ]), [])
+
+  const generateVisualOverlaysFromTranscript = useCallback(async () => {
+    if (!transcriptSegments.length) return
+    if (autoIconsGenerated) return
+
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+
+    // 1) Ask AI Visual Director for semantic suggestions
+    type DirSuggestion = {
+      transcript_line: string
+      keyword: string
+      visual_type: 'emoji' | 'pixabay_image' | 'none'
+      pixabay_query?: string | null
+      emoji?: string | null
+      reason?: string
+      start?: number
+      end?: number
+    }
+
+    let suggestions: DirSuggestion[] = []
+    try {
+      const res = await fetch('/api/ai-visual-director', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ segments: transcriptSegments, language: 'auto', maxSuggestions: 10, minSpacingSec: 2.5 })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        suggestions = Array.isArray(data?.data?.suggestions) ? data.data.suggestions : []
+      } else {
+        console.warn('AI Visual Director returned non-OK; falling back to ai-icon-cues')
+      }
+    } catch (e) {
+      console.warn('AI Visual Director failed; falling back to ai-icon-cues', e)
+    }
+
+    // Fallback to legacy ai-icon-cues if needed
+    if (!suggestions.length) {
+      try {
+        const res = await fetch('/api/ai-icon-cues', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ segments: transcriptSegments, language: 'auto', maxCues: 8, minSpacingSec: 2.5 })
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const cues = Array.isArray(data?.data?.cues) ? data.data.cues : []
+          suggestions = cues.map((c: any) => ({
+            transcript_line: '',
+            keyword: String(c.word || c.query || ''),
+            visual_type: c?.type === 'emoji' && c?.emoji ? 'emoji' : 'pixabay_image',
+            pixabay_query: c?.query || c?.word || null,
+            emoji: c?.emoji || null,
+            reason: c?.reason || '',
+            start: c?.start,
+            end: c?.end
+          }))
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Filter out 'none' cases
+    const planned = suggestions.filter(s => s.visual_type !== 'none')
+    console.log(`🎯 Visual Director: ${planned.length} planned visuals`)
+
+    // 2) Resolve Pixabay images and build overlays; emoji fallback built directly
+    const overlays: VisualOverlay[] = []
+    let sideToggle = false
+
+    // Ranking helper for Pixabay hits
+    function rankHits(hits: any[]): any[] {
+      const scored = hits.map(h => {
+        const likes = Number(h.likes || 0)
+        const downloads = Number(h.downloads || 0)
+        const views = Number(h.views || 0)
+        const width = Number(h.imageWidth || h.webformatWidth || 0)
+        const height = Number(h.imageHeight || h.webformatHeight || 0)
+        const resolution = width * height
+        const score = likes * 1.0 + downloads * 0.02 + views * 0.005 + Math.min(resolution / (1280*720), 2)
+        return { h, score }
+      })
+      scored.sort((a, b) => b.score - a.score)
+      return scored.map(x => x.h)
+    }
+
+    for (const s of planned) {
+      const start = typeof s.start === 'number' ? s.start : 0
+      const end = typeof s.end === 'number' ? s.end : start + 4
+      const duration = Math.max(2, Math.min(8, end - start))
+
+      if (s.visual_type === 'emoji' && s.emoji) {
+        const emoji = String(s.emoji)
+        overlays.push({
+          id: `vo_${(s.keyword || 'emoji')}_${Math.round(start * 1000)}`,
+          start,
+          duration,
+          mediaUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='96'>${emoji}</text></svg>`),
+          placement: sideToggle ? 'topRight' : 'topLeft',
+          size: 72
+        })
+        sideToggle = !sideToggle
+        continue
+      }
+
+      // Pixabay image
+      const query = (s.pixabay_query || s.keyword || '').trim()
+      if (!query) continue
+
+      let hits: any[] = []
+      try {
+        if (token) {
+          const resp = await fetch(`/api/pixabay?q=${encodeURIComponent(query)}&type=images&perPage=6&order=popular&imageType=photo`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+          if (resp.ok) {
+            const data = await resp.json()
+            hits = Array.isArray(data?.data?.images?.hits) ? data.data.images.hits : []
+          }
+        }
+        if (!hits.length && process.env.NEXT_PUBLIC_PIXABAY_KEY) {
+          const params = new URLSearchParams({
+            key: String(process.env.NEXT_PUBLIC_PIXABAY_KEY),
+            q: query,
+            image_type: 'photo',
+            order: 'popular',
+            per_page: '6'
+          })
+          const fb = await fetch(`https://pixabay.com/api/?${params.toString()}`)
+          if (fb.ok) {
+            const data = await fb.json()
+            hits = Array.isArray(data?.hits) ? data.hits : []
+          }
+        }
+      } catch (err) {
+        console.warn('Pixabay query failed for', query, err)
+      }
+
+      const ranked = rankHits(hits)
+      const best = ranked[0]
+      const url = best?.webformatURL || best?.largeImageURL || best?.previewURL
+      if (!url) {
+        const emoji = findBestEmoji(query) || '✨'
+        overlays.push({
+          id: `vo_${query}_${Math.round(start * 1000)}`,
+          start,
+          duration,
+          mediaUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='96'>${emoji}</text></svg>`),
+          placement: sideToggle ? 'topRight' : 'topLeft',
+          size: 72
+        })
+        sideToggle = !sideToggle
+        continue
+      }
+
+      overlays.push({
+        id: `vo_${query}_${Math.round(start * 1000)}`,
+        start,
+        duration,
+        mediaUrl: url,
+        placement: sideToggle ? 'topRight' : 'topLeft',
+        size: 72
+      })
+      sideToggle = !sideToggle
+    }
+
+    // Deduplicate near-identical overlays by time and URL
+    const merged: VisualOverlay[] = []
+    const seen = new Set<string>()
+    for (const ov of overlays) {
+      const key = `${Math.round(ov.start * 10)}|${ov.mediaUrl}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(ov)
+    }
+
+    setVisualOverlays(prev => [...prev, ...merged])
+    console.log(`✅ Visual Director: created ${merged.length} overlays`)
+    setAutoIconsGenerated(true)
+  }, [transcriptSegments, autoIconsGenerated])
 
   const loadDemoClips = useCallback(() => {
     const demo = [
@@ -1191,9 +2045,30 @@ export default function VideoEditorNeuPage() {
   // Media processing functions
   const handleFileUpload = useCallback((file: File) => {
     if (file.type.startsWith('video/')) {
+      // Reset previous state so a new upload always runs a fresh analysis
+      workflowRef.current?.reset()
+      workflowRef.current?.addAsset({ name: file.name, mimeType: file.type })
+      setTranscriptSegments([])
+      setTextOverlays([])
+      setVisualOverlays([])
+      setAutoIconsGenerated(false)
+      setDetectedPauses([] as any)
+      setInitialClips([])
+      setPlaybackWindows([])
+      setLoadedMediaUrl(null)
+      setShowTranscriptView(false)
       setUploadedFile(file)
+      // Start processing only if queue contains a video
+      if (workflowRef.current?.startIfNeeded()) {
+        setIsProcessing(true)
+        setProcessingStep('Uploading video...')
+        setProcessingProgress(5)
+      }
     } else {
-      alert('Please upload a video file (MP4, MOV, AVI)')
+      // Non-video: vectors/images should not trigger processing
+      const t = classifyAsset({ name: file.name, mimeType: file.type })
+      console.log('media_added', { type: t })
+      alert('Please upload a video file (MP4, MOV, AVI) for processing. Images/vectors are added for later composition.')
     }
   }, [])
 
@@ -1267,6 +2142,19 @@ export default function VideoEditorNeuPage() {
       setProcessingStep('Transcribing audio with AI...')
       setProcessingProgress(25)
 
+      // Test API availability first
+      try {
+        const healthCheck = await fetch('/api/jobs/transcribe', {
+          method: 'HEAD'
+        })
+        if (!healthCheck.ok) {
+          throw new Error('Transcription service unavailable')
+        }
+      } catch (e) {
+        console.error('Health check failed:', e)
+        throw new Error('Processing services are currently unavailable. Please try again later.')
+      }
+
       // Add a small delay to show the transcription step
       await new Promise(resolve => setTimeout(resolve, 1000))
 
@@ -1279,7 +2167,7 @@ export default function VideoEditorNeuPage() {
       // Add timeout and retry logic for the pipeline
       const pipelineCall = async (retryCount = 0): Promise<Response> => {
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 300000) // 5 minute timeout
+        const timeoutId = setTimeout(() => controller.abort(), 600000) // 10 minute timeout
 
         try {
           const resp = await fetch('/api/jobs/speaker-camera-pipeline', {
@@ -1292,8 +2180,9 @@ export default function VideoEditorNeuPage() {
               uploadId: uploadedMediaId,
               script: scriptText.trim() || undefined,
               outputQuality: 'medium',
-              generateFiles: true,
-              instagramFormat: 'portrait'
+              generateFiles: false, // Disable subtitle generation
+              instagramFormat: 'portrait',
+              skipSubtitles: true // Explicitly skip subtitle creation
             }),
             signal: controller.signal
           })
@@ -1302,7 +2191,7 @@ export default function VideoEditorNeuPage() {
         } catch (error: any) {
           clearTimeout(timeoutId)
           if (error.name === 'AbortError') {
-            throw new Error('Pipeline processing timed out after 5 minutes')
+            throw new Error('Pipeline processing timed out after 10 minutes')
           }
           if (retryCount < 2) {
             console.log(`Pipeline attempt ${retryCount + 1} failed, retrying...`)
@@ -1323,8 +2212,20 @@ export default function VideoEditorNeuPage() {
       await new Promise(resolve => setTimeout(resolve, 500))
       if (!resp.ok) {
         const t = await resp.text().catch(() => '')
+        let j: any = null
+        try { j = JSON.parse(t) } catch {}
         console.error('Pipeline API Error:', { status: resp.status, response: t })
-        throw new Error(`Pipeline failed: ${resp.status} (${t || 'terminated'})`)
+        // Handle missing/invalid OpenAI configuration gracefully
+        if (resp.status === 503) {
+          const suggestion = j?.suggestion || 'Add OPENAI_API_KEY to your environment. See: https://platform.openai.com/account/api-keys'
+          const msg = j?.error || 'AI transcription service unavailable.'
+          setIsProcessing(false)
+          setProcessingProgress(0)
+          setProcessingStep('')
+          alert(`${msg}\n\n${suggestion}`)
+          return
+        }
+        throw new Error(`Pipeline failed: ${resp.status} (${j?.error || t || 'terminated'})`)
       }
       const pipelineResult = await resp.json().catch((e) => {
         console.error('Failed to parse pipeline response:', e)
@@ -1427,14 +2328,36 @@ export default function VideoEditorNeuPage() {
             startTime: s.start,
             endTime: s.end,
             speaker: 'Speaker 1',
-            confidence: 0.95
+            confidence: 0.95,
+            words: buildWordTiming(s.text, s.start, s.end) as any
           }))
-          setTranscriptSegments(transcriptSegs)
+          setTranscriptSegments(transcriptSegs as any)
 
           console.log(`Loaded ${transcriptSegs.length} transcript segments`)
 
+          // If word-level timing is available in metadata, enrich segments accordingly
+          const wordItems: Array<{ word: string; start: number; end: number }> | undefined =
+            rec?.metadata?.asr?.words || rec?.metadata?.openai_transcription?.words
+          if (Array.isArray(wordItems) && wordItems.length > 0) {
+            setTranscriptSegments(prev => {
+              const next = prev.map(seg => ({ ...seg })) as any
+              for (const seg of next) {
+                const words = wordItems.filter((w: any) => w.start >= seg.startTime && w.end <= seg.endTime)
+                if (words.length) {
+                  seg.words = words.map((w: any) => ({ ...w, kept: true }))
+                }
+              }
+              return next
+            })
+          }
+
           // auto-open transcript so user can immediately tweak styles
           setShowTranscriptView(true)
+
+          // Kick off local re-segmentation to improve chunking and timing
+          setTimeout(() => {
+            try { resegmentLocally() } catch {}
+          }, 0)
         }
       } catch (fetchError) {
         console.warn('Failed to fetch processed media details:', fetchError)
@@ -1454,10 +2377,12 @@ export default function VideoEditorNeuPage() {
       setProcessingStep('Complete!')
       setProcessingProgress(100)
 
-      // Add a brief delay to show completion
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Complete processing
+      // Immediately continue with vector icon generation in same workflow
+      // Vector/visual search no longer auto-runs. Users can trigger it from the Transcript Editor.
+      setProcessingStep('Complete!')
+      setProcessingProgress(100)
+      await new Promise(resolve => setTimeout(resolve, 400))
+      workflowRef.current?.complete()
       setIsProcessing(false)
       setProcessingProgress(0)
       setProcessingStep('')
@@ -1482,6 +2407,13 @@ export default function VideoEditorNeuPage() {
 
     } catch (error) {
       console.error('Processing failed:', error)
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        uploadedMediaId,
+        uploadedFile: uploadedFile ? { name: uploadedFile.name, size: uploadedFile.size } : null
+      })
+      
       setIsProcessing(false)
       setProcessingProgress(0)
       setProcessingStep('')
@@ -1494,8 +2426,12 @@ export default function VideoEditorNeuPage() {
         userMessage = 'Video processing was terminated. This might be due to a large file or timeout. Would you like to try with the original video instead?'
       } else if (errorMessage.includes('Pipeline failed: 500')) {
         userMessage = 'Server processing error. Would you like to retry or load the original video?'
+      } else if (errorMessage.includes('Pipeline failed: 503') || errorMessage.toLowerCase().includes('ai transcription service') || errorMessage.includes('OpenAI')) {
+        userMessage = 'AI features are not configured (missing or invalid OpenAI key). Would you like to load the original video instead?'
       } else if (errorMessage.includes('timeout')) {
         userMessage = 'Processing timed out. Would you like to try with the original video?'
+      } else if (errorMessage.includes('Processing services are currently unavailable')) {
+        userMessage = 'Processing services are temporarily unavailable. Please try again in a few minutes or load the original video.'
       } else {
         userMessage = `Video processing failed: ${errorMessage}. Would you like to load the original video instead?`
       }
@@ -1522,11 +2458,23 @@ export default function VideoEditorNeuPage() {
 
       alert('Unable to load video. Please try uploading again.')
     }
-  }, [uploadedFile, scriptText])
+  }, [uploadedFile, scriptText, resegmentLocally])
 
   return (
     <ProtectedRoute fallback={<LoginPage />}>
       <div className={jakarta.className}>
+        {/* Global loading screen (glassmorphic) */}
+        {(isProcessing || isProcessingSubtitles) && (
+          <div className="fixed inset-0 z-[1000] grid place-items-center" style={{ backdropFilter: 'blur(8px)', background: 'rgba(8,8,8,0.45)' }}>
+            <div className="rounded-[16px] border border-white/10 p-6 text-white/90" style={{ background: 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 50%, rgba(0,0,0,0.35) 100%)', boxShadow: 'inset 2px 2px 6px rgba(255,255,255,0.06), inset -2px -2px 6px rgba(0,0,0,0.35), 0 12px 40px rgba(0,0,0,0.45)' }}>
+              <div className="text-[12px] uppercase tracking-wide text-white/70 mb-1">{isProcessingSubtitles ? 'Subtitles' : 'Processing'}</div>
+              <div className="text-xl font-medium mb-4">{processingStep || (isProcessingSubtitles ? 'Generating AI subtitles…' : 'Working…')}</div>
+              <div className="h-2 w-64 rounded-full overflow-hidden bg-white/10">
+                <div className="h-full" style={{ width: `${Math.max(8, Math.min(100, processingProgress || (isProcessingSubtitles ? 60 : 8)))}%`, background: 'linear-gradient(90deg,#ef4444,#f97316)' }} />
+              </div>
+            </div>
+          </div>
+        )}
         {/* VideoEditorLayout component commented out - implement your own layout here */}
         {/* <VideoEditorLayout
           loadedMediaUrl={loadedMediaUrl}
@@ -1551,264 +2499,56 @@ export default function VideoEditorNeuPage() {
         /> */}
         
         {showMediaView ? (
-          // Media Processing View - Clean and Simple
-          <div className="relative w-full h-screen bg-black text-white overflow-hidden flex items-center justify-center">
-            <div className="max-w-4xl w-full mx-auto p-8">
-              {/* Header */}
-              <div className="text-center mb-12">
-                <h1 className="text-5xl font-normal text-white mb-4">Media Processing</h1>
-                <p className="text-xl text-white/70">Upload and process your speaker-to-camera videos with AI</p>
-              </div>
-
-              {/* Upload Area */}
-              <div className="relative mb-8">
-                <div
-                  className="rounded-[24px] border-2 border-dashed border-white/20 p-16 text-center bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md transition-all"
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault()
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
-                    const files = Array.from(e.dataTransfer.files)
-                    if (files.length > 0) {
-                      handleFileUpload(files[0])
-                    }
-                  }}
-                >
-                  <div className="flex flex-col items-center gap-6">
-                    <div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-md">
-                      <SquarePlay className="w-10 h-10 text-white/80" strokeWidth={1.2} />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-medium text-white mb-2">
-                        {uploadedFile ? uploadedFile.name : 'Drop your video here'}
-                      </h3>
-                      <p className="text-white/60">
-                        {uploadedFile ? `${(uploadedFile.size / 1024 / 1024).toFixed(1)} MB` : 'Support for MP4, MOV, AVI up to 2GB'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <input
-                        type="file"
-                        accept="video/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) handleFileUpload(file)
-                        }}
-                        className="hidden"
-                        id="video-upload"
-                      />
-                      <label
-                        htmlFor="video-upload"
-                        className="px-8 py-3 rounded-[14px] bg-white/10 border border-white/20 text-white hover:bg-white/15 transition-all backdrop-blur-md cursor-pointer"
-                      >
-                        {uploadedFile ? 'Choose Different File' : 'Choose File'}
-                      </label>
-
-                      {/* Subtle script button */}
-                      <button
-                        onClick={() => setShowScriptPopup(true)}
-                        className="px-4 py-2 rounded-[10px] bg-white/5 border border-white/10 text-white/60 hover:text-white/80 hover:bg-white/10 transition-all text-sm flex items-center gap-2"
-                      >
-                        <FileText className="w-4 h-4" strokeWidth={1.5} />
-                        {scriptText.trim() ? 'Edit Script' : 'Add Script'}
-                      </button>
-                    </div>
-                    {scriptText.trim() && (
-                      <div className="mt-2 px-3 py-1 rounded-[8px] bg-white/5 border border-white/10">
-                        <p className="text-white/70 text-sm">Script added ({scriptText.length} characters)</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Processing Options */}
-              <div className="grid grid-cols-2 gap-6 mb-12">
-                <div className="rounded-[18px] border border-white/10 p-6 bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md">
-                  <h4 className="text-lg font-medium text-white mb-2">Auto Crop</h4>
-                  <p className="text-white/60 text-sm">Automatically crop to speaker focus</p>
-                </div>
-                <div className="rounded-[18px] border border-white/10 p-6 bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md">
-                  <h4 className="text-lg font-medium text-white mb-2">Noise Reduction</h4>
-                  <p className="text-white/60 text-sm">Clean audio with AI enhancement</p>
-                </div>
-                <div className="rounded-[18px] border border-white/10 p-6 bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md">
-                  <h4 className="text-lg font-medium text-white mb-2">Auto Subtitles</h4>
-                  <p className="text-white/60 text-sm">Generate subtitles automatically</p>
-                </div>
-                <div className="rounded-[18px] border border-white/10 p-6 bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md">
-                  <h4 className="text-lg font-medium text-white mb-2">Smart Segments</h4>
-                  <p className="text-white/60 text-sm">Intelligent scene detection</p>
-                </div>
-              </div>
-
-              {/* Processing Progress - Centered Overlay */}
-              {isProcessing && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-                  <div className="max-w-md w-full mx-4">
-                    <div className="rounded-[24px] border border-white/20 p-8 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-md text-center">
-                      <div className="flex justify-center mb-6">
-                        <div className="w-16 h-16 rounded-full border-4 border-red-500/30 border-t-red-500 animate-spin" />
-                      </div>
-                      <h4 className="text-2xl font-medium text-white mb-2">Processing Video</h4>
-                      <p className="text-white/80 text-lg mb-6">{processingStep}</p>
-
-                      <div className="w-full bg-white/20 rounded-full h-3 mb-4">
-                        <div
-                          className="bg-gradient-to-r from-red-500 to-red-600 h-3 rounded-full transition-all duration-500"
-                          style={{ width: `${processingProgress}%` }}
-                        />
-                      </div>
-                      <p className="text-white/70">{Math.round(processingProgress)}% complete</p>
-
-                      <div className="mt-6 text-white/60 text-sm">
-                        <div className="flex items-center justify-center gap-2">
-                          <div className="w-2 h-2 bg-white/40 rounded-full animate-pulse" />
-                          <span>Please don't close this window</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Script Popup */}
-              {showScriptPopup && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-                  <div className="max-w-2xl w-full mx-4">
-                    <div className="rounded-[20px] border border-white/20 p-6 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-md">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xl font-medium text-white">Add Script (Optional)</h3>
-                        <button
-                          onClick={() => setShowScriptPopup(false)}
-                          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-all"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <p className="text-white/60 text-sm mb-4">
-                        Paste your script here to compare with the transcribed audio for better accuracy.
-                      </p>
-                      <textarea
-                        value={scriptText}
-                        onChange={(e) => setScriptText(e.target.value)}
-                        placeholder="Paste your script here..."
-                        className="w-full h-48 p-4 rounded-[12px] bg-white/5 border border-white/20 text-white placeholder:text-white/40 resize-none focus:outline-none focus:border-white/40 transition-all"
-                      />
-                      <div className="flex justify-between items-center mt-4">
-                        <p className="text-white/50 text-sm">
-                          {scriptText.length} characters
-                        </p>
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => {
-                              setScriptText('')
-                              setShowScriptPopup(false)
-                            }}
-                            className="px-4 py-2 rounded-[10px] border border-white/20 text-white/60 hover:text-white/80 hover:bg-white/5 transition-all"
-                          >
-                            Clear & Close
-                          </button>
-                          <button
-                            onClick={() => handleScriptSave(scriptText)}
-                            className="px-6 py-2 rounded-[10px] bg-gradient-to-r from-red-500/20 to-red-600/20 border border-red-500/30 text-white hover:from-red-500/30 hover:to-red-600/30 transition-all"
-                          >
-                            Save Script
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex justify-center gap-4">
-                <button
-                  onClick={() => {
-                    setShowMediaView(false)
-                    setActiveMode('video')
-                  }}
-                  className="px-6 py-3 rounded-[14px] border border-white/30 text-white/90 hover:bg-white/5 transition-all"
-                  disabled={isProcessing}
-                >
-                  Back to Editor
-                </button>
-                <button
-                  onClick={processVideo}
-                  disabled={!uploadedFile || isProcessing}
-                  className={`px-8 py-3 rounded-[14px] transition-all backdrop-blur-md ${uploadedFile && !isProcessing
-                    ? 'bg-gradient-to-r from-red-500/20 to-red-600/20 border border-red-500/30 text-white hover:from-red-500/30 hover:to-red-600/30'
-                    : 'bg-white/5 border border-white/20 text-white/50 cursor-not-allowed'
-                    }`}
-                >
-                  {isProcessing ? 'Processing...' : 'Process with AI'}
-                </button>
-
-                {uploadedFile && !isProcessing && (
-                  <button
-                    onClick={async () => {
-                      // Skip processing and load original video directly
-                      try {
-                        setIsProcessing(true)
-                        setProcessingStep('Uploading video...')
-                        setProcessingProgress(50)
-
-                        const formData = new FormData()
-                        formData.append('file', uploadedFile)
-                        formData.append('fileType', 'video')
-
-                        const session = await supabase.auth.getSession()
-                        const token = session.data.session?.access_token || ''
-
-                        const response = await fetch('/api/media-upload', {
-                          method: 'POST',
-                          headers: token ? { Authorization: `Bearer ${token}` } : {},
-                          body: formData
-                        })
-
-                        if (!response.ok) throw new Error('Upload failed')
-
-                        const result = await response.json()
-                        const mediaId = result?.data?.id || result?.data?.[0]?.id
-                        const mediaUrl = result?.data?.storage_url || result?.data?.[0]?.storage_url
-
-                        if (mediaUrl) {
-                          setLoadedMediaUrl(mediaUrl)
-                          setVideoAspectRatio(null)
-                          setShowMediaView(false)
-                          setActiveMode('video')
-                          setIsProcessing(false)
-                          setProcessingProgress(0)
-                          setProcessingStep('')
-                          setUploadedFile(null)
-                          console.log('Loaded original video without processing')
-                        } else {
-                          throw new Error('No video URL returned')
-                        }
-                      } catch (error) {
-                        console.error('Failed to load original video:', error)
-                        setIsProcessing(false)
-                        setProcessingProgress(0)
-                        setProcessingStep('')
-                        alert('Failed to load video. Please try again.')
-                      }
-                    }}
-                    className="px-6 py-3 rounded-[14px] transition-all backdrop-blur-md bg-white/10 hover:bg-white/20 text-white border border-white/20 hover:border-white/30"
-                  >
-                    Skip Processing
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <MediaProcessingPanel
+            uploadedFile={uploadedFile}
+            scriptText={scriptText}
+            isProcessing={isProcessing}
+            processingStep={processingStep}
+            processingProgress={processingProgress}
+            onChooseFile={(file) => handleFileUpload(file)}
+            onDropFile={(file) => handleFileUpload(file)}
+            onOpenScript={() => setShowScriptPopup(true)}
+            onSaveScript={(text) => handleScriptSave(text)}
+            onCloseScript={() => setShowScriptPopup(false)}
+            onBackToEditor={() => { setShowMediaView(false); setActiveMode('video') }}
+            onProcess={() => { processVideo() }}
+            onSkipProcessing={async () => {
+              try {
+                setIsProcessing(true)
+                setProcessingStep('Uploading video...')
+                setProcessingProgress(50)
+                const formData = new FormData()
+                if (uploadedFile) {
+                  formData.append('file', uploadedFile)
+                  formData.append('fileType', 'video')
+                }
+                const session = await supabase.auth.getSession()
+                const token = session.data.session?.access_token || ''
+                const response = await fetch('/api/media-upload', { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: formData })
+                if (!response.ok) throw new Error('Upload failed')
+                const result = await response.json()
+                const mediaUrl = result?.data?.storage_url || result?.data?.[0]?.storage_url
+                if (mediaUrl) {
+                  setLoadedMediaUrl(mediaUrl)
+                  setVideoAspectRatio(null)
+                  setShowMediaView(false)
+                  setActiveMode('video')
+                  setIsProcessing(false)
+                  setProcessingProgress(0)
+                  setProcessingStep('')
+                  setUploadedFile(null)
+                } else {
+                  throw new Error('No video URL returned')
+                }
+              } catch (error) {
+                console.error('Failed to load original video:', error)
+                setIsProcessing(false)
+                setProcessingProgress(0)
+                setProcessingStep('')
+                alert('Failed to load video. Please try again.')
+              }
+            }}
+          />
         ) : (
           // Original Video Editor View
           <div className="relative w-full h-screen bg-black text-white overflow-hidden">
@@ -1824,6 +2564,228 @@ export default function VideoEditorNeuPage() {
                     <ChevronLeft className="w-4 h-4" />
                     <span className="text-sm">Back</span>
                   </button>
+
+                  {/* Test: Add Video (transcribe only) */}
+                  <label className="h-10 px-3 rounded-[14px] border border-white/30 text-white/90 flex items-center gap-2 bg-white/10 hover:bg-white/20 cursor-pointer">
+                    <Plus className="w-4 h-4" />
+                    <span className="text-sm">Add Video</span>
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        try {
+                          const token = (await supabase.auth.getSession()).data.session?.access_token
+                          const fd = new FormData()
+                          fd.append('file', file)
+                          fd.append('fileType', 'video')
+                          const up = await fetch('/api/media-upload', { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
+                          const uj = await up.json().catch(() => null)
+                          if (!up.ok) throw new Error(uj?.error || 'Upload failed')
+                          const media = uj?.data
+                          const uploadId = media?.id
+                          const fileUrl = media?.storage_url
+                          setCurrentUploadId(uploadId || null)
+                          setLoadedMediaUrl(fileUrl || null)
+                          // transcribe only (no cutting)
+                          if (uploadId && fileUrl) {
+                            const tr = await fetch('/api/jobs/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uploadId, fileUrl }) })
+                            const tj = await tr.json().catch(() => null)
+                            let hydrated = false
+                            if (tr.ok && Array.isArray(tj?.segments) && tj.segments.length) {
+                              console.log('🎯 Auto-running SubtitleProcessor for perfect subtitle timing...')
+                              
+                              try {
+                                // Extract all words with timing from transcription response
+                                const allWords = tj.segments.flatMap((seg: any) => 
+                                  Array.isArray(seg.words) ? seg.words : []
+                                ).filter((w: any) => w && typeof w.word === 'string')
+                                
+                                if (allWords.length > 0) {
+                                  console.log('🤖 Auto-running AI Caption Segmentation for perfect subtitle timing...')
+                                  setIsProcessingSubtitles(true)
+                                  
+                                  try {
+                                    // Call AI Caption Segmentation API for optimal batching
+                                    const aiResponse = await fetch('/api/ai-caption-segmentation', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        words: allWords,
+                                        audioUrl: fileUrl,
+                                        settings: {
+                                          maxCharsPerLine: 35,
+                                          maxLines: 3,
+                                          preferredDuration: 2.5,
+                                          maxDuration: 4.0,
+                                          language: 'de'
+                                        }
+                                      })
+                                    })
+                                    
+                                    if (!aiResponse.ok) {
+                                      // AI API returned an error status
+                                      const errorText = await aiResponse.text().catch(() => 'Unknown error')
+                                      throw new Error(`AI API error: ${aiResponse.status} - ${errorText}`)
+                                    }
+                                    
+                                    const aiResult = await aiResponse.json()
+                                    
+                                    // Handle both possible response formats
+                                    let cards = null
+                                    if (aiResult.success && Array.isArray(aiResult.cards)) {
+                                      cards = aiResult.cards
+                                    } else if (aiResult.success && aiResult.data && Array.isArray(aiResult.data.cards)) {
+                                      cards = aiResult.data.cards
+                                    }
+                                    
+                                    if (!cards || cards.length === 0) {
+                                      throw new Error(`Invalid AI response format: no cards found`)
+                                    }
+                                    
+                                    console.log('✅ AI generated', cards.length, 'perfect subtitle cards')
+                                    
+                                    // Convert AI cards to display format - preserve precise word timing
+                                    const tSegs = cards.map((card: any, idx: number) => ({
+                                      id: `ts-${idx+1}`,
+                                      text: card.text,
+                                      startTime: card.start || card.renderStart || 0,
+                                      endTime: card.end || card.renderEnd || 0,
+                                      speaker: 'Speaker 1',
+                                      confidence: card.confidence || 0.95,
+                                      words: Array.isArray(card.words) && card.words.length > 0 
+                                        ? card.words.map((w: any) => ({
+                                            word: w.word || w.text_for_display || '',
+                                            start: w.start || 0,
+                                            end: w.end || 0,
+                                            confidence: w.confidence || 0.9
+                                          }))
+                                        : []
+                                    }))
+                                    
+                                    setTranscriptSegments(tSegs as any)
+                                    setShowTranscriptView(true)
+                                    setIsProcessingSubtitles(false)
+                                    hydrated = true
+                                    console.log('🎯 Perfect AI subtitle timing applied automatically!')
+                                    
+                                    // Force regeneration of textOverlays with precise AI word timing
+                                    setTimeout(() => {
+                                      console.log('🔄 Triggering textOverlays regeneration with AI timing...')
+                                      // The useEffect will automatically regenerate overlays from the updated transcriptSegments
+                                    }, 100)
+                                  } catch (aiError) {
+                                    console.error('❌ AI Caption Segmentation failed:', aiError)
+                                    console.log('🔄 Falling back to local SubtitleProcessor...')
+                                    
+                                    // Fallback to local SubtitleProcessor
+                                    const { detectPausesFromWords } = await import('../../lib/vad')
+                                    const pauseHints = detectPausesFromWords(allWords, {
+                                      silenceThreshold: 0.3,
+                                      longPauseThreshold: 1.0,
+                                      minPauseConfidence: 0.7
+                                    }).map((p: any) => ({ start: p.timestamp, end: p.timestamp + p.duration, dur: p.duration }))
+                                    
+                                    const { SubtitleProcessor } = await import('../../lib/subtitle-processor')
+                                    const processor = new SubtitleProcessor({
+                                      maxCharsPerLine: 35,
+                                      maxLines: 3,
+                                      minDuration: 0.8,
+                                      preferredMinDuration: 1.2,
+                                      maxDuration: 4.0,
+                                      endPadding: 0.1,
+                                      mergeIfShorterThan: 0.6,
+                                      silenceThreshold: 0.3,
+                                      collapseShortPausesBelow: 0.15,
+                                      wordConfidenceThreshold: 0.1,
+                                      enableDynamicProgramming: true
+                                    })
+                                    
+                                    const processedSubtitles = processor.process(allWords, undefined, pauseHints)
+                                    console.log('✅ Fallback SubtitleProcessor created', processedSubtitles.length, 'optimized subtitle cards')
+                                    
+                                    const tSegs = processedSubtitles.map((sub: any, idx: number) => ({
+                                      id: `ts-${idx+1}`,
+                                      text: sub.text,
+                                      startTime: sub.start,
+                                      endTime: sub.end,
+                                      speaker: sub.speaker || 'Speaker 1',
+                                      confidence: sub.confidence || 0.95,
+                                      words: sub.words || []
+                                    }))
+                                    
+                                    setTranscriptSegments(tSegs as any)
+                                    setShowTranscriptView(true)
+                                    setIsProcessingSubtitles(false)
+                                    hydrated = true
+                                    console.log('🎯 Fallback subtitle timing applied!')
+                                  }
+                                } else {
+                                  // Fallback to raw segments if no word timing
+                                  console.warn('⚠️ No word-level timing found, using raw segments')
+                                  const segs = tj.segments
+                                    .map((s: any) => ({ start: Math.max(0, Number(s.start||0)), end: Math.max(0, Number(s.end||0)), text: String(s.text||'') }))
+                                    .filter((s: any) => s.end > s.start && s.text.trim().length > 0)
+                                    .sort((a: any,b: any) => a.start - b.start)
+                                  const tSegs = segs.map((s: any, idx: number) => ({
+                                    id: `ts-${idx+1}`,
+                                    text: s.text,
+                                    startTime: s.start,
+                                    endTime: s.end,
+                                    speaker: 'Speaker 1',
+                                    confidence: 0.95,
+                                    words: buildWordTiming(s.text, s.start, s.end) as any
+                                  }))
+                                  setTranscriptSegments(tSegs as any)
+                                  setShowTranscriptView(true)
+                                  setIsProcessingSubtitles(false)
+                                  hydrated = true
+                                }
+                              } catch (procError) {
+                                console.error('❌ SubtitleProcessor failed:', procError)
+                                // Fallback to raw segments if processor fails
+                                const segs = tj.segments
+                                  .map((s: any) => ({ start: Math.max(0, Number(s.start||0)), end: Math.max(0, Number(s.end||0)), text: String(s.text||'') }))
+                                  .filter((s: any) => s.end > s.start && s.text.trim().length > 0)
+                                  .sort((a: any,b: any) => a.start - b.start)
+                                const tSegs = segs.map((s: any, idx: number) => ({
+                                  id: `ts-${idx+1}`,
+                                  text: s.text,
+                                  startTime: s.start,
+                                  endTime: s.end,
+                                  speaker: 'Speaker 1',
+                                  confidence: 0.95,
+                                  words: buildWordTiming(s.text, s.start, s.end) as any
+                                }))
+                                setTranscriptSegments(tSegs as any)
+                                setShowTranscriptView(true)
+                                setIsProcessingSubtitles(false)
+                                hydrated = true
+                              }
+                            }
+                            // Also poll Supabase once or twice to ensure persisted ASR is used going forward
+                            for (let i = 0; i < 4; i++) {
+                              try {
+                                await hydrateFromUpload(uploadId)
+                                hydrated = true
+                                break
+                              } catch {}
+                              await new Promise(r => setTimeout(r, 600))
+                            }
+                            if (!hydrated) {
+                              console.warn('Transcript hydration failed; please try again or check ASR metadata')
+                            }
+                          }
+                        } catch (err: any) {
+                          alert(err?.message || 'Failed to add and transcribe video')
+                        } finally {
+                          try { if (e.currentTarget) e.currentTarget.value = '' } catch {}
+                        }
+                      }}
+                    />
+                  </label>
 
                   <div className="flex items-center gap-2">
                     <button className="h-10 w-10 rounded-[14px] border border-white/30 text-white/90 flex items-center justify-center" aria-label="Backwards">
@@ -1861,7 +2823,7 @@ export default function VideoEditorNeuPage() {
                   </button>
 
                   <button
-                    onClick={() => { setActiveTool('text'); setShowTranscriptView(true) }}
+                    onClick={() => { setActiveTool('text'); setShowTranscriptView(true); setShowTextElements(true) }}
                     className="relative z-10 h-11 px-3 text-white/90 flex items-center gap-2 transition-all duration-300"
                     aria-label="Text tool"
                   >
@@ -1920,18 +2882,175 @@ export default function VideoEditorNeuPage() {
                 ref={projectAsideRef}
                 style={{ top: projectTop || undefined, bottom: projectBottom || undefined, background: 'radial-gradient(circle at 30% 30%, #3a3a3a 0%, #2a2a2a 25%, #1a1a1a 70%, #0a0a0a 100%)', boxShadow: 'inset 3px 3px 6px rgba(255,255,255,0.06), inset -3px -3px 6px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3)' }}
               >
-                <TranscriptEditor
-                  segments={transcriptSegments}
-                  currentTime={previewCurrent}
-                  isPlaying={isPreviewPlaying}
-                  onSeek={handleTranscriptSeek}
-                  onPlay={() => togglePreviewPlay()}
-                  onPause={() => togglePreviewPlay()}
-                  onSegmentEdit={handleTranscriptSegmentEdit}
-                  onSegmentSplit={handleTranscriptSegmentSplit}
-                  onSegmentRemove={handleTranscriptSegmentRemove}
-                  className="h-full"
-                />
+                <div className="h-full overflow-y-auto overflow-x-hidden no-scrollbar">
+                  {activeTool === 'text' ? (
+                    <div className="p-4">
+                      <div className="text-[11px] tracking-wide text-white/60">Caption</div>
+                      <div className="text-2xl font-normal mb-4">Choose Style</div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Font Family</div>
+                          <select className="w-full h-9 rounded-[10px] bg-transparent border border-white/20 px-2" value={subtitleStyle} onChange={(e) => setSubtitleStyle(e.target.value)}>
+                            <option value="default">Montserrat</option>
+                            <option value="hormozi-bold">Anton</option>
+                            <option value="bold-outline">Bebas Neue</option>
+                            <option value="neon-glow">Oswald</option>
+                          </select>
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Font Weight</div>
+                          <select className="w-full h-9 rounded-[10px] bg-transparent border border-white/20 px-2" value={subtitleFontWeight} onChange={(e) => setSubtitleFontWeight(e.target.value as any)}>
+                            <option value="Heavy">Heavy</option>
+                            <option value="Bold">Bold</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Regular">Regular</option>
+                            <option value="Light">Light</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <div className="text-xs text-white/70 mb-1">Uppercase</div>
+                        <div className="flex items-center gap-2">
+                          <button className={`px-3 py-1.5 rounded-md border ${subtitleUppercase ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleUppercase(true)}>Yes</button>
+                          <button className={`px-3 py-1.5 rounded-md border ${!subtitleUppercase ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleUppercase(false)}>No</button>
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <div className="text-xs text-white/70 mb-1">Size</div>
+                        <div className="flex items-center gap-3">
+                          <div className="w-16 text-center h-9 grid place-items-center rounded-[10px] border border-white/20">{subtitleFontSize}</div>
+                          <input type="range" min={16} max={72} step={1} value={subtitleFontSize} onChange={(e) => setSubtitleFontSize(parseInt(e.target.value || '28', 10))} className="flex-1" />
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Font Color</div>
+                          <input type="color" className="w-full h-9 rounded-[10px] border border-white/20 bg-transparent" value={subtitleColor} onChange={(e) => setSubtitleColor(e.target.value)} />
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Stroke Color</div>
+                          <input type="color" className="w-full h-9 rounded-[10px] border border-white/20 bg-transparent" value={subtitleStrokeColor} onChange={(e) => setSubtitleStrokeColor(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-3">
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Stroke weight</div>
+                          <div className="flex items-center gap-2">
+                            {(['none','small','medium','large'] as const).map(opt => (
+                              <button key={opt} className={`px-3 py-1.5 rounded-md border ${subtitleStrokeWeight===opt?'bg-white/15 border-white/40':'bg-white/10 border-white/20'}`} onClick={() => setSubtitleStrokeWeight(opt)}>{opt[0].toUpperCase()+opt.slice(1)}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Shadow</div>
+                          <div className="flex items-center gap-2">
+                            {(['none','small','medium','large'] as const).map(opt => (
+                              <button key={opt} className={`px-3 py-1.5 rounded-md border ${subtitleShadow===opt?'bg-white/15 border-white/40':'bg-white/10 border-white/20'}`} onClick={() => setSubtitleShadow(opt)}>{opt[0].toUpperCase()+opt.slice(1)}</button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Display word</div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 text-center h-9 grid place-items-center rounded-[10px] border border-white/20">{subtitleWordsPerCard}</div>
+                            <input type="range" min={1} max={6} step={1} value={subtitleWordsPerCard} onChange={(e) => setSubtitleWordsPerCard(parseInt(e.target.value || '3', 10))} className="flex-1" />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Position Y</div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 text-center h-9 grid place-items-center rounded-[10px] border border-white/20">{subtitlePositionY}</div>
+                            <input type="range" min={5} max={95} step={1} value={subtitlePositionY} onChange={(e) => setSubtitlePositionY(parseInt(e.target.value || '55', 10))} className="flex-1" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Animation</div>
+                          <div className="flex items-center gap-2">
+                            <button className={`px-3 py-1.5 rounded-md border ${subtitleAnimEnabled ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleAnimEnabled(true)}>Yes</button>
+                            <button className={`px-3 py-1.5 rounded-md border ${!subtitleAnimEnabled ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleAnimEnabled(false)}>No</button>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Punctuation</div>
+                          <div className="flex items-center gap-2">
+                            <button className={`px-3 py-1.5 rounded-md border ${subtitleKeepPunctuation ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleKeepPunctuation(true)}>Yes</button>
+                            <button className={`px-3 py-1.5 rounded-md border ${!subtitleKeepPunctuation ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleKeepPunctuation(false)}>No</button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Auto emoji</div>
+                          <div className="flex items-center gap-2">
+                            <button className={`px-3 py-1.5 rounded-md border ${subtitleAutoEmojiMode === 'auto' ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleAutoEmojiMode('auto')}>Auto</button>
+                            <button className={`px-3 py-1.5 rounded-md border ${subtitleAutoEmojiMode === 'top' ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleAutoEmojiMode('top')}>Top</button>
+                            <button className={`px-3 py-1.5 rounded-md border ${subtitleAutoEmojiMode === 'none' ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleAutoEmojiMode('none')}>None</button>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Emoji animation</div>
+                          <div className="flex items-center gap-2">
+                            <button className={`px-3 py-1.5 rounded-md border ${subtitleEmojiAnimation ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleEmojiAnimation(true)}>Yes</button>
+                            <button className={`px-3 py-1.5 rounded-md border ${!subtitleEmojiAnimation ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleEmojiAnimation(false)}>No</button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <div className="text-xs text-white/70 mb-1">Gap-free captions</div>
+                        <div className="flex items-center gap-2">
+                          <button className={`px-3 py-1.5 rounded-md border ${subtitleGapFree ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleGapFree(true)}>Yes</button>
+                          <button className={`px-3 py-1.5 rounded-md border ${!subtitleGapFree ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleGapFree(false)}>No</button>
+                        </div>
+                      </div>
+                      <div className="mt-6 grid grid-cols-3 gap-4">
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Main color</div>
+                          <input type="color" className="w-full h-9 rounded-[10px] border border-white/20 bg-transparent" value={subtitleColor} onChange={(e) => setSubtitleColor(e.target.value)} />
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Second color</div>
+                          <input type="color" className="w-full h-9 rounded-[10px] border border-white/20 bg-transparent" value={subtitleSecondColor} onChange={(e) => setSubtitleSecondColor(e.target.value)} />
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/70 mb-1">Third color</div>
+                          <input type="color" className="w-full h-9 rounded-[10px] border border-white/20 bg-transparent" value={subtitleThirdColor} onChange={(e) => setSubtitleThirdColor(e.target.value)} />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <TranscriptEditor
+                      segments={transcriptSegments as any}
+                      currentTime={currentTime}
+                      isPlaying={isPreviewPlaying}
+                      onSeek={handleTranscriptSeek}
+                      onPlay={() => togglePreviewPlay()}
+                      onPause={() => togglePreviewPlay()}
+                      onSegmentEdit={handleTranscriptSegmentEdit}
+                      onSegmentSplit={handleTranscriptSegmentSplit}
+                      onSegmentRemove={handleTranscriptSegmentRemove}
+                      pauses={detectedPauses as any}
+                      onAddVisuals={async () => {
+                        try {
+                          setIsProcessing(true)
+                          setProcessingStep('Finding visuals for key moments...')
+                          setProcessingProgress(85)
+                          await generateVisualOverlaysFromTranscript()
+                          setProcessingStep('Applying visuals...')
+                          setProcessingProgress(96)
+                          await new Promise(r => setTimeout(r, 350))
+                        } finally {
+                          setIsProcessing(false)
+                          setProcessingProgress(0)
+                          setProcessingStep('')
+                        }
+                      }}
+                    />
+                  )}
+                </div>
               </aside>
             </div>
 
@@ -1966,6 +3085,7 @@ export default function VideoEditorNeuPage() {
                       } else {
                         setShowMediaView(false)
                       }
+                      // No separate 'subtitles' mode; handled by header T icon
                     }}
                     className={`relative z-10 h-10 px-5 rounded-[14px] text-sm font-medium capitalize transition-colors ${activeMode === mode ? 'text-white' : 'text-white/70 hover:text-white/85'}`}
                   >
@@ -1974,6 +3094,121 @@ export default function VideoEditorNeuPage() {
                 ))}
               </div>
             </div>
+
+            {/* Subtitles settings panel disabled: replaced by left-side Subtitles Editor */}
+            {false && (
+              <div className="px-0" style={{ marginTop: `${standardGap}px` }}>
+                <div className="ml-auto mr-2" style={{ width: modeContainerWidth ? `${modeContainerWidth}px` : undefined }}>
+                  <div className="rounded-[14px] text-white/90 border border-white/[0.04] overflow-hidden relative" style={{ background: 'radial-gradient(circle at 30% 30%, #3a3a3a 0%, #2a2a2a 25%, #1a1a1a 70%, #0a0a0a 100%)', boxShadow: 'inset 3px 3px 6px rgba(255,255,255,0.06), inset -3px -3px 6px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3)' }}>
+                    <div className="p-6">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="text-[11px] tracking-wide text-white/60">Subtitles</div>
+                          <div className="text-2xl font-normal">Editor</div>
+                        </div>
+                        <button className="text-white/70 hover:text-white" onClick={() => setShowSubtitlesPanel(false)} title="Close"><X className="w-5 h-5" /></button>
+                      </div>
+
+                      <div className="mt-4">
+                        <SubtitleStyleSelector
+                          value={subtitleStyle}
+                          onChange={setSubtitleStyle}
+                          color={subtitleColor}
+                          onColorChange={setSubtitleColor}
+                          accentColor={subtitleAccentColor}
+                          onAccentColorChange={setSubtitleAccentColor}
+                          animation={subtitleAnimation}
+                          onAnimationChange={setSubtitleAnimation}
+                        />
+                      </div>
+
+                      <div className="mt-5 grid grid-cols-2 gap-4 text-[12px] text-white/80">
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Words per card</span><span className="text-white/60">{subtitleWordsPerCard}</span></div>
+                          <input type="range" min={2} max={6} step={1} value={subtitleWordsPerCard} onChange={(e) => setSubtitleWordsPerCard(parseInt(e.target.value || '3', 10))} className="w-full" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Pause split (s)</span><span className="text-white/60">{subtitleGapThreshold.toFixed(2)}</span></div>
+                          <input type="range" min={0.06} max={0.5} step={0.01} value={subtitleGapThreshold} onChange={(e) => setSubtitleGapThreshold(parseFloat(e.target.value || '0.12'))} className="w-full" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Max lines</span><span className="text-white/60">{subtitleMaxLines}</span></div>
+                          <input type="range" min={1} max={3} step={1} value={subtitleMaxLines} onChange={(e) => setSubtitleMaxLines(parseInt(e.target.value || '2', 10))} className="w-full" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Font size (px)</span><span className="text-white/60">{subtitleFontSize}</span></div>
+                          <input type="range" min={16} max={72} step={1} value={subtitleFontSize} onChange={(e) => setSubtitleFontSize(parseInt(e.target.value || '28', 10))} className="w-full" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Stagger (s/word)</span><span className="text-white/60">{subtitleStagger.toFixed(2)}</span></div>
+                          <input type="range" min={0.02} max={0.12} step={0.01} value={subtitleStagger} onChange={(e) => setSubtitleStagger(parseFloat(e.target.value || '0.06'))} className="w-full" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Uppercase</span><span className="text-white/60">{subtitleUppercase ? 'Yes' : 'No'}</span></div>
+                          <div className="flex items-center gap-2">
+                            <button className={`px-3 py-1.5 rounded-md border ${subtitleUppercase ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleUppercase(true)}>Yes</button>
+                            <button className={`px-3 py-1.5 rounded-md border ${!subtitleUppercase ? 'bg-white/15 border-white/40' : 'bg-white/10 border-white/20'}`} onClick={() => setSubtitleUppercase(false)}>No</button>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Position Y (%)</span><span className="text-white/60">{subtitlePositionY}</span></div>
+                          <input type="range" min={5} max={95} step={1} value={subtitlePositionY} onChange={(e) => setSubtitlePositionY(parseInt(e.target.value || '55', 10))} className="w-full" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Bottom offset (%)</span><span className="text-white/60">{subtitleBottomOffset}</span></div>
+                          <input type="range" min={4} max={24} step={1} value={subtitleBottomOffset} onChange={(e) => setSubtitleBottomOffset(parseInt(e.target.value || '8', 10))} className="w-full" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Word lead (s)</span><span className="text-white/60">{subtitleWordLead.toFixed(2)}</span></div>
+                          <input type="range" min={0} max={0.12} step={0.01} value={subtitleWordLead} onChange={(e) => setSubtitleWordLead(parseFloat(e.target.value || '0.03'))} className="w-full" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1"><span>Word trail (s)</span><span className="text-white/60">{subtitleWordTrail.toFixed(2)}</span></div>
+                          <input type="range" min={0} max={0.16} step={0.01} value={subtitleWordTrail} onChange={(e) => setSubtitleWordTrail(parseFloat(e.target.value || '0.04'))} className="w-full" />
+                        </div>
+                        <div className="col-span-2 pt-2 border-t border-white/10">
+                          <div className="flex items-center justify-center py-2">
+                            {isProcessingSubtitles ? (
+                              <span className="text-blue-400 text-xs">🔄 Processing AI Subtitles...</span>
+                            ) : (
+                              <span className="text-green-400 text-xs">✅ AI Contextual Segmentation (Auto)</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-[13px]">
+                          <input type="checkbox" checked={showTextElements} onChange={() => setShowTextElements(v => !v)} />
+                          <span>Show subtitles on video</span>
+                        </label>
+                        <button
+                          className="px-3 py-1.5 rounded-md text-sm bg-white/10 hover:bg-white/20 border border-white/20"
+                          onClick={() => {
+                            setSubtitleStyle('default')
+                            setSubtitleColor('#ffffff')
+                            setSubtitleAccentColor('#22c55e')
+                            setSubtitleWordsPerCard(3)
+                            setSubtitleGapThreshold(0.12)
+                            setSubtitleUppercase(false)
+                            setSubtitlePositionY(55)
+                            setSubtitleFontSize(28)
+                            setSubtitleStagger(0.06)
+                            setSubtitleBottomOffset(8)
+                            setSubtitleAnimation('pop')
+                            setSubtitleWordLead(0.03)
+                            setSubtitleWordTrail(0.04)
+                          }}
+                          title="Reset to defaults"
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Music Volume card directly under the mode group, same width */}
             <div className="px-0" style={{ marginTop: `${standardGap}px` }}>
@@ -2018,11 +3253,38 @@ export default function VideoEditorNeuPage() {
                         </div>
                       </div>
                       <div className="mt-5 flex items-center justify-between text-[12px] text-white/70">
-                        <button className="flex items-center gap-2 hover:bg-white/5 rounded-md px-2 py-1 -ml-2">
-                          <span className="opacity-80">Study Chill Relax Rep…</span>
-                          <ChevronDown className="w-3 h-3" strokeWidth={1.5} />
+                        <div className="relative">
+                          <button
+                            className="flex items-center gap-2 hover:bg-white/5 rounded-md px-2 py-1 -ml-2"
+                            onClick={() => setShowMusicPopup(v => !v)}
+                          >
+                            <span className="opacity-80">Study Chill Relax Rep…</span>
+                            <ChevronDown className="w-3 h-3" strokeWidth={1.5} />
+                          </button>
+                          {showMusicPopup && (
+                            <div className="absolute left-0 mt-2 z-50 w-64 rounded-[14px] border border-white/15 p-3"
+                              style={{ background: 'rgba(20,20,20,0.6)', backdropFilter: 'blur(14px)' }}>
+                              <div className="text-white/80 text-sm mb-2">Select background music</div>
+                              {['Study Chill Relax','Lo-fi Groove','Ambient Focus','No Music'].map((n) => (
+                                <button key={n} className="w-full text-left text-white/85 hover:bg-white/10 rounded-md px-2 py-1">
+                                  {n}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          className="p-1 rounded-md hover:bg-white/10"
+                          onClick={() => {
+                            const v = previewVideoRef.current
+                            if (!v) return
+                            const next = !isPreviewMuted
+                            v.muted = next
+                            setIsPreviewMuted(next)
+                          }}
+                        >
+                          {isPreviewMuted ? <VolumeX className="w-5 h-5" strokeWidth={1.5} /> : <Volume2 className="w-5 h-5" strokeWidth={1.5} />}
                         </button>
-                        <button className="p-1 rounded-md hover:bg-white/10"><VolumeX className="w-5 h-5" strokeWidth={1.5} /></button>
                       </div>
                     </div>
                   </div>
@@ -2190,7 +3452,12 @@ export default function VideoEditorNeuPage() {
                             // If vertical, contain to show full video with side pillars
                             v.style.objectFit = isVertical ? 'contain' : 'cover'
                             v.style.backgroundColor = isVertical ? 'black' : 'transparent'
-                            setPreviewDuration(v.duration || 0)
+                            const dur = v.duration || 0
+                            setPreviewDuration(dur)
+                            setVideoDuration(dur)
+                            // Sync initial timeline from duration when first loaded
+                            setInitialClips(prev => prev.length ? prev : [{ id: 'clip-1', src: loadedMediaUrl, start: 0, duration: Math.max(0.1, dur) }])
+                            setAudioSegments([{ start: 0, duration: Math.max(0.1, dur), label: 'Audio' }])
                           }}
                         />
                       ) : (
@@ -2198,11 +3465,57 @@ export default function VideoEditorNeuPage() {
                           No media loaded
                         </div>
                       )}
+                      {isProcessing && (
+                        <div className="absolute inset-0 z-40 grid place-items-center" style={{ backdropFilter: 'blur(6px)', background: 'rgba(10,10,10,0.45)' }}>
+                          <div className="min-w-[220px] rounded-[14px] border border-white/10 p-4 text-white/90" style={{ background: 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 50%, rgba(0,0,0,0.35) 100%)', boxShadow: 'inset 2px 2px 4px rgba(255,255,255,0.06), inset -2px -2px 4px rgba(0,0,0,0.35), 0 8px 32px rgba(0,0,0,0.35)' }}>
+                            <div className="text-[12px] uppercase tracking-wide text-white/70 mb-1">Working</div>
+                            <div className="text-lg font-medium mb-3">{processingStep || 'Preparing...'}</div>
+                            <div className="h-2 w-56 rounded-full overflow-hidden bg-white/10">
+                              <div className="h-full" style={{ width: `${Math.max(8, Math.min(100, processingProgress || 8))}%`, background: 'linear-gradient(90deg,#ef4444,#f97316)' }} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(120% 120% at 50% 50%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.25) 100%)' }} />
-                      {/* Visible text overlays */}
+                      {/* Visual icon/vector overlays */}
+                      {activeVisualOverlays.map((vo, idx) => {
+                        // Respect emoji display mode
+                        if (subtitleAutoEmojiMode === 'none') return null
+                        let pos: React.CSSProperties = {}
+                        if (vo.placement === 'topRight') pos = { top: '6%', right: '6%' }
+                        else if (vo.placement === 'topLeft') pos = { top: '6%', left: '6%' }
+                        else if (vo.placement === 'bottomRight') pos = { bottom: `calc(${subtitleBottomOffset}% + 12%)`, right: '6%' }
+                        else if (vo.placement === 'bottomLeft') pos = { bottom: `calc(${subtitleBottomOffset}% + 12%)`, left: '6%' }
+                        else if (vo.placement === 'aboveSub') pos = { bottom: `calc(${subtitleBottomOffset}% + 14%)`, left: '50%', transform: 'translateX(-50%)' }
+                        else if (vo.placement === 'belowSub') pos = { bottom: `calc(${Math.max(0, subtitleBottomOffset - 14)}%)`, left: '50%', transform: 'translateX(-50%)' }
+                        // Force top placement if requested
+                        if (subtitleAutoEmojiMode === 'top') {
+                          pos = { bottom: `calc(${subtitleBottomOffset}% + 14%)`, left: '50%', transform: 'translateX(-50%)' }
+                        }
+
+                        return (
+                          <div
+                            key={vo.id}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                              ...pos,
+                              transition: subtitleEmojiAnimation ? 'transform 360ms cubic-bezier(0.22,1,0.36,1), opacity 260ms ease-out' : undefined,
+                              transform: `${pos.transform || ''} translateY(${isPreviewPlaying ? '0' : '0'})`,
+                              opacity: 1
+                            }}
+                          >
+                            <img
+                              src={vo.mediaUrl}
+                              alt=""
+                              style={{ width: vo.size ? `${vo.size}px` : '64px', filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.45))' }}
+                            />
+                          </div>
+                        )
+                      })}
+                      {/* Visible text overlays (clean, small groups, staggered) */}
                       {activeOverlays.slice(0, 1).map((o) => {
                         const pos = o.style?.position || 'bottom'
-                        const baseStyle: React.CSSProperties = pos === 'top' ? { top: '8%' } : pos === 'center' ? { top: '45%' } : { bottom: '8%' }
+                        const baseStyle: React.CSSProperties = pos === 'top' ? { top: `${Math.max(0, Math.min(100, subtitlePositionY))}%` } : pos === 'center' ? { top: `${Math.max(0, Math.min(100, subtitlePositionY))}%` } : { bottom: `${subtitleBottomOffset}%` }
                         const styleClass = subtitleStyle === 'hormozi-bold' ? fontAnton.className
                           : subtitleStyle === 'bold-outline' ? fontBebas.className
                             : subtitleStyle === 'neon-glow' ? fontOswald.className
@@ -2212,7 +3525,8 @@ export default function VideoEditorNeuPage() {
                                     : subtitleStyle === 'leon-rect' ? fontMont.className
                                       : subtitleStyle === 'kelly' ? fontMont.className
                                         : subtitleStyle === 'submagic-bold' ? ''
-                                          : fontMont.className
+                                          : subtitleStyle === 'karaoke-accent' ? fontMont.className
+                                            : fontMont.className
                         const textCss: React.CSSProperties = subtitleStyle === 'hormozi-bold'
                           ? { color: subtitleColor, WebkitTextStroke: '2px #000', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 900 }
                           : subtitleStyle === 'bold-outline'
@@ -2229,38 +3543,229 @@ export default function VideoEditorNeuPage() {
                                       ? { color: subtitleColor, WebkitTextStroke: '2px #000', textTransform: 'uppercase', fontWeight: 900, textShadow: '0 2px 0 #000, 0 6px 20px rgba(0,0,0,0.6)' }
                                       : subtitleStyle === 'submagic-bold'
                                         ? { fontFamily: 'Arial, Helvetica, sans-serif', color: '#fff', WebkitTextStroke: '2px #000', fontWeight: 900 }
-                                        : subtitleStyle === 'leon-rect'
-                                          ? { color: '#fff', fontWeight: 900, textTransform: 'uppercase' }
-                                          : { color: subtitleColor, fontWeight: 800 }
+                                        : subtitleStyle === 'karaoke-accent'
+                                          ? { color: '#fff', fontWeight: 900 }
+                                          : subtitleStyle === 'leon-rect'
+                                            ? { color: '#fff', fontWeight: 900, textTransform: 'uppercase' }
+                                            : { color: subtitleColor, fontWeight: 800 }
+                        // Apply uppercase preference globally
+                        if (subtitleUppercase) (textCss as any).textTransform = 'uppercase'
+                        // Word-level timing: use true per-word offsets/durations when available (no uniform staggering)
+                        // Preserve real offsets (from ASR words) so variable gaps are respected within the card
+                        const tokens = (o.tokens && o.tokens.length
+                          ? o.tokens.map(t => ({ w: t.w, offset: Math.max(0, t.offset), dur: Math.max(0.02, t.dur) }))
+                          : o.text.split(' ').map((w, i, arr) => ({
+                              w,
+                              offset: (i * (o.duration / Math.max(1, arr.length))),
+                              dur: Math.max(0.02, o.duration / Math.max(1, arr.length))
+                            }))
+                        )
+                        // Ensure tokens stay within card bounds if fallback is used
+                        const totalEnd = Math.max(...tokens.map(t => t.offset + t.dur))
+                        if (totalEnd > o.duration && (!o.tokens || !o.tokens.length)) {
+                          const scale = o.duration / totalEnd
+                          for (let i = 0; i < tokens.length; i++) {
+                            tokens[i].dur *= scale
+                            // keep offsets proportional in fallback case
+                            tokens[i].offset *= scale
+                          }
+                        }
+                        // Decide splits for multi-line layout (enforce up to subtitleMaxLines)
+                        let breakIndices: number[] = []
+                        const maxLines = Math.max(1, Math.min(3, subtitleMaxLines))
+                        const maxBreaks = Math.max(0, Math.min(2, maxLines - 1))
+                        if (maxBreaks > 0 && tokens.length >= 2 * (maxBreaks + 1)) {
+                          const aiLineBreakIdx = transcriptSegments.find(s => previewCurrent >= s.startTime && previewCurrent <= s.endTime)?.lineBreakIndex
+                          if (typeof aiLineBreakIdx === 'number' && aiLineBreakIdx > 0 && aiLineBreakIdx < tokens.length - 1) {
+                            breakIndices.push(aiLineBreakIdx)
+                          }
+                          // Char-length guided splitting
+                          if (breakIndices.length < maxBreaks) {
+                            let currentLen = 0
+                            for (let i = 0; i < tokens.length; i++) {
+                              const addLen = (currentLen > 0 ? 1 : 0) + (tokens[i].w || '').length
+                              const testLen = currentLen + addLen
+                              if (testLen > subtitleLineCharMax && breakIndices.length < maxBreaks) {
+                                if (i > 0 && i < tokens.length - 1) breakIndices.push(i)
+                                currentLen = (tokens[i].w || '').length
+                              } else {
+                                currentLen = testLen
+                              }
+                            }
+                          }
+                          // Balanced fallback
+                          if (breakIndices.length < maxBreaks) {
+                            const perLine = Math.ceil(tokens.length / Math.min(maxLines, 3))
+                            for (let j = 1; j <= maxBreaks; j++) {
+                              const idx = perLine * j
+                              if (idx > 0 && idx < tokens.length - 1 && !breakIndices.includes(idx)) breakIndices.push(idx)
+                            }
+                          }
+                          breakIndices = Array.from(new Set(breakIndices)).sort((a, b) => a - b).slice(0, maxBreaks)
+                        }
+                        // Hard-enforce line budget by inserting breaks on overflows if needed
+                        if (maxBreaks > 0) {
+                          let currentLen = 0
+                          const enforced: number[] = []
+                          for (let i = 0; i < tokens.length; i++) {
+                            const addLen = (currentLen > 0 ? 1 : 0) + (tokens[i].w || '').length
+                            if (currentLen + addLen > subtitleLineCharMax && enforced.length < maxBreaks) {
+                              if (i > 0 && i < tokens.length - 1 && !breakIndices.includes(i)) enforced.push(i)
+                              currentLen = (tokens[i].w || '').length
+                            } else {
+                              currentLen += addLen
+                            }
+                          }
+                          breakIndices = Array.from(new Set([...breakIndices, ...enforced])).sort((a, b) => a - b).slice(0, maxBreaks)
+                        }
+                        // Don't render subtitles while processing
+                        if (isProcessingSubtitles) return null
+                        
+                        const makeAnim = (delaySec: number, durSec: number) => {
+                          // Return longhand animation properties to avoid mixing with animationPlayState
+                          const d = Math.max(0.04, durSec)
+                          const name = subtitleAnimation === 'fade' ? 'fadeIn' : (subtitleAnimation === 'slideUp' ? 'slideUp' : 'captionPop')
+                          if (!subtitleAnimEnabled) {
+                            return { name: 'none', duration: '0s', timingFunction: 'linear', delay: '0s', fillMode: 'none' } as const
+                          }
+                          return { name, duration: `${d}s`, timingFunction: 'ease-out', delay: `${delaySec}s`, fillMode: 'both' } as const
+                        }
                         return (
                           <div key={o.id} className="absolute left-0 right-0 text-center" style={baseStyle}>
-                            {subtitleStyle === 'marker-highlight' ? (
-                              <span className={`${styleClass} inline-block px-4 py-2 rounded-md`} style={{ background: 'linear-gradient(180deg, rgba(255,255,0,0.7), rgba(255,255,0,0.2))', fontSize: (o.style?.fontSize || 28), ...textCss }}>
-                                {o.text}
-                              </span>
-                            ) : subtitleStyle === 'submagic-bold' ? (
-                              <span className={`inline-block px-4 py-2 rounded-md`} style={{ background: 'rgba(0,0,0,0.35)', fontSize: (o.style?.fontSize || 28), ...textCss }}>
-                                {o.text.split(' ').map((w, idx) => (
-                                  <span key={idx} className="mr-1" style={{
-                                    color: (idx % 3 === 2) ? subtitleAccentColor : textCss.color,
-                                    WebkitTextStroke: (idx % 3 === 2) ? '2px #fff' : (textCss as any).WebkitTextStroke || '2px #000',
-                                  }}>{w}</span>
-                                ))}
-                              </span>
-                            ) : subtitleStyle === 'kelly' ? (
-                              <span className={`${styleClass} inline-block px-4 py-2 rounded-md`} style={{ background: 'rgba(0,0,0,0.35)', fontSize: (o.style?.fontSize || 28), ...textCss }}>
-                                {o.text.split(' ').map((w, idx) => (
-                                  <span key={idx} style={{ display: 'inline-block', animation: `captionPop .35s ease-out ${idx * 0.06}s both` }} className="mr-1">{w}</span>
-                                ))}
-                              </span>
-                            ) : subtitleStyle === 'leon-rect' ? (
-                              <span className={`${styleClass} inline-block px-1.5 py-[2px] rounded`} style={{ background: 'rgba(249,115,22,0.85)', fontSize: (o.style?.fontSize || 28), ...textCss }}>
-                                {o.text}
-                              </span>
+                            {subtitleStyle === 'leon-rect' ? (
+                              <span className={`${styleClass}`} style={{ fontSize: (o.style?.fontSize || subtitleFontSize), ...textCss }}>{o.text}</span>
                             ) : (
-                              <span className={`${styleClass} inline-block px-4 py-2 rounded-md`} style={{ background: 'rgba(0,0,0,0.35)', fontSize: (o.style?.fontSize || 28), ...textCss }}>
-                                {o.text}
-                              </span>
+                              (() => {
+                                const isKaraoke = subtitleStyle === 'karaoke-accent'
+                                // Compute karaoke fade-out after last spoken word (with trail)
+                                const karaokeFadeOut = 0.12
+                                let containerOpacityInner = 1
+                                const endOffsets = tokens.map(t => t.offset + t.dur)
+                                const speechEndWithin = endOffsets.length ? Math.max(...endOffsets) + Math.max(0, subtitleWordTrail) : o.duration
+                                const speechEndAbs = o.start + speechEndWithin
+                                if (isKaraoke) {
+                                  const timeAfterLast = previewCurrent - speechEndAbs
+                                  containerOpacityInner = timeAfterLast > 0 ? Math.max(0, 1 - (timeAfterLast / karaokeFadeOut)) : 1
+                                }
+
+                                // Determine single active word index for karaoke highlighting (strict on-time, smooth)
+                                let activeIdx = -1
+                                if (isKaraoke) {
+                                  const epsilon = 0.02 // 20ms tolerance; ensures we never skip a word on tiny timing drift
+                                  for (let i = 0; i < tokens.length; i++) {
+                                    const startAbs = o.start + Math.max(0, tokens[i].offset)
+                                    const endAbs = startAbs + Math.max(0.02, tokens[i].dur)
+                                    if (previewCurrent >= (startAbs - epsilon) && previewCurrent <= (endAbs + epsilon)) {
+                                      activeIdx = i
+                                      break
+                                    }
+                                  }
+                                }
+
+                                return (() => {
+                                  const maxLines = Math.max(1, Math.min(3, subtitleMaxLines))
+                                  const charLimit = 14
+                                  const letters = (s: string) => (s.replace(/\s+/g, ''))
+                                  const countLetters = (arr: typeof tokens) => letters(arr.map(t => t.w).join(' ')).length
+                                  const shouldNotEndLine = (w: string) => {
+                                    const lw = (w || '').toLowerCase()
+                                    if (!lw) return false
+                                    if (lw.length <= 3) return true // articles/preps like der, die, das, von, mit
+                                    if (/^(der|die|das|den|dem|des|ein|eine|einen|einem|einer|und|oder|sowie|zum|zur|im|in|am|an|auf|bei|mit|nach|vor|für|von|vom|ins|beim)$/i.test(lw)) return true
+                                    if (/(er|e|es|en|em)$/i.test(lw)) return true // adjective endings
+                                    return false
+                                  }
+                                  const lines: typeof tokens[] = []
+                                  let current: typeof tokens = []
+                                  let currentLetters = 0
+                                  for (let i = 0; i < tokens.length; i++) {
+                                    const tk = tokens[i]
+                                    const wLetters = letters(tk.w).length
+                                    const willExceed = (currentLetters + wLetters) > charLimit
+                                    if (!willExceed) {
+                                      current.push(tk)
+                                      currentLetters += wLetters
+                                    } else {
+                                      if (current.length > 0) {
+                                        const last = current[current.length - 1]
+                                        const lastLetters = letters(last.w).length
+                                        if (shouldNotEndLine(last.w) && (lastLetters + wLetters) <= charLimit) {
+                                          current.pop()
+                                          currentLetters -= lastLetters
+                                          lines.push([...current])
+                                          current = [last, tk]
+                                          currentLetters = lastLetters + wLetters
+                                        } else {
+                                          lines.push([...current])
+                                          current = [tk]
+                                          currentLetters = wLetters
+                                        }
+                                      } else {
+                                        current.push(tk)
+                                        currentLetters = wLetters
+                                      }
+                                    }
+                                  }
+                                  if (current.length) lines.push([...current])
+                                  const clamped = lines.slice(0, maxLines)
+
+                                  const containerStyle: React.CSSProperties = {
+                                    fontSize: (o.style?.fontSize || subtitleFontSize),
+                                    lineHeight: 1.18,
+                                    ...textCss,
+                                    ...(isKaraoke ? { opacity: containerOpacityInner, transition: 'opacity 120ms linear' } : {}),
+                                    display: 'inline-block',
+                                    whiteSpace: 'normal',
+                                    maxHeight: `${Math.ceil(1.18 * (o.style?.fontSize || subtitleFontSize) * maxLines)}px`,
+                                    overflow: 'hidden'
+                                  }
+
+                                  return (
+                                    <span className={`${styleClass}`} style={containerStyle}>
+                                      {clamped.map((group, gi) => (
+                                        <div key={gi} style={{ whiteSpace: 'nowrap' }}>
+                                          {group.map((tk, idx) => (
+                                            <span
+                                              key={idx}
+                                              className="mr-1"
+                                              style={{
+                                                display: 'inline-block',
+                                                ...(isKaraoke ? {
+                                                } : (subtitleAnimEnabled ? {
+                                                  animationName: makeAnim(Math.max(0, (tk.offset - subtitleWordLead)) - (previewCurrent - o.start), Math.max(0.04, tk.dur)).name,
+                                                  animationDuration: makeAnim(Math.max(0, (tk.offset - subtitleWordLead)) - (previewCurrent - o.start), Math.max(0.04, tk.dur)).duration,
+                                                  animationTimingFunction: makeAnim(Math.max(0, (tk.offset - subtitleWordLead)) - (previewCurrent - o.start), Math.max(0.04, tk.dur)).timingFunction,
+                                                  animationDelay: makeAnim(Math.max(0, (tk.offset - subtitleWordLead)) - (previewCurrent - o.start), Math.max(0.04, tk.dur)).delay,
+                                                  animationFillMode: makeAnim(Math.max(0, (tk.offset - subtitleWordLead)) - (previewCurrent - o.start), Math.max(0.04, tk.dur)).fillMode,
+                                                } : { animation: 'none' })),
+                                                ...(isKaraoke ? {} : (subtitleAnimEnabled ? { animationPlayState: isPreviewPlaying ? 'running' : 'paused' } : { animation: 'none' })),
+                                                ...(subtitleStyle === 'submagic-bold' ? (() => {
+                                                  const weightMapLocal: Record<'Light' | 'Regular' | 'Medium' | 'Bold' | 'Heavy', number> = { Light: 300, Regular: 400, Medium: 600, Bold: 800, Heavy: 900 }
+                                                  const strokePxLocal = subtitleStrokeWeight === 'large' ? 3 : (subtitleStrokeWeight === 'medium' ? 2 : (subtitleStrokeWeight === 'small' ? 1 : 0))
+                                                  const colorIdx = (gi + idx) % 3
+                                                  const cycColor = colorIdx === 0 ? subtitleColor : (colorIdx === 1 ? subtitleSecondColor : subtitleThirdColor)
+                                                  return {
+                                                    color: (colorIdx === 2) ? subtitleAccentColor : (cycColor || (textCss.color as string)),
+                                                    WebkitTextStroke: strokePxLocal > 0 ? `${strokePxLocal}px ${subtitleStrokeColor}` : undefined,
+                                                    fontWeight: weightMapLocal[subtitleFontWeight] ?? 800
+                                                  }
+                                                })() : {}),
+                                                ...(isKaraoke ? {
+                                                  color: (idx === activeIdx) ? subtitleAccentColor : (textCss.color as string),
+                                                  transition: 'color 120ms linear, transform 120ms ease-out',
+                                                  transform: (idx === activeIdx) ? 'scale(1.04)' : 'scale(1.0)'
+                                                } : {})
+                                              }}
+                                            >
+                                              {tk.w}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ))}
+                                    </span>
+                                  )
+                                })()
+                              })()
                             )}
                           </div>
                         )
@@ -2276,6 +3781,28 @@ export default function VideoEditorNeuPage() {
                             <span className="text-[12px] tabular-nums font-light">{formatClock(previewCurrent)} / {formatClock(previewDuration)}</span>
                             <button onClick={(e) => { e.stopPropagation(); togglePreviewMute(); }} className="ml-1 grid place-items-center w-7 h-7 rounded-[8px] bg-white/10 border border-white/20 text-white/90">
                               {isPreviewMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation()
+                                try {
+                                  setIsProcessing(true)
+                                  setProcessingStep('Finding visuals for key moments...')
+                                  setProcessingProgress(85)
+                                  await generateVisualOverlaysFromTranscript()
+                                  setProcessingStep('Applying visuals...')
+                                  setProcessingProgress(96)
+                                  await new Promise(r => setTimeout(r, 350))
+                                } finally {
+                                  setIsProcessing(false)
+                                  setProcessingProgress(0)
+                                  setProcessingStep('')
+                                }
+                              }}
+                              className="ml-1 grid place-items-center h-7 px-2 rounded-[8px] bg-white/10 border border-white/20 text-white/90 text-[12px]"
+                              title="Find visuals for this transcript"
+                            >
+                              Find Visuals
                             </button>
                           </div>
                         </div>
@@ -2465,5 +3992,7 @@ export default function VideoEditorNeuPage() {
     </ProtectedRoute>
   )
 }
+
+
 
 

@@ -7,10 +7,11 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 export const isSupabaseConfigured = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  // Use the already-resolved module-level constants so Next.js inlines values at build time
+  const url = (supabaseUrl || '').trim()
+  const anon = (supabaseAnonKey || '').trim()
   if (!url || !anon) return false
-  if (/localhost:54321/i.test(url)) return false
+  // Only treat obviously fake values as misconfigured; allow localhost URLs
   if (/dummy|placeholder/i.test(anon)) return false
   return true
 }
@@ -47,8 +48,32 @@ export function getSupabaseClient() {
 				persistSession: true,
 				detectSessionInUrl: true
 			},
-			// Note: Avoid overriding fetch in a way that drops Supabase auth headers.
-			// If you need to customize fetch, ensure existing headers from Supabase are preserved.
+			global: {
+				fetch: async (url: string, options: any = {}) => {
+					// Add retry logic for network failures
+					let lastError: Error
+					for (let i = 0; i < 3; i++) {
+						try {
+							const controller = new AbortController()
+							const timeoutId = setTimeout(() => { try { (controller as any).abort?.('timeout') } catch { controller.abort() } }, 10000) // 10 second timeout
+							
+							const response = await fetch(url, {
+								...options,
+								signal: controller.signal
+							})
+							
+							clearTimeout(timeoutId)
+							return response
+						} catch (error: any) {
+							lastError = (error?.name === 'AbortError') ? new Error('Network request timed out') : error
+							if (i < 2) { // Don't wait after the last attempt
+								await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))) // Exponential backoff
+							}
+						}
+					}
+					throw lastError!
+				}
+			}
 		}
 	)
 }

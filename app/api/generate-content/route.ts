@@ -3,8 +3,14 @@ import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
 function getOpenAI() {
-  if (!process.env.OPENAI_API_KEY) return null
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  const apiKeyRaw = process.env.OPENAI_API_KEY
+  if (!apiKeyRaw) return null
+  const apiKey = apiKeyRaw.trim().replace(/^["']|["']$/g, '')
+  return new OpenAI({ 
+    apiKey,
+    organization: process.env.OPENAI_ORG_ID || undefined,
+    project: process.env.OPENAI_PROJECT_ID || undefined,
+  })
 }
 
 function getSupabaseService() {

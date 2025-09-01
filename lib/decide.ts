@@ -18,12 +18,16 @@ import {
 
 // Initialize OpenAI client
 function getOpenAI(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
+  const apiKeyRaw = process.env.OPENAI_API_KEY
+  if (!apiKeyRaw) {
     throw new Error('OPENAI_API_KEY environment variable is required')
   }
-  
-  return new OpenAI({ apiKey })
+  const apiKey = apiKeyRaw.trim().replace(/^["']|["']$/g, '')
+  return new OpenAI({ 
+    apiKey,
+    organization: process.env.OPENAI_ORG_ID || undefined,
+    project: process.env.OPENAI_PROJECT_ID || undefined,
+  })
 }
 
 /**
