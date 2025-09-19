@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withErrorHandling, handleError } from '@/lib/error-handler'
 
 interface WordTiming {
   word: string
@@ -65,15 +66,28 @@ Be concise and efficient. Focus on core subtitle cards only.
 Return JSON: {"cards": [{"cardId":"1","start":0.0,"end":0.0,"renderStart":0.0,"renderEnd":0.0,"text":"word word","words":[{"word":"word","start":0.0,"end":0.0,"confidence":0.9,"text_for_display":"word"}],"confidence":0.9}]}`
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
+  return withErrorHandling(async () => {
+    let body: any
+    try {
+      body = await request.json()
+    } catch (error) {
+      return handleError(
+        new Error('Invalid JSON in request body'),
+        'INVALID_JSON',
+        400,
+        { suggestion: 'Ensure request body contains valid JSON with words array' }
+      )
+    }
+
     const { words, audioUrl, audioBase64, sceneCuts, settings } = body
 
     if (!words || !Array.isArray(words)) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid words array provided'
-      }, { status: 400 })
+      return handleError(
+        new Error('Invalid words array provided'),
+        'INVALID_WORDS_ARRAY',
+        400,
+        { suggestion: 'Provide words as an array with word timing information' }
+      )
     }
 
     // Default settings
@@ -101,13 +115,25 @@ export async function POST(request: NextRequest) {
       settings: finalSettings
     }
 
+    // Validate OpenAI API key
+    if (!process.env.OPENAI_API_KEY) {
+      return handleError(
+        new Error('OpenAI API key not configured'),
+        'MISSING_API_KEY',
+        500,
+        { suggestion: 'Configure OPENAI_API_KEY environment variable' }
+      )
+    }
+
     // Call OpenAI GPT-4o with the professional captioning prompt
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
+    let openaiResponse: Response
+    try {
+      openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
       body: JSON.stringify({
         model: 'gpt-4o',
         messages: [
@@ -120,15 +146,34 @@ export async function POST(request: NextRequest) {
             content: `Process the following payload and return the required JSON:\n\n${JSON.stringify(payload, null, 2)}`
           }
         ],
-        temperature: 0.0,
-        top_p: 1.0,
-        max_tokens: 16000,
+        seed: 0,
+        max_completion_tokens: 16000,
         response_format: { type: 'json_object' }
       })
     })
+    } catch (fetchError: any) {
+      return handleError(
+        fetchError,
+        'OPENAI_API_FETCH_ERROR',
+        500,
+        { 
+          suggestion: 'Check network connectivity and OpenAI API status',
+          retryable: true
+        }
+      )
+    }
 
     if (!openaiResponse.ok) {
-      throw new Error(`OpenAI API error: ${openaiResponse.status}`)
+      const errorText = await openaiResponse.text().catch(() => 'Unknown error')
+      return handleError(
+        new Error(`OpenAI API error: ${openaiResponse.status} - ${errorText}`),
+        'OPENAI_API_ERROR',
+        500,
+        { 
+          suggestion: openaiResponse.status === 401 ? 'Check OpenAI API key' : 'Try again later',
+          retryable: openaiResponse.status >= 500
+        }
+      )
     }
 
     const openaiResult = await openaiResponse.json()
@@ -278,21 +323,30 @@ export async function POST(request: NextRequest) {
         }
       } catch (fallbackError) {
         console.error('Fallback JSON repair also failed:', fallbackError)
-        return NextResponse.json({
-          success: false,
-          error: 'AI response contains malformed JSON that cannot be repaired',
-          details: parseError.message,
-          contentLength: openaiResult.choices[0].message.content?.length
-        }, { status: 500 })
+        return handleError(
+          new Error('AI response contains malformed JSON that cannot be repaired'),
+          'JSON_PARSE_ERROR',
+          500,
+          { 
+            suggestion: 'Try again or contact support if issue persists',
+            details: parseError.message,
+            retryable: true
+          }
+        )
       }
     }
 
     // Validate the response structure
     if (!captionData.cards || !Array.isArray(captionData.cards)) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid caption data structure'
-      }, { status: 500 })
+      return handleError(
+        new Error('Invalid caption data structure'),
+        'INVALID_CAPTION_STRUCTURE',
+        500,
+        { 
+          suggestion: 'Try again - AI response structure was invalid',
+          retryable: true
+        }
+      )
     }
 
     // Transform for our video editor format
@@ -327,13 +381,7 @@ export async function POST(request: NextRequest) {
       }
     })
 
-  } catch (error) {
-    console.error('AI caption segmentation error:', error)
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error during caption processing'
-    }, { status: 500 })
-  }
+  }, 'ai-caption-segmentation')
 }
 
 

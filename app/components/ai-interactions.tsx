@@ -379,28 +379,8 @@ Bitte antworte professionell, hilfsbereit und führe den Kunden zu einer konkret
   return (
     <div className="h-full w-full overflow-y-auto p-8">
       <div className="max-w-[1200px] mx-auto">
-        {/* Header */}
+        {/* Content */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">KI Community Management</h1>
-              <p className="text-gray-600">Verwalten Sie Interaktionen mit KI-gestützten Antworten</p>
-            </div>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-700">Auto-Antwort</span>
-                <Switch 
-                  checked={autoReply} 
-                  onCheckedChange={setAutoReply} 
-                  className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-teal-500 data-[state=checked]:to-cyan-500" 
-                />
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span>{filteredInteractions.length} ausstehend</span>
-              </div>
-            </div>
-          </div>
 
           {/* Filter Tabs */}
           <div className="flex items-center justify-center mb-6">

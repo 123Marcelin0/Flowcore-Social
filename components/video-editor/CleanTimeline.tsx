@@ -5,7 +5,7 @@ import { Eye, Lock, Mic, PencilOff, Type as TypeIcon } from "lucide-react"
 
 type TextOverlay = { id: string; start: number; duration: number; text: string }
 
-export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration = 60, onSeek, initialClips, textOverlays = [], onTextChange, showTextElements = true, showVideoClips = true, showAudioElements = true, onToggleTextElements, onToggleVideoClips, onToggleAudioElements }: { rightOffset?: number; gapPx?: number; currentTime?: number; duration?: number; onSeek?: (sec: number) => void; initialClips?: Array<{ id: string; src: string; start: number; duration: number }>; textOverlays?: Array<{ id: string; start: number; duration: number; text: string }>; onTextChange?: (id: string, updates: Partial<{ start: number; duration: number }>) => void; showTextElements?: boolean; showVideoClips?: boolean; showAudioElements?: boolean; onToggleTextElements?: () => void; onToggleVideoClips?: () => void; onToggleAudioElements?: () => void }) {
+export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, duration = 60, onSeek, initialClips, textOverlays = [], onTextChange, showTextElements = true, showVideoClips = true, showAudioElements = true, onToggleTextElements, onToggleVideoClips, onToggleAudioElements, zoomEvents = [], transitionEvents = [], removedSegments = [] }: { rightOffset?: number; gapPx?: number; currentTime?: number; duration?: number; onSeek?: (sec: number) => void; initialClips?: Array<{ id: string; src: string; start: number; duration: number }>; textOverlays?: Array<{ id: string; start: number; duration: number; text: string }>; onTextChange?: (id: string, updates: Partial<{ start: number; duration: number }>) => void; showTextElements?: boolean; showVideoClips?: boolean; showAudioElements?: boolean; onToggleTextElements?: () => void; onToggleVideoClips?: () => void; onToggleAudioElements?: () => void; zoomEvents?: Array<{ start_ms: number; end_ms: number; scale?: number; offsetX?: number; offsetY?: number }>; transitionEvents?: Array<{ at_ms: number; kind?: string }>; removedSegments?: Array<{ start: number; end: number; reason?: string }> }) {
   const blockRef = useRef<HTMLDivElement | null>(null)
   const [blockHeight, setBlockHeight] = useState<number>(0)
 
@@ -27,9 +27,28 @@ export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, du
 
   useEffect(() => {
     if (initialClips && initialClips.length > 0) {
-      setDemoClips(initialClips.map(c => ({ id: c.id, src: c.src, start: c.start, duration: c.duration })))
+      // Split incoming clips at transition points for clearer visualization
+      const transSec = (transitionEvents || []).map(t => Math.max(0, (t.at_ms || 0) / 1000)).sort((a, b) => a - b)
+      const split: DemoClip[] = []
+      for (const c of initialClips) {
+        const cStart = c.start
+        const cEnd = c.start + c.duration
+        const mids = transSec.filter(s => s > cStart && s < cEnd)
+        if (!mids.length) {
+          split.push({ id: c.id, src: c.src, start: c.start, duration: c.duration })
+          continue
+        }
+        let last = cStart
+        let segIdx = 0
+        for (const m of mids) {
+          split.push({ id: `${c.id}_seg${segIdx++}`, src: c.src, start: last, duration: Math.max(0.1, m - last) })
+          last = m
+        }
+        split.push({ id: `${c.id}_seg${segIdx++}`, src: c.src, start: last, duration: Math.max(0.1, cEnd - last) })
+      }
+      setDemoClips(split)
     }
-  }, [initialClips && JSON.stringify(initialClips)])
+  }, [initialClips && JSON.stringify(initialClips), transitionEvents && JSON.stringify(transitionEvents)])
 
   const [assetDurById, setAssetDurById] = useState<Record<string, number>>({})
   const [thumbsById, setThumbsById] = useState<Record<string, string[]>>({})
@@ -81,7 +100,7 @@ export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, du
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [demoClips.map(c => c.src).join('|')])
 
-  const snapTo = useCallback((value: number, step = 0.25) => Math.round(value / step) * step, [])
+  const snapTo = useCallback((value: number, step = 0.01) => Math.round(value / step) * step, [])
 
   const getPrevNextBounds = useCallback((index: number) => {
     const byTime = [...demoClips].sort((a, b) => a.start - b.start)
@@ -264,13 +283,12 @@ export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, du
             </div>
           </div>
           <div className="absolute -top-14 left-0 right-0 mx-auto w-[112px] rounded-[12px] border border-white/[0.04] px-4 text-[14px] tracking-wide text-white/95 text-center font-light" style={{ paddingTop: 14, paddingBottom: 14, background: 'radial-gradient(circle at 30% 30%, #3a3a3a 0%, #2a2a2a 25%, #1a1a1a 70%, #0a0a0a 100%)', boxShadow: 'inset 3px 3px 6px rgba(255,255,255,0.06), inset -3px -3px 6px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3)' }}>
-
             {(() => {
               const totalSeconds = Math.max(0, currentTime)
               const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0')
               const seconds = Math.floor(totalSeconds % 60).toString().padStart(2, '0')
-              const centis = Math.floor((totalSeconds % 1) * 100).toString().padStart(2, '0')
-              return `${minutes}:${seconds}:${centis}`
+              const millis = Math.floor((totalSeconds % 1) * 1000).toString().padStart(3, '0')
+              return `${minutes}:${seconds}:${millis}`
             })()}
           </div>
         </div>
@@ -289,7 +307,17 @@ export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, du
           >
             <div className="absolute inset-0 rounded-[10px] border border-white/[0.04]" style={{ background: 'radial-gradient(circle at 30% 30%, #3a3a3a 0%, #2a2a2a 25%, #1a1a1a 70%, #0a0a0a 100%)', boxShadow: 'inset 2px 2px 4px rgba(255,255,255,0.04), inset -2px -2px 4px rgba(0,0,0,0.3), 0 1px 4px rgba(0,0,0,0.2)' }} />
             <div className="absolute left-0 right-0 top-0 bottom-0 overflow-hidden">
-              <div className="relative h-full" style={{ width: `${Math.max(duration * pixelsPerSecond, blockRef.current?.clientWidth || 0)}px` }}>
+              <div className="relative h-full" style={{ width: `${Math.max(duration * pixelsPerSecond, blockRef.current?.clientWidth || 0)}px`, maxWidth: `${Math.max(blockRef.current?.clientWidth || 0, duration * pixelsPerSecond)}px` }}>
+                {/* Visualize transitions as vertical markers */}
+                {(transitionEvents || []).map((t, idx) => {
+                  const left = (Math.max(0, (t.at_ms || 0) / 1000)) * pixelsPerSecond
+                  return (
+                    <div key={`tr-${idx}`} className="absolute top-0 bottom-0" style={{ left }}>
+                      <div className="w-[2px] h-full bg-white/20" />
+                      <div className="absolute -top-5 -left-1 w-2.5 h-2.5 rotate-45 bg-white/30 rounded-[1px]" />
+                    </div>
+                  )
+                })}
                 {Array.from({ length: Math.max(1, Math.ceil(duration) + 1) }).map((_, sec) => {
                   const left = sec * pixelsPerSecond
                   const showTime = sec % 5 === 0 && sec > 0
@@ -309,7 +337,7 @@ export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, du
                   )
                 })}
 
-                <div className="absolute top-0 bottom-0 w-[2px] bg-gradient-to-b from-[#dc2626] to-[#ef4444]" style={{ left: currentTime * pixelsPerSecond }}>
+                <div className="absolute top-0 bottom-0 w-[2px] bg-gradient-to-b from-[#dc2626] to-[#ef4444] cursor-col-resize" style={{ left: currentTime * pixelsPerSecond }} onMouseDown={handleScrubStart}>
                   <div className="absolute -top-6 -left-6 w-12 text-center text-[10px] text-white/80 font-light">{formatTime(currentTime)}</div>
                 </div>
               </div>
@@ -352,6 +380,38 @@ export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, du
             {showVideoClips && (
               <div className="flex items-center gap-4">
                 <div className="flex-1 relative" style={{ height: '90px' }}>
+                  {/* Shade zoom windows on the video row */}
+                  {(zoomEvents || []).map((z, idx) => {
+                    const left = (Math.max(0, z.start_ms / 1000)) * pixelsPerSecond
+                    const width = Math.max(0, ((z.end_ms - z.start_ms) / 1000) * pixelsPerSecond)
+                    return <div key={`z-${idx}`} className="absolute bottom-0 h-[84px] bg-white/5 rounded-[10px]" style={{ left, width }} />
+                  })}
+                  
+                  {/* Removed segments overlay */}
+                  {(removedSegments || []).map((seg, idx) => {
+                    const left = Math.max(0, seg.start) * pixelsPerSecond
+                    const width = Math.max(0, (seg.end - seg.start)) * pixelsPerSecond
+                    const isPause = seg.reason === 'pause'
+                    return (
+                      <div 
+                        key={`removed-${idx}`} 
+                        className={`absolute bottom-0 h-[84px] rounded-[10px] border-2 border-dashed ${
+                          isPause 
+                            ? 'bg-orange-500/10 border-orange-500/30' 
+                            : 'bg-red-500/10 border-red-500/30'
+                        }`}
+                        style={{ left, width }}
+                        title={`Removed: ${seg.reason || 'manual'}`}
+                      >
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className={`w-full h-0.5 ${
+                            isPause ? 'bg-orange-500/50' : 'bg-red-500/50'
+                          }`} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                  
                   {demoClips.map((clip, i) => (
                     <div
                       key={clip.id}
@@ -449,6 +509,9 @@ export function CleanTimeline({ rightOffset = 16, gapPx = 4, currentTime = 0, du
     </div>
   )
 }
+
+
+
 
 
 

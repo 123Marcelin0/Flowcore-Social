@@ -136,7 +136,8 @@ export async function transcribeAudioRobust(options: TranscriptionOptions): Prom
               end: 0.0,
               text: transcription,
               tokens: [],
-              temperature: 0.0,
+              verbosity: 'low',
+              reasoning_effort: 'minimal',
               avg_logprob: 0.0,
               compression_ratio: 0.0,
               no_speech_prob: 0.0

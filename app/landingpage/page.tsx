@@ -67,7 +67,7 @@ export default function LandingPage() {
         <GlassSurface width={280} height={52} borderRadius={28} backgroundOpacity={0.12} className="mb-6 px-2">
           <div className="relative h-full w-full">
             <div
-              className="pointer-events-none absolute inset-1 rounded-full bg-white/25 backdrop-blur-md saturate-150 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35),0_8px_24px_rgba(255,255,255,0.12)] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="pointer-events-none absolute inset-1 rounded-full bg-white/25 backdrop-blur-md saturate-150 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35),0_8px_24px_rgba(255,255,255,0.12)] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]/*tailwind-silence*/"
               style={{ width: 'calc(50% - 0px)', transform: tab === 'waitlist' ? 'translateX(0%)' : 'translateX(100%)' }}
             />
             <div className="relative z-10 grid h-full w-full grid-cols-2 items-center text-sm">

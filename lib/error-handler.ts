@@ -280,7 +280,7 @@ export class ApiErrorHandler {
 }
 
 /**
- * Global error boundary for React components
+ * Error boundary wrapper for Next.js API routes
  */
 export function withErrorHandling<T extends (...args: any[]) => any>(
   fn: T,
@@ -290,18 +290,42 @@ export function withErrorHandling<T extends (...args: any[]) => any>(
     try {
       const result = fn(...args);
       
-      // Handle promises
+      // Handle promises (async functions)
       if (result instanceof Promise) {
         return result.catch((error) => {
           ErrorLogger.error(component, `Async operation failed`, error, { args });
-          throw error;
+          
+          // Return standardized error response for API routes
+          const { NextResponse } = require('next/server');
+          return NextResponse.json(
+            {
+              success: false,
+              error: error.message || 'Internal server error',
+              code: 'UNHANDLED_ERROR',
+              suggestion: 'Please try again or contact support if the issue persists',
+              timestamp: new Date().toISOString()
+            },
+            { status: 500 }
+          );
         });
       }
       
       return result;
-    } catch (error) {
+    } catch (error: any) {
       ErrorLogger.error(component, `Sync operation failed`, error, { args });
-      throw error;
+      
+      // Return standardized error response for API routes
+      const { NextResponse } = require('next/server');
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message || 'Internal server error',
+          code: 'UNHANDLED_ERROR',
+          suggestion: 'Please try again or contact support if the issue persists',
+          timestamp: new Date().toISOString()
+        },
+        { status: 500 }
+      );
     }
   }) as T;
 }
@@ -314,6 +338,38 @@ export function createUserError(message: string, suggestions: string[] = []): Er
   error.userFriendly = true;
   error.suggestions = suggestions;
   return error;
+}
+
+/**
+ * Create standardized error response for APIs
+ */
+export function handleError(
+  error: Error,
+  code: string,
+  status: number = 500,
+  options: {
+    suggestion?: string;
+    details?: any;
+    retryable?: boolean;
+  } = {}
+) {
+  const { NextResponse } = require('next/server');
+  
+  // Log the error
+  ErrorLogger.error('API', error.message, error, { code, status, options });
+  
+  return NextResponse.json(
+    {
+      success: false,
+      error: error.message,
+      code,
+      suggestion: options.suggestion,
+      details: options.details,
+      retryable: options.retryable || false,
+      timestamp: new Date().toISOString()
+    },
+    { status }
+  );
 }
 
 /**

@@ -4,6 +4,7 @@
  */
 
 import { updateSpeakerToCameraPipeline } from './align'
+import { withTempDirectory, safePath, getTempDir } from './file-utils'
 
 /**
  * Example 1: Debug File Structure and Contents
@@ -12,7 +13,7 @@ export function exampleDebugFileStructure() {
   console.log('🐛 Debug File Structure Example\n')
   
   const debugStructure = {
-    outputDirectory: '/tmp/video-edit-{uploadId}/',
+    outputDirectory: safePath(getTempDir(), 'video-edit-{uploadId}'),
     debugFiles: [
       {
         name: 'transcript.json',
@@ -264,13 +265,13 @@ export function exampleDebugSummaryStructure() {
       subtitles_burned: true
     },
     files_generated: {
-      transcript_json: '/tmp/video-edit-demo-123/transcript.json',
-      micro_segments_json: '/tmp/video-edit-demo-123/micro_segments.json',
-      llm_decisions_json: '/tmp/video-edit-demo-123/llm_decisions.json',
-      final_video: '/tmp/video-edit-demo-123/output.mp4',
-      subtitles_srt: '/tmp/video-edit-demo-123/subtitles.srt',
-      edit_decision_list: '/tmp/video-edit-demo-123/edit_decision_list.csv',
-      debug_summary: '/tmp/video-edit-demo-123/debug_summary.json'
+      transcript_json: safePath(getTempDir(), 'video-edit-demo-123', 'transcript.json'),
+      micro_segments_json: safePath(getTempDir(), 'video-edit-demo-123', 'micro_segments.json'),
+      llm_decisions_json: safePath(getTempDir(), 'video-edit-demo-123', 'llm_decisions.json'),
+      final_video: safePath(getTempDir(), 'video-edit-demo-123', 'output.mp4'),
+      subtitles_srt: safePath(getTempDir(), 'video-edit-demo-123', 'subtitles.srt'),
+      edit_decision_list: safePath(getTempDir(), 'video-edit-demo-123', 'edit_decision_list.csv'),
+      debug_summary: safePath(getTempDir(), 'video-edit-demo-123', 'debug_summary.json')
     }
   }
   
@@ -310,7 +311,7 @@ export function exampleCompleteDebugOutput() {
 💾 Saving OpenAI transcription to database...
 ✅ OpenAI transcription saved
 🎤 Ready for analysis: 12 segments with word-level timing
-🐛 Debug: Raw transcript saved to /tmp/video-edit-demo-123/transcript.json
+🐛 Debug: Raw transcript saved to ${safePath(getTempDir(), 'video-edit-demo-123', 'transcript.json')}
 
 🤖 Step 2: Professional video editor analysis...
 🎯 Rules: Keep final fluent versions, remove filler, trim pauses >800ms

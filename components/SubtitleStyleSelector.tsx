@@ -133,6 +133,16 @@ const viralPresets: StyleCard[] = [
         STYLE
       </div>
     )
+  },
+  {
+    id: 'cinematic-duo',
+    name: 'Cinematic Duo',
+    preview: (
+      <div className={`px-3 py-2 rounded-md bg-black text-white`}>
+        <span style={{ fontFamily: 'Inter, system-ui, sans-serif', fontWeight: 900 }}>Cinematic </span>
+        <em style={{ fontFamily: 'EB Garamond, serif', fontStyle: 'italic', fontWeight: 500 }}>fonts</em>
+      </div>
+    )
   }
 ]
 

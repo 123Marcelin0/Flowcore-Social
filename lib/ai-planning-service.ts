@@ -183,8 +183,9 @@ export class AIPlanner {
           const completion = await client.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.7,
-            max_tokens: 4000,
+            verbosity: 'medium',
+            reasoning_effort: 'low',
+            max_completion_tokens: 4000,
           })
 
           const response = completion.choices[0]?.message?.content

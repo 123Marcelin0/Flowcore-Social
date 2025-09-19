@@ -6,7 +6,7 @@ import { chatContextAnalyzer, type UserContext } from "@/lib/chat-context-analyz
 import { enhancedContentGenerator } from "@/lib/enhanced-content-generator"
 import { supabase } from "@/lib/supabase"
 
-export type ContentStep = "overview" | "strategies" | "brainstorm" | "inspiration" | "develop"
+export type ContentStep = "overview" | "strategies" | "brainstorm" | "inspiration" | "develop" | "unified"
 
 export function useContentIdeas() {
   // Main navigation state

@@ -90,3 +90,32 @@ export function smoothPauses(pauses: PauseHint[], mergeIfWithinSec: number = 0.0
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

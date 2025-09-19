@@ -33,6 +33,10 @@ export async function POST(request: NextRequest) {
       .filter((m: any) => m.matchedSegment && m.strength !== 'none')
       .map((m: any) => ({ start_ms: m.start_ms, end_ms: m.end_ms, text: m.sentence }))
 
+    const autoPlan = (media as any).metadata?.auto_zoom_plan
+    const transitionEvents = Array.isArray(autoPlan?.transition_events) ? autoPlan.transition_events : []
+    const zoomEvents = Array.isArray(autoPlan?.zoom_events) ? autoPlan.zoom_events : []
+
     // Minimal overlay selection: 0–1 asset per cut, based on overlapping caption text
     const overlayAssets: Array<{ src: string; start_ms: number; end_ms: number }> = []
     for (const cut of cutList) {
@@ -57,6 +61,8 @@ export async function POST(request: NextRequest) {
       captionClips,
       overlayAssets,
       styleId,
+      zoomEvents,
+      transitionEvents,
     })
 
     return NextResponse.json({ success: true, edit })

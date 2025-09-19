@@ -985,8 +985,9 @@ Provide ONLY the JSON response without additional text.`
             content: prompt
           }
         ],
-        temperature: 0.7,
-        max_tokens: 4000,
+        verbosity: 'medium',
+        reasoning_effort: 'low',
+        max_completion_tokens: 4000,
         response_format: { type: 'json_object' }
       })
 

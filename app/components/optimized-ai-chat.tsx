@@ -25,6 +25,7 @@ interface ChatMessage {
 interface OptimizedAIChatProps {
   isOpen: boolean
   onToggle: () => void
+  standalone?: boolean
 }
 
 // Memoized chat message component for better performance
@@ -109,7 +110,7 @@ const SuggestionComponent = memo(function SuggestionComponent({
   )
 })
 
-export const OptimizedAIChat = memo(function OptimizedAIChat({ isOpen, onToggle }: OptimizedAIChatProps) {
+export const OptimizedAIChat = memo(function OptimizedAIChat({ isOpen, onToggle, standalone = false }: OptimizedAIChatProps) {
   const [chatMessage, setChatMessage] = useState("")
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [isTyping, setIsTyping] = useState(false)
@@ -287,13 +288,13 @@ export const OptimizedAIChat = memo(function OptimizedAIChat({ isOpen, onToggle 
     }
   }, [handleSendMessage, isTyping])
 
-  if (!isOpen) {
+  if (!isOpen && !standalone) {
     return null
   }
 
   return (
-    <Card className="bg-white/95 backdrop-blur-sm border border-gray-100 shadow-lg rounded-3xl mb-4">
-      <div className="p-6 flex flex-col" style={{ height: 'min(85vh, 750px)' }}>
+    <Card className={standalone ? "bg-white h-full border-0 shadow-none rounded-none" : "bg-white/95 backdrop-blur-sm border border-gray-100 shadow-lg rounded-3xl mb-4"}>
+      <div className={`p-6 flex flex-col ${standalone ? 'h-full' : ''}`} style={!standalone ? { height: 'min(85vh, 750px)' } : undefined}>
         {/* Chat Header */}
         <div className="flex items-center justify-between mb-6 flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -305,14 +306,16 @@ export const OptimizedAIChat = memo(function OptimizedAIChat({ isOpen, onToggle 
               <p className="text-sm text-gray-500">Hier, um zu helfen</p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggle}
-            className="h-10 w-10 p-0 hover:bg-gray-100 rounded-2xl"
-          >
-            <X className="w-5 h-5" />
-          </Button>
+          {!standalone && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggle}
+              className="h-10 w-10 p-0 hover:bg-gray-100 rounded-2xl"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          )}
         </div>
 
         {/* Chat Messages with Larger Fixed Height */}

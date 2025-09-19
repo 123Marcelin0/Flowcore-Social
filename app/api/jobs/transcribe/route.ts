@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { transcribeFromUrl } from '@/lib/transcribe'
-import { transcribeLargeFile } from '@/lib/transcribe-large'
+import { enqueueTranscribeJob, getJobStatus } from '@/lib/supabase-job-queue'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 
 // Ensure this route runs on the Node.js runtime (needed for FFmpeg binaries)
@@ -32,12 +31,12 @@ export async function HEAD() {
   }
 }
 
-// POST /api/jobs/transcribe
-// Body: { uploadId: string, fileUrl: string }
+// POST /api/jobs/transcribe - Enqueue transcription job
+// Body: { uploadId: string, fileUrl: string, userId?: string }
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { uploadId, fileUrl } = body || {}
+    const { uploadId, fileUrl, userId, options } = body || {}
 
     if (!uploadId || !fileUrl) {
       return NextResponse.json(
@@ -54,10 +53,10 @@ export async function POST(request: NextRequest) {
       const size = sizeStr ? parseInt(sizeStr, 10) : undefined
       
       // Check file type
-      const allowed = ['audio/', 'video/mp4', 'video/webm']
+      const allowed = ['audio/', 'video/mp4', 'video/webm', 'video/mov', 'video/avi']
       if (type && !allowed.some((p) => type.startsWith(p))) {
         return NextResponse.json(
-          { success: false, error: `Unsupported content-type: ${type}. Use mp4, webm, or common audio.` },
+          { success: false, error: `Unsupported content-type: ${type}. Use mp4, webm, mov, avi, or common audio formats.` },
           { status: 415 }
         )
       }
@@ -65,131 +64,47 @@ export async function POST(request: NextRequest) {
       // Log file size for debugging
       if (size) {
         console.log(`📊 File size: ${Math.round(size/1024/1024)}MB`)
-      }
-    } catch {}
-
-    console.log('🎤 Starting transcription for uploadId:', uploadId)
-    
-    // For now, use the original transcription with a reasonable size limit
-    // TODO: Implement proper video splitting with FFmpeg for very large files
-    const result = await transcribeFromUrl({ uploadId, fileUrl })
-    
-    console.log('✅ Transcription completed:', {
-      uploadId,
-      segmentCount: result.segments.length,
-      textLength: result.text.length
-    })
-
-    // Auto-trigger AI caption segmentation if word-level timing is available
-    console.log('🔍 Checking for AI caption segmentation trigger...')
-    let enhancedSegments = result.segments
-    try {
-      // Extract all words with timing
-      const allWords = result.segments.flatMap(seg => 
-        Array.isArray(seg.words) ? seg.words : []
-      ).filter(w => w && typeof w.word === 'string')
-      
-      console.log('📊 Found', allWords.length, 'words for AI processing')
-      
-      if (allWords.length > 0) {
-        console.log('🤖 Auto-running AI Caption Segmentation for', allWords.length, 'words...')
         
-        // Prefer in-process call to avoid headers timeout in dev
-        const { runAICaptionSegmentation } = await import('@/lib/ai-caption-segmentation')
-        const aiResult = await runAICaptionSegmentation({
-          words: allWords,
-          audioUrl: fileUrl,
-          settings: {
-            minWordsPerCard: 1,
-            maxWordsPerCard: 6,
-            targetCpsRange: [12, 17],
-            globalMinPause: 0.24,
-            lingerSec: 0.6
-          }
-        })
-        
-        if (aiResult && Array.isArray(aiResult.cards)) {
-          
-          // Handle both possible response formats
-          let cards = null
-          if (aiResult.success && Array.isArray(aiResult.cards)) {
-            cards = aiResult.cards
-          } else if (aiResult.success && aiResult.data && Array.isArray(aiResult.data.cards)) {
-            cards = aiResult.data.cards
-          }
-          
-          if (cards && cards.length > 0) {
-            console.log('✅ AI generated', cards.length, 'perfect subtitle cards')
-            
-            // Convert AI cards to segment format
-            enhancedSegments = cards.map((card: any) => ({
-              start: card.start || card.renderStart || 0,
-              end: card.end || card.renderEnd || 0,
-              text: card.text || '',
-              words: card.words || [],
-              confidence: card.confidence || 0.95,
-              speaker: 'SPEAKER_00'
-            }))
-            
-            console.log('🎯 AI-enhanced segments ready for frontend!')
-
-            // Persist AI-enhanced cards/segments to media_files metadata for reliable hydration
-            try {
-              const db = supabaseAdmin || supabase
-              const { data: current } = await db
-                .from('media_files')
-                .select('metadata')
-                .eq('id', uploadId)
-                .single()
-
-              const existing = (current as any)?.metadata || {}
-              await db
-                .from('media_files')
-                .update({
-                  metadata: {
-                    ...existing,
-                    ai_subtitles: {
-                      cards,
-                      updated_at: new Date().toISOString(),
-                    },
-                    // Also reflect enhanced segments for simple consumers
-                    asr: {
-                      ...(existing.asr || {}),
-                      enhanced_segments: enhancedSegments,
-                      ai_captioned: true,
-                    }
-                  } as any
-                })
-                .eq('id', uploadId)
-              console.log('💾 Persisted AI subtitle cards to metadata.ai_subtitles')
-            } catch (persistErr) {
-              console.warn('⚠️ Failed to persist AI subtitles to DB (non-fatal):', persistErr)
-            }
-          } else {
-            console.warn('⚠️ AI segmentation returned invalid format:', JSON.stringify(aiResult).substring(0, 200))
-          }
-        } else {
-          console.warn('⚠️ AI segmentation failed, using original segments')
+        // Warn for very large files
+        if (size > 500 * 1024 * 1024) { // 500MB
+          console.warn(`⚠️ Large file detected (${Math.round(size/1024/1024)}MB). This may take a while to process.`)
         }
-      } else {
-        console.warn('⚠️ No word-level timing found, skipping AI segmentation')
       }
-    } catch (aiError) {
-      console.error('❌ AI Caption Segmentation failed:', aiError)
-      console.log('🔄 Using original segments as fallback')
+    } catch (prefetchError) {
+      console.warn('⚠️ Preflight check failed, but continuing:', prefetchError)
     }
 
-    console.log('📤 Returning', enhancedSegments.length, 'segments to frontend')
-    return NextResponse.json({ success: true, segments: enhancedSegments })
+    console.log('🎤 Enqueueing transcription job for uploadId:', uploadId)
+    
+    // Enqueue the transcription job instead of processing immediately
+    const jobId = await enqueueTranscribeJob({
+      uploadId,
+      fileUrl,
+      userId,
+      options: options || {}
+    })
+    
+    console.log(`✅ Transcription job enqueued with ID: ${jobId}`)
+
+    // Return job ID for status polling
+    return NextResponse.json({
+      success: true,
+      jobId,
+      message: 'Transcription job has been queued. Use /api/jobs/' + jobId + ' to check status.',
+      pollUrl: `/api/jobs/${jobId}`
+    })
+
   } catch (error: any) {
+    console.error('❌ Failed to enqueue transcription job:', error)
+    
     // Persist error for diagnostics
     try {
       const body = await request.json().catch(() => ({}))
       if (body?.uploadId) {
-        const db2 = supabaseAdmin || supabase
+        const db = supabaseAdmin || supabase
         
         // Get existing metadata before updating
-        const { data: currentMedia } = await db2
+        const { data: currentMedia } = await db
           .from('media_files')
           .select('metadata')
           .eq('id', body.uploadId)
@@ -197,7 +112,7 @@ export async function POST(request: NextRequest) {
         
         const existingMetadata = (currentMedia as any)?.metadata || {}
         
-        await db2
+        await db
           .from('media_files')
           .update({ 
             metadata: { 
@@ -211,10 +126,11 @@ export async function POST(request: NextRequest) {
     } catch {}
 
     return NextResponse.json(
-      { success: false, error: error?.message || 'Transcription failed' },
+      { success: false, error: error?.message || 'Failed to enqueue transcription job' },
       { status: 500 }
     )
   }
 }
+
 
 

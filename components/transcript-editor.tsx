@@ -34,9 +34,12 @@ interface TranscriptEditorProps {
   onWordClick?: (args: { segmentId: string; wordIndex: number; start: number; end: number }) => void
   onWordToggle?: (args: { segmentId: string; wordIndex: number }) => void
   onClean?: () => void
-  onWordAction?: (args: { segmentId: string; wordIndex: number; action: 'add' | 'remove' | 'keepOnly' }) => void
+  onWordAction?: (args: { segmentId: string; wordIndex: number; action: 'add' | 'remove' | 'restore' | 'keepOnly' }) => void
   pauses?: Array<{ start: number; end: number; duration: number; segmentId?: string; beforeWordIndex?: number; type: 'initial' | 'interWord' | 'interSegment' }>
   onAddVisuals?: () => void
+  onAutoZoom?: () => void
+  maxLines?: number
+  onChangeMaxLines?: (n: number) => void
 }
 
 export function TranscriptEditor({
@@ -56,6 +59,9 @@ export function TranscriptEditor({
   onWordAction
   , pauses = []
   , onAddVisuals
+  , onAutoZoom
+  , maxLines
+  , onChangeMaxLines
 }: TranscriptEditorProps) {
   const [editingSegment, setEditingSegment] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
@@ -144,18 +150,41 @@ export function TranscriptEditor({
               Clean
             </button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={isPlaying ? onPause : onPlay}
-            className="w-8 h-8 p-0 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20"
-          >
-            {isPlaying ? (
-              <Pause className="w-4 h-4 text-white/90" />
-            ) : (
-              <Play className="w-4 h-4 text-white/90" />
-            )}
-          </Button>
+          {typeof maxLines === 'number' && onChangeMaxLines && (
+            <div className="flex items-center gap-1 mr-2" title="Subtitle max lines">
+              {[1,2,3].map(n => (
+                <button
+                  key={n}
+                  onClick={() => onChangeMaxLines(n)}
+                  className={`px-2 h-8 rounded-lg border text-[12px] ${maxLines === n ? 'bg-white/20 border-white/40 text-white' : 'bg-white/10 border-white/20 text-white/85 hover:bg-white/15'}`}
+                >
+                  {n}L
+                </button>
+              ))}
+            </div>
+          )}
+          {onAutoZoom ? (
+            <button
+              onClick={onAutoZoom}
+              className="px-3 h-8 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-[12px] border border-white/20"
+              title="Analyze transcript and add auto zooms & edits"
+            >
+              Auto Zoom & Edits
+            </button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={isPlaying ? onPause : onPlay}
+              className="w-8 h-8 p-0 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20"
+            >
+              {isPlaying ? (
+                <Pause className="w-4 h-4 text-white/90" />
+              ) : (
+                <Play className="w-4 h-4 text-white/90" />
+              )}
+            </Button>
+          )}
           {onAddVisuals && (
             <button
               onClick={onAddVisuals}
@@ -276,6 +305,9 @@ export function TranscriptEditor({
                           const wordEndTime = w.end
                           const isCurrentWord = currentTime >= wordStartTime && currentTime < wordEndTime && isActive
                           const kept = (segment.words && (segment.words as any)[wordIndex]?.kept !== false) || segment.words === undefined
+                          const wordData = (segment.words as any)?.[wordIndex]
+                          const isRemoved = wordData?.isRemoved || wordData?.kept === false
+                          const removalReason = wordData?.removalReason || 'manual'
 
                           return (
                             <React.Fragment key={wordIndex}>
@@ -302,10 +334,22 @@ export function TranscriptEditor({
                                   e.stopPropagation()
                                   setMenu({ segId: segment.id, idx: wordIndex, x: e.clientX, y: e.clientY })
                                 }}
-                                className={`select-none px-0.5 rounded transition-colors duration-100 ${
+                                className={`select-none px-0.5 rounded transition-all duration-200 ${
                                   isCurrentWord ? 'bg-red-500/30 text-white' : ''
-                                } ${kept ? '' : 'line-through opacity-60'}`}
-                                title={kept ? 'Click to seek (Alt/Ctrl to remove)' : 'Removed (Alt/Ctrl to restore)'}
+                                } ${
+                                  isRemoved 
+                                    ? `line-through opacity-50 ${
+                                        removalReason === 'pause' 
+                                          ? 'bg-orange-500/10 text-orange-300/80 border-orange-500/20' 
+                                          : 'bg-red-500/10 text-red-300/80 border-red-500/20'
+                                      } border border-dashed`
+                                    : 'hover:bg-white/10'
+                                }`}
+                                title={
+                                  isRemoved 
+                                    ? `Removed (${removalReason}) - Right-click to restore` 
+                                    : 'Click to seek (Alt/Ctrl to remove)'
+                                }
                               >
                                 {w.word}{' '}
                               </span>
@@ -339,34 +383,45 @@ export function TranscriptEditor({
 
       {menu && (() => {
         const seg = segments.find(s => s.id === menu.segId)
-        const wKept = (seg?.words && (seg.words as any)[menu.idx]?.kept !== false) || seg?.words === undefined
+        const wordData = (seg?.words as any)?.[menu.idx]
+        const wKept = (seg?.words && wordData?.kept !== false) || seg?.words === undefined
+        const isRemoved = wordData?.isRemoved || wordData?.kept === false
+        const removalReason = wordData?.removalReason || 'manual'
+        
         return (
         <div
-          className="fixed z-50 rounded-md border border-white/15 bg-black/70 backdrop-blur-md text-white text-sm"
+          className="fixed z-50 rounded-md border border-white/15 bg-black/70 backdrop-blur-md text-white text-sm min-w-48"
           style={{ left: menu.x + 8, top: menu.y + 8 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {!wKept ? (
-            <button
-              className="block w-full text-left px-3 py-2 hover:bg-white/10"
-              onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'add' }); setMenu(null) }}
-            >
-              + Add to selection
-            </button>
+          {isRemoved ? (
+            <>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-white/10 text-green-300"
+                onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'restore' }); setMenu(null) }}
+              >
+                ↺ Restore to video
+              </button>
+              <div className="px-3 py-1 text-xs text-white/60 border-t border-white/10">
+                Removed: {removalReason === 'pause' ? 'Pause trimming' : 'Manual removal'}
+              </div>
+            </>
           ) : (
-            <button
-              className="block w-full text-left px-3 py-2 hover:bg-white/10"
-              onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'remove' }); setMenu(null) }}
-            >
-              − Remove from selection
-            </button>
+            <>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-white/10"
+                onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'remove' }); setMenu(null) }}
+              >
+                − Remove from video
+              </button>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-white/10"
+                onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'keepOnly' }); setMenu(null) }}
+              >
+                ✓ Keep only this segment
+              </button>
+            </>
           )}
-          <button
-            className="block w-full text-left px-3 py-2 hover:bg-white/10"
-            onClick={() => { onWordAction && onWordAction({ segmentId: menu.segId, wordIndex: menu.idx, action: 'keepOnly' }); setMenu(null) }}
-          >
-            ✓ Keep only selected
-          </button>
         </div>
         )
       })()}

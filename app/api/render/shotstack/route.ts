@@ -36,6 +36,9 @@ export async function POST(request: NextRequest) {
     const cutList = (media as any).metadata?.cutList || []
     const alignment = (media as any).metadata?.alignment
     const asr = (media as any).metadata?.asr
+    const autoPlan = (media as any).metadata?.auto_zoom_plan
+    const transitionEvents = Array.isArray(autoPlan?.transition_events) ? autoPlan.transition_events : []
+    const zoomEvents = Array.isArray(autoPlan?.zoom_events) ? autoPlan.zoom_events : []
     
     console.log('📊 Render data check:', {
       hasSourceUrl: !!sourceUrl,
@@ -60,29 +63,116 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Source video not publicly reachable: ${preErr.message}` }, { status: 400 })
     }
     
-    // IMPORTANT: For subtitles, we should use the actual spoken words (ASR), not the script!
-    // Always use ASR segments for captions (what was actually said)
+    // Centralized subtitle creation: prefer AI subtitle cards from editor, else AI segmentation
+    // Only fall back to simple ASR/alignment if absolutely necessary
     let captionClips: any[] = []
-    
-    if (asr?.segments?.length > 0) {
-      console.log('📝 Using ASR segments for captions (actual spoken words)')
-      captionClips = asr.segments.map((seg: any) => ({
-        start_ms: Math.round(seg.start * 1000),
-        end_ms: Math.round(seg.end * 1000),
-        text: seg.text || ''
-      }))
-    } else if (alignment?.mapping?.length > 0) {
-      // Fallback: use alignment mapping but with matched segment text, not script text
-      console.log('📝 Using alignment mapping for captions')
-      captionClips = (alignment.mapping || [])
-        .filter((m: any) => m.matchedSegment && m.strength !== 'none')
-        .map((m: any) => ({ 
-          start_ms: m.start_ms, 
-          end_ms: m.end_ms, 
-          text: m.matchedSegment?.text || m.sentence // Use spoken text, not script
-        }))
-    } else {
-      console.log('⚠️ No ASR or alignment data for captions')
+    try {
+      const metadata: any = (media as any).metadata || {}
+      const aiCards: any[] = Array.isArray(metadata?.ai_subtitles?.cards) ? metadata.ai_subtitles.cards : []
+
+      if (aiCards.length > 0) {
+        console.log('🧠 Using AI subtitle cards from metadata.ai_subtitles')
+        captionClips = aiCards
+          .map((c: any) => ({
+            start_ms: Math.round(Number(c.renderStart ?? c.start ?? 0) * 1000),
+            end_ms: Math.round(Number(c.renderEnd ?? c.end ?? 0) * 1000),
+            text: String(c.text || '')
+          }))
+          .filter((c: any) => c.end_ms > c.start_ms && c.text.length > 0)
+      } else {
+        // Build words array for AI segmentation
+        const wordsSrc: any[] = Array.isArray(metadata?.asr?.words) ? metadata.asr.words : []
+
+        const buildWordTiming = (text: string, start: number, end: number) => {
+          const tokens = String(text || '')
+            .split(/\s+/)
+            .map(t => t.trim())
+            .filter(Boolean)
+          if (!tokens.length) return [] as Array<{ word: string; start: number; end: number }>
+          const total = Math.max(0.001, (end || 0) - (start || 0))
+          return tokens.map((w, i) => {
+            const ws = (start || 0) + (i / tokens.length) * total
+            const we = (start || 0) + ((i + 1) / tokens.length) * total
+            return { word: w, start: ws, end: we }
+          })
+        }
+
+        let words: Array<{ word: string; start: number; end: number; confidence?: number }> = []
+        if (wordsSrc.length) {
+          words = wordsSrc.map((w: any) => ({
+            word: String(w.word || w.text_for_display || ''),
+            start: Number(w.start ?? w.startTime ?? 0),
+            end: Number(w.end ?? w.endTime ?? 0),
+            confidence: typeof w.confidence === 'number' ? w.confidence : 0.9
+          }))
+        } else if (asr?.segments?.length) {
+          for (const seg of asr.segments) {
+            const approx = buildWordTiming(seg.text || '', Number(seg.start || 0), Number(seg.end || 0))
+            words.push(...approx)
+          }
+        }
+
+        if (words.length) {
+          try {
+            console.log('🤖 Requesting AI caption segmentation for ad pipeline...')
+            const url = new URL('/api/ai-caption-segmentation', request.nextUrl.origin)
+            const res = await fetch(url.toString(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                words,
+                audioUrl: sourceUrl,
+                settings: {
+                  minWordsPerCard: 2,
+                  maxWordsPerCard: 6,
+                  targetCpsRange: [12, 17],
+                  lingerSec: 1.0
+                }
+              })
+            })
+            if (res.ok) {
+              const j = await res.json().catch(() => null as any)
+              const cards = (j && (j.data?.cards || j.cards)) || []
+              if (Array.isArray(cards) && cards.length) {
+                captionClips = cards
+                  .map((c: any) => ({
+                    start_ms: Math.round(Number(c.renderStart ?? c.start ?? 0) * 1000),
+                    end_ms: Math.round(Number(c.renderEnd ?? c.end ?? 0) * 1000),
+                    text: String(c.text || '')
+                  }))
+                  .filter((c: any) => c.end_ms > c.start_ms && c.text.length > 0)
+              }
+            }
+          } catch (e) {
+            console.warn('⚠️ AI segmentation failed, will attempt fallback:', e)
+          }
+        }
+
+        // Last resort fallback: use ASR mapping if AI failed
+        if (!captionClips.length) {
+          if (asr?.segments?.length > 0) {
+            console.log('📝 Fallback: using ASR segments for captions')
+            captionClips = asr.segments.map((seg: any) => ({
+              start_ms: Math.round(Number(seg.start || 0) * 1000),
+              end_ms: Math.round(Number(seg.end || 0) * 1000),
+              text: String(seg.text || '')
+            }))
+          } else if (alignment?.mapping?.length > 0) {
+            console.log('📝 Fallback: using alignment mapping for captions')
+            captionClips = (alignment.mapping || [])
+              .filter((m: any) => m.matchedSegment && m.strength !== 'none')
+              .map((m: any) => ({ 
+                start_ms: m.start_ms, 
+                end_ms: m.end_ms, 
+                text: String(m.matchedSegment?.text || m.sentence || '')
+              }))
+          } else {
+            console.log('⚠️ No ASR or alignment data for captions')
+          }
+        }
+      }
+    } catch (capErr) {
+      console.warn('⚠️ Subtitle creation encountered an error, falling back if possible:', capErr)
     }
     
     console.log('📝 Caption clips sample:', captionClips.slice(0, 2))
@@ -113,6 +203,8 @@ export async function POST(request: NextRequest) {
       captionClips,
       overlayAssets,
       styleId,
+      zoomEvents,
+      transitionEvents,
     })
 
     console.log('🎞️ Building Shotstack timeline...')

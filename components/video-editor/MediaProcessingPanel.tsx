@@ -3,7 +3,37 @@
 import React from "react"
 import { FileText, SquarePlay } from "lucide-react"
 
-export function MediaProcessingPanel({ uploadedFile, scriptText, isProcessing, processingStep, processingProgress, onChooseFile, onDropFile, onOpenScript, onSaveScript, onBackToEditor, onProcess, onSkipProcessing, onCloseScript }: { uploadedFile: File | null; scriptText: string; isProcessing: boolean; processingStep: string; processingProgress: number; onChooseFile: (file: File) => void; onDropFile: (file: File) => void; onOpenScript: () => void; onSaveScript: (text: string) => void; onBackToEditor: () => void; onProcess: () => void; onSkipProcessing: () => Promise<void>; onCloseScript: () => void }) {
+export function MediaProcessingPanel({ 
+  uploadedFile, 
+  scriptText, 
+  isProcessing, 
+  processingStep, 
+  processingProgress, 
+  onChooseFile, 
+  onDropFile, 
+  onOpenScript, 
+  onSaveScript, 
+  onBackToEditor, 
+  onProcess, 
+  onSkipProcessing, 
+  onCloseScript,
+  onProfessionalProcess
+}: { 
+  uploadedFile: File | null
+  scriptText: string
+  isProcessing: boolean
+  processingStep: string
+  processingProgress: number
+  onChooseFile: (file: File) => void
+  onDropFile: (file: File) => void
+  onOpenScript: () => void
+  onSaveScript: (text: string) => void
+  onBackToEditor: () => void
+  onProcess: () => void
+  onSkipProcessing: () => Promise<void>
+  onCloseScript: () => void
+  onProfessionalProcess?: (type: 'analyze' | 'quick' | 'complete') => Promise<void>
+}) {
   const [localScript, setLocalScript] = React.useState<string>("")
   const [showScript, setShowScript] = React.useState<boolean>(false)
 
@@ -92,8 +122,8 @@ export function MediaProcessingPanel({ uploadedFile, scriptText, isProcessing, p
             <p className="text-white/60 text-sm">Automatically crop to speaker focus</p>
           </div>
           <div className="rounded-[18px] border border-white/10 p-6 bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md">
-            <h4 className="text-lg font-medium text-white mb-2">Noise Reduction</h4>
-            <p className="text-white/60 text-sm">Clean audio with AI enhancement</p>
+            <h4 className="text-lg font-medium text-white mb-2">Professional Audio</h4>
+            <p className="text-white/60 text-sm">Instagram Reel-quality editing with AI</p>
           </div>
           <div className="rounded-[18px] border border-white/10 p-6 bg-gradient-to-br from-white/5 to-transparent backdrop-blur-md">
             <h4 className="text-lg font-medium text-white mb-2">Auto Subtitles</h4>
@@ -104,6 +134,76 @@ export function MediaProcessingPanel({ uploadedFile, scriptText, isProcessing, p
             <p className="text-white/60 text-sm">Intelligent scene detection</p>
           </div>
         </div>
+
+        {/* Processing Options */}
+        {uploadedFile && !isProcessing && (
+          <div className="space-y-8">
+            <div className="text-center">
+              <h3 className="text-xl font-medium text-white mb-6">Choose Processing Method</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-4xl mx-auto">
+                {/* Standard Processing */}
+                <div className="p-6 rounded-[20px] border border-white/20 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-md">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                      <SquarePlay className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <h4 className="text-lg font-medium text-white">Standard Processing</h4>
+                  </div>
+                  <p className="text-white/70 text-sm mb-4">Traditional pipeline with script alignment and basic editing</p>
+                  <button 
+                    onClick={onProcess}
+                    className="w-full px-6 py-3 rounded-[14px] bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 transition-all font-medium"
+                  >
+                    Start Standard Processing
+                  </button>
+                </div>
+
+                {/* Professional Audio Processing */}
+                {onProfessionalProcess && (
+                  <div className="p-6 rounded-[20px] border border-emerald-400/30 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 backdrop-blur-md">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                        <span className="text-emerald-400 text-lg">✨</span>
+                      </div>
+                      <h4 className="text-lg font-medium text-emerald-300">Professional Audio Processing</h4>
+                    </div>
+                    <p className="text-white/70 text-sm mb-4">Instagram Reel-quality editing with AI-powered bad take removal</p>
+                    <div className="space-y-2">
+                      <button 
+                        onClick={() => onProfessionalProcess('analyze')}
+                        className="w-full px-4 py-2 rounded-[10px] border border-blue-400/40 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 transition-all text-sm font-medium"
+                      >
+                        🎯 Analyze Content First
+                      </button>
+                      <button 
+                        onClick={() => onProfessionalProcess('quick')}
+                        className="w-full px-4 py-2 rounded-[10px] border border-emerald-400/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-all text-sm font-medium"
+                      >
+                        ⚡ Quick Professional Clean
+                      </button>
+                      <button 
+                        onClick={() => onProfessionalProcess('complete')}
+                        className="w-full px-4 py-2 rounded-[10px] border border-purple-400/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 transition-all text-sm font-medium"
+                      >
+                        🎬 Complete Instagram Reel Edit
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Back to Editor Button */}
+            <div className="text-center">
+              <button 
+                onClick={onBackToEditor}
+                className="px-8 py-3 rounded-[14px] border border-white/30 text-white/90 hover:bg-white/10 transition-all font-medium"
+              >
+                ← Back to Editor
+              </button>
+            </div>
+          </div>
+        )}
 
         {isProcessing && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
@@ -200,6 +300,15 @@ export function MediaProcessingPanel({ uploadedFile, scriptText, isProcessing, p
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
 
 
 

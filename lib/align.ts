@@ -18,7 +18,7 @@ import {
 } from './types'
 import { AudioSegmenter, processAudioSegments } from './segmenter'
 import { makeEditingDecision } from './decide'
-import { makeSrt } from './subtitles'
+import { generateSubtitlesFromScript, formatSRTTime } from './subtitle-utils'
 
 export interface ASRWord {
   word: string
@@ -398,8 +398,8 @@ Focus on creating the cleanest, most professional final video while preserving t
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      temperature: 0.1,
-      max_tokens: 4000,
+      // For GPT-5 compatibility, avoid unsupported params in this path
+      max_completion_tokens: 4000,
       response_format: { type: 'json_object' }
     })
     
@@ -782,15 +782,23 @@ function generateSRT(editingDecision: EditingDecision): string {
     originalSegmentIndex: index
   }))
   
-  // Use the enhanced subtitle generator with intelligent merging
-  return makeSrt(keepSegments, {
-    minCueDuration_ms: 300,        // No cues shorter than 300ms
-    mergeThreshold_ms: 200,        // Merge cues closer than 200ms
-    maxCharsPerLine: 42,           // Professional subtitle standards
-    maxLinesPerCue: 2,            // Maximum 2 lines per cue
-    wordWrap: true,               // Intelligent word wrapping
-    readingSpeed_wpm: 180         // Comfortable reading speed
-  })
+  // Use simplified subtitle generation from video-editor.ts
+  const videoSegments = keepSegments.map(seg => ({
+    start_ms: seg.start_ms,
+    end_ms: seg.end_ms,
+    keep: true
+  }))
+  
+  const scriptText = keepSegments.map(seg => seg.transcript).join(' ')
+  const subtitleSegments = generateSubtitlesFromScript(videoSegments, scriptText)
+  
+  // Convert to SRT format
+  
+  return subtitleSegments.map((subtitle, index) => {
+    const startTime = formatSRTTime(subtitle.start_ms)
+    const endTime = formatSRTTime(subtitle.end_ms)
+    return `${index + 1}\n${startTime} --> ${endTime}\n${subtitle.text}\n`
+  }).join('\n')
 }
 
 /**

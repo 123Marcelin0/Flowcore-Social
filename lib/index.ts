@@ -5,7 +5,7 @@ import { supabase, supabaseAdmin } from './supabase'
 import { transcribeWithEnhancedTiming } from './transcribe'
 import { processAudioSegments } from './segmenter'
 import { makeEditingDecision } from './decide'
-import { makeSrt } from './subtitles'
+import { generateSubtitlesFromScript, formatSRTTime } from './subtitle-utils'
 import { cutVideoFromKeepSegments } from './ffmpeg'
 import { 
   DecisionInput, 
@@ -314,11 +314,22 @@ export async function updateSpeakerToCameraPipeline(input: PipelineInput): Promi
       
       // Write subtitles (SRT)
       const srtPath = path.join(outputDir, 'subtitles.srt')
-      const srtContent = makeSrt(decision.keepSegments, {
-        minCueDuration_ms: 300,
-        mergeThreshold_ms: 200,
-        wordWrap: true
-      })
+      const videoSegments = decision.keepSegments.map(seg => ({
+        start_ms: seg.start_ms,
+        end_ms: seg.end_ms,
+        keep: true
+      }))
+      
+      const scriptText = decision.keepSegments.map(seg => seg.transcript).join(' ')
+      const subtitleSegments = generateSubtitlesFromScript(videoSegments, scriptText)
+      
+      // Convert to SRT format
+      
+      const srtContent = subtitleSegments.map((subtitle, index) => {
+        const startTime = formatSRTTime(subtitle.start_ms)
+        const endTime = formatSRTTime(subtitle.end_ms)
+        return `${index + 1}\n${startTime} --> ${endTime}\n${subtitle.text}\n`
+      }).join('\n')
       await fs.writeFile(srtPath, srtContent)
       files.srtPath = srtPath
       console.log(`📄 Subtitle file: ${srtPath}`)

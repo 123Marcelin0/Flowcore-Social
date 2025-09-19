@@ -23,10 +23,33 @@ export function findBestEmoji(query: string): string | null {
   for (const row of keywordToEmoji) {
     if (row.keywords.some(k => q.includes(k))) return row.emoji
   }
-  // simple fallback: return a sparkle for generic positive
-  if (/sch\w+|modern|neu|toll|super|great|nice|fresh|clean|bright/.test(q)) return '✨'
-  return null
+  // Expanded palette for variety
+  const palette = [
+    '✨','⚡','🔥','💥','🌟','⭐','🌈','💫','🎯','🚀','🏆','💡','🎉','🧠','📈','💸','🛠️','🧰','🧩','🧪','🔧','🔬','🎵','🎶','🎥','📸','🎬','🎙️','🎧','📚','✍️','📝','📰','🗺️','📌','📍','🔔','🔒','🔓','🧲','🪄','🧨','🎁','🍀','🪙','💎','🏃','🏁','👀','👍','👏','🙌','🤝','🤩','😮','😎','🤔','🤗','🤑','🤯'
+  ]
+  // Broader generic matches to bias selection
+  const rules: Array<[RegExp, string[]]> = [
+    [/(love|like|heart|care|favorite)/, ['❤️','💖','💘','💞']],
+    [/(money|profit|cash|sale|deal)/, ['💸','💰','🪙','📈']],
+    [/(fire|hot|trend|viral|spicy)/, ['🔥','⚡','💥','✨']],
+    [/(idea|light|think|insight|tip)/, ['💡','🧠','✨']],
+    [/(star|amazing|great|best|top)/, ['🌟','⭐','🏆','🎯']],
+    [/(wow|shock|surprise|boom)/, ['🤯','😮','🤩','🎉']],
+    [/(rocket|grow|fast|boost)/, ['🚀','📈','⚡','🏁']],
+    [/(check|done|win|success|ok)/, ['✅','🏆','👏','🙌']],
+    [/(time|soon|late|deadline)/, ['⏱️','⌛','🕒','🕓']],
+    [/(camera|video|record|film)/, ['🎥','🎬','📸','🎙️']],
+    [/(music|sound|song|beat)/, ['🎵','🎶','🎧','🎼']],
+    [/(learn|read|book|study)/, ['📚','📝','✍️','🧪']],
+    [/(map|location|place|track)/, ['📍','📌','🗺️','🔔']]
+  ]
+  for (const [re, choices] of rules) {
+    if (re.test(q)) return choices[Math.floor(Math.random() * choices.length)]
+  }
+  return palette[Math.floor(Math.random() * palette.length)]
 }
+
+
 
 
 

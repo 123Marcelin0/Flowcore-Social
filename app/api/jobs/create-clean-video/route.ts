@@ -76,11 +76,70 @@ export async function POST(request: NextRequest) {
     // Step 3: Create the clean video with subtitles
     console.log('3️⃣ Creating clean video with subtitles...')
     
-    // Import the subtitle generation function
-    const { generateSubtitlesFromScript } = await import('@/lib/video-editor')
-    
-    // Generate subtitles based on script and video segments  
-    const subtitles = generateSubtitlesFromScript(alignment.videoSegments, scriptText)
+    // Centralized subtitle creation: prefer AI cards or AI segmentation
+    let subtitles: any[] = []
+    try {
+      const { data: mediaMeta } = await db
+        .from('media_files')
+        .select('metadata')
+        .eq('id', uploadId)
+        .single()
+      const metadata: any = (mediaMeta as any)?.metadata || {}
+      const aiCards: any[] = Array.isArray(metadata?.ai_subtitles?.cards) ? metadata.ai_subtitles.cards : []
+      if (aiCards.length) {
+        subtitles = aiCards.map((c: any) => ({
+          start_ms: Math.round(Number(c.renderStart ?? c.start ?? 0) * 1000),
+          end_ms: Math.round(Number(c.renderEnd ?? c.end ?? 0) * 1000),
+          text: String(c.text || '')
+        }))
+      } else {
+        // Build words for AI segmentation
+        const asr = metadata?.asr || {}
+        let words: any[] = Array.isArray(asr?.words) ? asr.words.map((w: any) => ({
+          word: String(w.word || w.text_for_display || ''),
+          start: Number(w.start ?? w.startTime ?? 0),
+          end: Number(w.end ?? w.endTime ?? 0),
+          confidence: typeof w.confidence === 'number' ? w.confidence : 0.9
+        })) : []
+        if (!words.length && Array.isArray(asr?.segments)) {
+          // Approximate words from segments
+          const approx = (text: string, start: number, end: number) => {
+            const tokens = String(text || '').split(/\s+/).filter(Boolean)
+            if (!tokens.length) return [] as any[]
+            const total = Math.max(0.001, (end || 0) - (start || 0))
+            return tokens.map((t, i) => ({ word: t, start: start + (i / tokens.length) * total, end: start + ((i + 1) / tokens.length) * total }))
+          }
+          for (const seg of asr.segments) {
+            words.push(...approx(seg.text || '', Number(seg.start || 0), Number(seg.end || 0)))
+          }
+        }
+        if (words.length) {
+          const res = await fetch(`${request.nextUrl.origin}/api/ai-caption-segmentation`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ words, audioUrl: videoUrl, settings: { minWordsPerCard: 2, maxWordsPerCard: 6, targetCpsRange: [12,17], lingerSec: 1.0 } })
+          })
+          if (res.ok) {
+            const j = await res.json().catch(() => null)
+            const cards = (j && (j.data?.cards || j.cards)) || []
+            if (Array.isArray(cards) && cards.length) {
+              subtitles = cards.map((c: any) => ({
+                start_ms: Math.round(Number(c.renderStart ?? c.start ?? 0) * 1000),
+                end_ms: Math.round(Number(c.renderEnd ?? c.end ?? 0) * 1000),
+                text: String(c.text || '')
+              }))
+            }
+          }
+        }
+        // Final fallback: map alignment segments minimally
+        if (!subtitles.length) {
+          subtitles = alignment.videoSegments.filter((s: any) => s.keep).map((s: any, idx: number) => ({
+            start_ms: s.start_ms,
+            end_ms: s.end_ms,
+            text: `Segment ${idx + 1}`
+          }))
+        }
+      }
+    } catch {}
     console.log(`📝 Generated ${subtitles.length} subtitle segments`)
     
     const editingResult = await createCleanVideo(

@@ -122,13 +122,14 @@ export async function POST(request: NextRequest) {
     ].join('\n')
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.2,
+      model: 'gpt-4o',
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user }
-      ]
+      ],
+      // Use seed for reproducibility with models that fix temperature
+      seed: 0
     })
 
     const content = completion.choices[0]?.message?.content
@@ -181,6 +182,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: error?.message || 'AI Visual Director failed' }, { status: 500 })
   }
 }
+
+
+
+
+
+
 
 
 

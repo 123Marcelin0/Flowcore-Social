@@ -1,5 +1,5 @@
 import type { EditConfig, TimelineConfig, TrackConfig, ClipConfig } from './shotstack-service'
-import { mapCaptionSegmentsToShotstackClips } from './subtitleStyles'
+import { mapCaptionSegmentsToShotstackClips } from './subtitle-utils'
 
 export interface CutItem {
   start_ms: number
@@ -29,6 +29,8 @@ export interface BuildTimelineParams {
   overlayAssets: OverlayAsset[]
   styleId: string
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5'
+  zoomEvents?: Array<{ start_ms: number; end_ms: number; scale?: number; offsetX?: number; offsetY?: number }>
+  transitionEvents?: Array<{ at_ms: number; kind?: string }>
 }
 
 export function buildShotstackTimeline(params: BuildTimelineParams): EditConfig {
@@ -75,25 +77,67 @@ export function buildShotstackTimeline(params: BuildTimelineParams): EditConfig 
     videoTrack.clips.push(clip)
   } else {
     // Use the cuts from the cut list
-    for (let i = 0; i < cutList.length; i++) {
-      const cut = cutList[i]
-      const startSec = cut.start_ms / 1000
-      const lengthSec = Math.max(0, (cut.end_ms - cut.start_ms) / 1000)
-      const transitionIn = i === 0 ? undefined : { in: 'fade' as const }
-      const transitionOut = i === cutList.length - 1 ? undefined : { out: 'fade' as const }
-
-      const clip: ClipConfig = {
-        asset: {
-          type: 'video',
-          src: sourceUrl,
-          trim: startSec,
-        } as any,
-        start: i === 0 ? 0 : videoTrack.clips.reduce((acc, c) => acc + c.length, 0),
-        length: lengthSec,
-        fit: 'cover',
-        transition: { ...(transitionIn || {}), ...(transitionOut || {}) },
+    const zooms = (params.zoomEvents || []).slice().sort((a, b) => a.start_ms - b.start_ms)
+    // Merge transition events into cut boundaries if provided
+    const transitionsMs = (params.transitionEvents || []).map(t => t.at_ms).filter((v) => Number.isFinite(v))
+    const augmentedCuts: CutItem[] = []
+    for (const cut of cutList) {
+      const mids = transitionsMs.filter(ms => ms > cut.start_ms && ms < cut.end_ms).sort((a, b) => a - b)
+      if (!mids.length) { augmentedCuts.push(cut); continue }
+      let last = cut.start_ms
+      for (const m of mids) {
+        augmentedCuts.push({ start_ms: last, end_ms: m })
+        last = m
       }
-      videoTrack.clips.push(clip)
+      augmentedCuts.push({ start_ms: last, end_ms: cut.end_ms })
+    }
+    const cutsToUse = augmentedCuts.length ? augmentedCuts : cutList
+
+    for (let i = 0; i < cutsToUse.length; i++) {
+      const cut = cutsToUse[i]
+      const startSec = cut.start_ms / 1000
+      const endSec = cut.end_ms / 1000
+      const transitionIn = i === 0 ? undefined : { in: 'fade' as const }
+      const transitionOut = i === cutsToUse.length - 1 ? undefined : { out: 'fade' as const }
+
+      // Split this cut into subclips at zoom boundaries
+      const zs = zooms.filter(z => z.start_ms < cut.end_ms && z.end_ms > cut.start_ms)
+      const pts = [startSec, ...zs.flatMap(z => [Math.max(startSec, z.start_ms / 1000), Math.min(endSec, z.end_ms / 1000)]), endSec]
+        .filter((v, idx, arr) => idx === 0 || Math.abs(v - arr[idx - 1]) > 1e-3)
+        .sort((a, b) => a - b)
+
+      let clipStartAcc = i === 0 ? 0 : videoTrack.clips.reduce((acc, c) => acc + c.length, 0)
+      for (let p = 0; p < pts.length - 1; p++) {
+        const segStart = pts[p]
+        const segEnd = pts[p + 1]
+        if (segEnd <= segStart) continue
+        const midMs = Math.round(((segStart + segEnd) / 2) * 1000)
+        const activeZoom = zooms.find(z => midMs >= z.start_ms && midMs <= z.end_ms)
+        const clip: ClipConfig = {
+          asset: {
+            type: 'video',
+            src: sourceUrl,
+            trim: segStart,
+          } as any,
+          start: clipStartAcc,
+          length: Math.max(0, segEnd - segStart),
+          fit: 'cover',
+          transition: p === 0 ? (transitionIn ? { ...transitionIn } : undefined) : undefined,
+          scale: activeZoom?.scale || undefined,
+          position: activeZoom ? 'center' : undefined,
+          offset: activeZoom ? {
+            x: activeZoom.offsetX || 0,
+            y: activeZoom.offsetY || 0,
+          } : undefined,
+        }
+        videoTrack.clips.push(clip)
+        clipStartAcc += clip.length
+      }
+      // Add transition out on last subclip of this cut
+      if (transitionOut && videoTrack.clips.length) {
+        const last = videoTrack.clips[videoTrack.clips.length - 1]
+        last.transition = { ...(last.transition || {}), ...transitionOut }
+      }
     }
   }
 

@@ -6,6 +6,7 @@ import { ContentIdeasStrategies } from "./content-ideas/steps/ContentIdeasStrate
 import { ContentIdeasBrainstorm } from "./content-ideas/steps/ContentIdeasBrainstorm"
 import { ContentIdeasInspiration } from "./content-ideas/steps/ContentIdeasInspiration"
 import { ContentIdeasDevelop } from "./content-ideas/steps/ContentIdeasDevelop"
+import { ContentIdeasUnified } from "./content-ideas/steps/ContentIdeasUnified"
 
 export function ContentIdeas() {
   const contentIdeasState = useContentIdeas()
@@ -45,6 +46,13 @@ export function ContentIdeas() {
     case "develop":
       return (
         <ContentIdeasDevelop
+          setCurrentStep={contentIdeasState.setCurrentStep}
+        />
+      )
+
+    case "unified":
+      return (
+        <ContentIdeasUnified
           setCurrentStep={contentIdeasState.setCurrentStep}
         />
       )

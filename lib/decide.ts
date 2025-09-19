@@ -17,7 +17,7 @@ import {
  */
 
 // Initialize OpenAI client
-function getOpenAI(): OpenAI {
+export function getOpenAI(): OpenAI {
   const apiKeyRaw = process.env.OPENAI_API_KEY
   if (!apiKeyRaw) {
     throw new Error('OPENAI_API_KEY environment variable is required')
@@ -89,8 +89,10 @@ export async function makeEditingDecision(
         { role: 'system', content: PROFESSIONAL_DIALOGUE_EDITOR_PROMPT },
         { role: 'user', content: userPrompt }
       ],
-      temperature: 0.1, // Low temperature for consistent, deterministic editing decisions
-      max_tokens: 8000,  // Allow for comprehensive responses
+      // GPT-5: use verbosity/reasoning_effort instead of temperature/top_p
+      verbosity: 'medium',
+      reasoning_effort: 'minimal',
+      max_completion_tokens: 8000,  // Allow for comprehensive responses
       response_format: { type: 'json_object' } // Ensure JSON response
     })
     
@@ -388,7 +390,7 @@ function convertOptimizedToDecisionOutput(
     pauseList,
     analysisMetadata: {
       timestamp: new Date().toISOString(),
-      model: 'gpt-4o-optimized',
+      model: 'gpt-4o',
       policyUsed: originalInput.policy,
       hasScript: !!originalInput.scriptText,
       scriptLength: originalInput.scriptText?.length || 0,

@@ -8,6 +8,7 @@ export interface SubtitleSegment {
   text: string
 }
 
+
 export interface VideoEditingOptions {
   outputFormat?: 'mp4' | 'webm'
   outputQuality?: 'low' | 'medium' | 'high'
@@ -39,66 +40,7 @@ export interface VideoEditingResult {
   error?: string
 }
 
-/**
- * Generate subtitles based on the script and video segments
- */
-export function generateSubtitlesFromScript(
-  videoSegments: VideoSegment[],
-  scriptText: string
-): SubtitleSegment[] {
-  const subtitles: SubtitleSegment[] = []
-  const scriptSentences = scriptText.split(/[.!?]+/).map(s => s.trim()).filter(Boolean)
-  
-  let accumulatedTime = 0 // Track cumulative time in final video
-  let scriptIndex = 0
-  
-  for (const segment of videoSegments.filter(seg => seg.keep)) {
-    const segmentDuration = segment.end_ms - segment.start_ms
-    
-    // Find best matching script sentence for this segment
-    if (scriptIndex < scriptSentences.length) {
-      const scriptSentence = scriptSentences[scriptIndex].trim()
-      
-      // Create subtitle for this segment
-      if (scriptSentence.length > 0) {
-        subtitles.push({
-          start_ms: accumulatedTime,
-          end_ms: accumulatedTime + segmentDuration,
-          text: scriptSentence
-        })
-        scriptIndex++
-      }
-    }
-    
-    accumulatedTime += segmentDuration
-  }
-  
-  return subtitles
-}
 
-/**
- * Generate SRT subtitle file content
- */
-function generateSRTContent(subtitles: SubtitleSegment[]): string {
-  return subtitles.map((subtitle, index) => {
-    const startTime = formatSRTTime(subtitle.start_ms)
-    const endTime = formatSRTTime(subtitle.end_ms)
-    
-    return `${index + 1}\n${startTime} --> ${endTime}\n${subtitle.text}\n`
-  }).join('\n')
-}
-
-/**
- * Format milliseconds to SRT time format (HH:MM:SS,mmm)
- */
-function formatSRTTime(ms: number): string {
-  const hours = Math.floor(ms / 3600000)
-  const minutes = Math.floor((ms % 3600000) / 60000)
-  const seconds = Math.floor((ms % 60000) / 1000)
-  const milliseconds = ms % 1000
-  
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`
-}
 
 /**
  * Create FFmpeg subtitle filter
@@ -564,8 +506,29 @@ export async function createCleanVideoFromDecision(
 
     console.log(`✅ Valid segments: ${validSegments.length}/${allSegments.length} (${allSegments.length - validSegments.length} skipped as too short)`)
     
-    // Calculate total duration for fade decisions
-    const totalValidDuration = validSegments.reduce((sum, seg) => sum + (seg.end_ms - seg.start_ms), 0) / 1000
+    // Probe real input duration (seconds)
+    const inputDurationSec: number = await new Promise((resolve) => {
+      try {
+        ffmpeg.ffprobe(inputPath, (err: any, data: any) => {
+          if (err) return resolve(0)
+          const dur = Number(data?.format?.duration || 0)
+          resolve(isFinite(dur) ? dur : 0)
+        })
+      } catch {
+        resolve(0)
+      }
+    })
+
+    // Decide time unit scale for segments (ms vs s) by comparing to input duration
+    const maxEndMs = validSegments.reduce((m, s) => Math.max(m, s.end_ms), 0)
+    // If max end (interpreted as seconds) is far beyond input duration, assume ms → scale 0.001
+    const scale = (inputDurationSec > 0 && (maxEndMs > (inputDurationSec * 1500))) ? 0.001 : 0.001 // prefer ms by default
+    // If some systems already pass seconds, detect that: when maxEndMs (s) within 1.5x input duration
+    const secondsLooksRight = (inputDurationSec > 0 && (maxEndMs <= (inputDurationSec * 1.5)))
+    const timeScale = secondsLooksRight ? 1 : 0.001
+
+    // Calculate total duration for fade decisions using normalized seconds
+    const totalValidDuration = validSegments.reduce((sum, seg) => sum + ((seg.end_ms - seg.start_ms) * timeScale), 0)
     const shouldApplyFades = fadeInOut && totalValidDuration > 1.0
     
     console.log(`📊 Total valid duration: ${totalValidDuration.toFixed(1)}s`)
@@ -589,9 +552,14 @@ export async function createCleanVideoFromDecision(
       const segmentPath = path.join(tmpDir, `segment_${String(i + 1).padStart(3, '0')}.${outputFormat}`)
       segmentPaths.push(segmentPath)
       
-      const startSeconds = segment.start_ms / 1000
-      const endSeconds = segment.end_ms / 1000
-      const durationSeconds = endSeconds - startSeconds
+      let startSeconds = (segment.start_ms) * timeScale
+      let endSeconds = (segment.end_ms) * timeScale
+      if (inputDurationSec > 0) {
+        // Clamp to media duration bounds
+        startSeconds = Math.max(0, Math.min(startSeconds, Math.max(0.01, inputDurationSec - 0.01)))
+        endSeconds = Math.max(startSeconds + 0.01, Math.min(endSeconds, inputDurationSec))
+      }
+      const durationSeconds = Math.max(0.02, endSeconds - startSeconds)
       
       // Log each segment cut with text + duration
       console.log(`✂️ Cutting segment ${i + 1}/${validSegments.length}:`)
@@ -603,7 +571,7 @@ export async function createCleanVideoFromDecision(
         // Safe cutting with -ss start -to end and re-encoding
         let segmentCommand = ffmpeg(inputPath)
           .seekInput(startSeconds)
-          .inputOptions(['-to', endSeconds.toString()]) // Use -to end instead of duration
+          .duration(durationSeconds)
           .outputOptions([
             '-c:v', 'libx264',
             '-crf', '23',
@@ -681,62 +649,148 @@ export async function createCleanVideoFromDecision(
       throw new Error(`Failed to create concat list file: ${concatListPath}`)
     }
     
-    // Concatenate all segments via text list file
-    console.log('🔗 Concatenating segments via concat demuxer...')
+    // Concatenate all segments using filter_complex concat (more robust across platforms)
+    console.log('🔗 Concatenating segments via filter_complex concat...')
     
-    return new Promise((resolve, reject) => {
-      let command = ffmpeg()
-        .input(concatListPath)
-        .inputOptions(['-f', 'concat', '-safe', '0'])
-        .format(outputFormat)
-      
-      // Apply fade-in/out only if total duration > 1.0s
-      if (shouldApplyFades) {
-        const fadeDuration = Math.min(0.3, totalValidDuration / 10) // Max 0.3s fade, or 1/10 of total duration
-        console.log(`🎨 Applying fades: ${fadeDuration.toFixed(2)}s fade-in/out`)
-        
-        // Re-encode with fade filters
-        command = command
+    // Probe segments and include only those that have a video stream; detect audio presence overall
+    type ProbeInfo = { path: string; hasVideo: boolean; hasAudio: boolean }
+    const probes: ProbeInfo[] = await Promise.all(segmentPaths.map(p => new Promise<ProbeInfo>((resolve) => {
+      try {
+        ffmpeg.ffprobe(p, (err: any, data: any) => {
+          if (err) return resolve({ path: p, hasVideo: false, hasAudio: false })
+          const streams = Array.isArray(data?.streams) ? data.streams : []
+          const hasVideo = streams.some((s: any) => s.codec_type === 'video')
+          const hasAudio = streams.some((s: any) => s.codec_type === 'audio')
+          resolve({ path: p, hasVideo, hasAudio })
+        })
+      } catch {
+        resolve({ path: p, hasVideo: false, hasAudio: false })
+      }
+    })))
+    const included = probes.filter(p => p.hasVideo)
+    if (included.length === 0) {
+      console.warn('⚠️ Probe could not find video streams in segment files. Falling back to concat demuxer re-encode path...')
+      // Fallback: concat demuxer with re-encode (robust across mixed streams)
+      return new Promise((resolve, reject) => {
+        let command = ffmpeg()
+          .input(concatListPath)
+          .inputOptions(['-f', 'concat', '-safe', '0'])
           .outputOptions([
             '-c:v', 'libx264',
-            '-crf', '23', 
             '-preset', 'medium',
-            '-c:a', 'aac'
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-vsync', '2',
+            '-c:a', 'aac',
+            '-movflags', '+faststart'
           ])
-          .videoFilters([
+
+        if (shouldApplyFades) {
+          const fadeDuration = Math.min(0.3, totalValidDuration / 10)
+          command = command.videoFilters([
             `fade=t=in:st=0:d=${fadeDuration}`,
-            `fade=t=out:st=${totalValidDuration - fadeDuration}:d=${fadeDuration}`
+            `fade=t=out:st=${Math.max(0, totalValidDuration - fadeDuration)}:d=${fadeDuration}`
           ])
-      } else {
-        console.log(`🚫 No fades applied: total duration ${totalValidDuration.toFixed(1)}s ≤ 1.0s`)
-        // Use stream copy for faster processing
-        command = command.outputOptions(['-c', 'copy'])
+        }
+
+        command
+          .output(outputPath)
+          .on('start', (cmd: string) => {
+            console.log('🎬 Fallback concat demuxer command:', cmd.split(' ').slice(0, 25).join(' ') + '...')
+          })
+          .on('end', async () => {
+            try {
+              const outputBuffer = await readFile(outputPath)
+              const filesToCleanup = [inputPath, outputPath, concatListPath, ...segmentPaths, tmpDir]
+              await cleanupFiles(filesToCleanup)
+              resolve({
+                success: true,
+                outputBuffer: outputBuffer.buffer.slice(outputBuffer.byteOffset, outputBuffer.byteOffset + outputBuffer.byteLength),
+                outputMimeType: `video/${outputFormat}`,
+                outputFileName: `clean_video.${outputFormat}`,
+                editingStats: {
+                  originalDuration: originalDuration_s,
+                  finalDuration: finalDuration_s,
+                  segmentsKept: validSegments.length,
+                  segmentsRemoved: (((editingDecision as any).editingStats?.segmentsRemoved) || 0) + (allSegments.length - validSegments.length),
+                  reductionPercentage: ((originalDuration_s - finalDuration_s) / originalDuration_s) * 100,
+                  segmentsSkippedTooShort: allSegments.length - validSegments.length
+                }
+              })
+            } catch (error) {
+              console.error('❌ Error reading output file (fallback):', error)
+              const filesToCleanup = [inputPath, outputPath, concatListPath, ...segmentPaths, tmpDir]
+              await cleanupFiles(filesToCleanup)
+              reject(error)
+            }
+          })
+          .on('error', async (error: any) => {
+            console.error('❌ Fallback concat demuxer error:', error)
+            const filesToCleanup = [inputPath, outputPath, concatListPath, ...segmentPaths, tmpDir]
+            await cleanupFiles(filesToCleanup)
+            reject(error)
+          })
+          .run()
+      })
+    }
+    const allHaveAudio = included.every(p => p.hasAudio)
+
+    return new Promise((resolve, reject) => {
+      let command = ffmpeg()
+      // Add only valid video segments as inputs
+      included.forEach(p => { command = command.input(p.path) })
+
+      const n = included.length
+      // Build inputs array like ['0:v','0:a','1:v','1:a', ...] or only video if no audio
+      const inputs: string[] = []
+      for (let i = 0; i < n; i++) {
+        inputs.push(`${i}:v`)
+        if (allHaveAudio) inputs.push(`${i}:a`)
       }
-      
-      command
+
+      const outputs = allHaveAudio ? ['vcat', 'acat'] : ['vcat']
+      const filters: any[] = [
+        { filter: 'concat', options: { n, v: 1, a: allHaveAudio ? 1 : 0 }, inputs, outputs }
+      ]
+
+      // Optional fades on video output
+      let vOut = 'vcat'
+      if (shouldApplyFades) {
+        const fadeDuration = Math.min(0.3, totalValidDuration / 10)
+        filters.push({ filter: 'fade', options: { t: 'in', st: 0, d: fadeDuration }, inputs: 'vcat', outputs: 'vtmp' })
+        filters.push({ filter: 'fade', options: { t: 'out', st: Math.max(0, totalValidDuration - fadeDuration), d: fadeDuration }, inputs: 'vtmp', outputs: 'vout' })
+        vOut = 'vout'
+      }
+
+      command = command.complexFilter(filters)
+      const outOpts: string[] = [
+        '-map', `[${vOut}]`,
+        '-c:v', 'libx264',
+        '-preset', 'medium',
+        '-crf', '23',
+        '-vsync', '2',
+        '-movflags', '+faststart'
+      ]
+      if (allHaveAudio) {
+        outOpts.push('-map', '[acat]', '-c:a', 'aac')
+      } else {
+        outOpts.push('-an')
+      }
+
+      command = command
+        .outputOptions(outOpts)
         .output(outputPath)
-        .on('start', (cmd) => {
-          console.log('🎬 Final concat command:', cmd.split(' ').slice(0, 15).join(' ') + '...')
-          console.log(`📁 Working directory: ${process.cwd()}`)
-          console.log(`📄 Concat list: ${concatListPath}`)
+        .on('start', (cmd: string) => {
+          console.log('🎬 Final concat command:', cmd.split(' ').slice(0, 25).join(' ') + '...')
         })
-        .on('progress', (progress) => {
+        .on('progress', (progress: any) => {
           console.log(`⏳ Concatenating: ${progress.percent?.toFixed(1) || 0}%`)
-        })
-        .on('stderr', (stderrLine) => {
-          console.log(`🐛 FFmpeg stderr: ${stderrLine}`)
         })
         .on('end', async () => {
           try {
-            console.log('✅ Safe video cutting completed')
-            console.log(`📊 Final stats: ${validSegments.length} segments → ${totalValidDuration.toFixed(1)}s video`)
-            
             const outputBuffer = await readFile(outputPath)
-            
-            // Cleanup all temp files
             const filesToCleanup = [inputPath, outputPath, concatListPath, ...segmentPaths, tmpDir]
             await cleanupFiles(filesToCleanup)
-            
             resolve({
               success: true,
               outputBuffer: outputBuffer.buffer.slice(outputBuffer.byteOffset, outputBuffer.byteOffset + outputBuffer.byteLength),
@@ -758,8 +812,8 @@ export async function createCleanVideoFromDecision(
             reject(error)
           }
         })
-        .on('error', async (error) => {
-          console.error('❌ FFmpeg concatenation error:', error)
+        .on('error', async (error: any) => {
+          console.error('❌ FFmpeg concat filter error:', error)
           const filesToCleanup = [inputPath, outputPath, concatListPath, ...segmentPaths, tmpDir]
           await cleanupFiles(filesToCleanup)
           reject(error)

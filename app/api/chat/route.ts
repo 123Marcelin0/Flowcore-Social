@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { generateEmbedding } from '@/lib/openaiService';
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
+import { withErrorHandling, handleError } from '@/lib/error-handler';
 
 function getSupabaseService() {
 	const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -735,17 +736,30 @@ function buildContextString(context: any, query: string) {
 
 // POST /api/chat - Enhanced with full context memory
 export async function POST(request: NextRequest) {
-  try {
+  return withErrorHandling(async () => {
     console.log(`[CHAT DEBUG] Incoming request to /api/chat`);
     
     // 1. Authenticate the user
-    const authResult = await verifyAuth(request);
+    let authResult: any
+    try {
+      authResult = await verifyAuth(request);
+    } catch (authError: any) {
+      return handleError(
+        authError,
+        'AUTH_VERIFICATION_FAILED',
+        500,
+        { suggestion: 'Check authentication configuration' }
+      )
+    }
+    
     if (!authResult.authenticated) {
       console.log(`[CHAT DEBUG] Authentication failed:`, authResult.error);
-      return NextResponse.json(
-        { success: false, error: 'Anmeldung erforderlich' },
-        { status: 401 }
-      );
+      return handleError(
+        new Error('Authentication required'),
+        'AUTHENTICATION_REQUIRED',
+        401,
+        { suggestion: 'Please log in to continue' }
+      )
     }
 
     const user = authResult.user!;
@@ -967,7 +981,7 @@ Du bist mehr als ein Assistent - du bist ein vertrauter Partner im Social Media 
       model: 'gpt-4o',
       messages: messages,
       temperature: 0.7,
-      max_tokens: 1000,
+      max_completion_tokens: 1000,
       presence_penalty: 0.1,
       frequency_penalty: 0.1,
     });
@@ -1077,24 +1091,7 @@ Können Sie Ihre Frage spezifischer formulieren oder einen dieser Bereiche wähl
       },
     });
 
-  } catch (error: any) {
-    console.error('Chat API Error:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Ein Fehler ist aufgetreten beim Verarbeiten der Anfrage',
-        details: error.message 
-      },
-      { 
-        status: 500,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        },
-      }
-    );
-  }
+  }, 'chat-api')
 }
 
 // Handle preflight requests

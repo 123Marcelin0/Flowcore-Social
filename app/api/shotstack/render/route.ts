@@ -55,6 +55,24 @@ interface ShotstackRenderRequest {
     }>
   }
   projectName?: string
+  // EDL data for enhanced rendering with smooth animations
+  edlData?: {
+    clips: Array<{
+      id: string
+      startTime: number
+      endTime: number
+      duration: number
+      shotIntent: string
+      transition: string
+      confidence: number
+      reason: string
+    }>
+    statistics: {
+      originalDuration: number
+      finalDuration: number
+      reductionPercentage: number
+    }
+  }
   // Template-specific options
   templateOptions?: {
     imageUrls?: string[]
@@ -229,6 +247,367 @@ async function createEditFromTemplate(template: any, options: any = {}): Promise
     }
   }
 
+  return edit
+}
+
+/**
+ * Create enhanced video merge with smooth animations
+ */
+async function createEnhancedVideoMerge(
+  videoUrls: string[], 
+  outputFormat: string, 
+  outputResolution: string,
+  options: any = {}
+): Promise<any> {
+  console.log('🎬 Creating enhanced video merge with smooth animations')
+  
+  const clips: any[] = []
+  
+  // Get video durations
+  const videoDurations = await Promise.all(
+    videoUrls.map(url => getVideoDuration(url))
+  )
+  
+  console.log('📊 Video durations:', videoDurations)
+
+  // Add title if provided
+  if (options.title) {
+    clips.push({
+      asset: {
+        type: 'title',
+        text: options.title,
+        style: options.textStyle || 'blockbuster',
+        color: options.textColor || '#ffffff',
+        size: 'x-large',
+        position: 'center'
+      },
+      start: 0,
+      length: 2
+    })
+  }
+
+  // Calculate start times and add video clips with smooth animations
+  let currentStart = options.title ? 2 : 0
+  
+  videoUrls.forEach((url, index) => {
+    const clipDuration = videoDurations[index]
+    const isFirstVideo = index === 0
+
+    console.log(`🎬 Adding enhanced video clip ${index + 1}:`, {
+      url: url,
+      start: currentStart,
+      length: clipDuration
+    })
+
+    // Create video clip with smooth animations
+    const videoClip: any = {
+      asset: {
+        type: 'video',
+        src: url
+      },
+      start: currentStart,
+      length: clipDuration,
+      fit: 'cover'
+    }
+
+    // Add smooth transform animations based on shot intent
+    const shotIntent = options.shotIntents?.[index] || 'focus'
+    const transformConfig = generateTransformForShotIntent(shotIntent, clipDuration)
+    
+    if (transformConfig.hasAnimation) {
+      videoClip.transform = {
+        scale: transformConfig.startTransform.scale,
+        x: transformConfig.startTransform.translateX,
+        y: transformConfig.startTransform.translateY,
+        rotate: transformConfig.startTransform.rotate,
+        opacity: transformConfig.startTransform.opacity,
+        animations: transformConfig.animations
+      }
+    } else if (transformConfig.startTransform.scale !== 1) {
+      // Static transform if no animation
+      videoClip.transform = {
+        scale: transformConfig.startTransform.scale,
+        x: transformConfig.startTransform.translateX,
+        y: transformConfig.startTransform.translateY,
+        rotate: transformConfig.startTransform.rotate,
+        opacity: transformConfig.startTransform.opacity
+      }
+    }
+
+    // Add transitions
+    if (!isFirstVideo || options.title) {
+      videoClip.transition = {
+        in: options.transition || 'fade',
+        out: options.transition || 'fade'
+      }
+    }
+
+    clips.push(videoClip)
+    currentStart += clipDuration
+  })
+
+  console.log(`🎥 Created ${clips.length} enhanced clips with smooth animations`)
+
+  // Create track and timeline
+  const track = { clips: clips }
+  const timeline: any = {
+    tracks: [track],
+    background: options.backgroundColor || '#000000'
+  }
+
+  // Add soundtrack if provided
+  if (options.music) {
+    timeline.soundtrack = {
+      src: options.music,
+      effect: 'fadeInFadeOut',
+      volume: 0.1
+    }
+  }
+
+  // Determine aspect ratio and resolution
+  const aspectRatio = outputFormat === 'gif' ? '1:1' : (options.aspectRatio || '16:9')
+  let mappedResolution = outputResolution
+  if (outputResolution === 'full-hd') mappedResolution = 'hd'
+
+  const output = {
+    format: outputFormat,
+    resolution: mappedResolution,
+    aspectRatio: aspectRatio
+  }
+
+  const edit = {
+    timeline: timeline,
+    output: output
+  }
+
+  console.log('🔧 Enhanced edit configuration created with smooth animations')
+  return edit
+}
+
+/**
+ * Generate transform configuration for shot intent
+ */
+function generateTransformForShotIntent(shotIntent: string, duration: number): {
+  startTransform: any
+  hasAnimation: boolean
+  animations: any[]
+} {
+  const baseTransform = {
+    scale: 1.0,
+    translateX: 0,
+    translateY: 0,
+    rotate: 0,
+    opacity: 1
+  }
+
+  let startTransform = { ...baseTransform }
+  let animations: any[] = []
+
+  switch (shotIntent) {
+    case 'establish':
+      startTransform = { ...baseTransform, scale: 0.95 }
+      animations = [{
+        property: 'scale',
+        start: 0.95,
+        end: 1.05,
+        duration: duration,
+        easing: 'easeOut'
+      }]
+      break
+
+    case 'focus':
+      startTransform = { ...baseTransform, scale: 1.0 }
+      animations = [{
+        property: 'scale',
+        start: 1.0,
+        end: 1.08,
+        duration: duration,
+        easing: 'easeInOut'
+      }, {
+        property: 'y',
+        start: 0,
+        end: -5,
+        duration: duration,
+        easing: 'easeInOut'
+      }]
+      break
+
+    case 'emphasis':
+      startTransform = { ...baseTransform, scale: 1.0 }
+      animations = [{
+        property: 'scale',
+        start: 1.0,
+        end: 1.12,
+        duration: duration,
+        easing: 'easeInOut'
+      }, {
+        property: 'x',
+        start: 0,
+        end: 15,
+        duration: duration,
+        easing: 'easeInOut'
+      }]
+      break
+
+    case 'transition':
+      startTransform = { ...baseTransform, scale: 1.02, translateX: -20 }
+      animations = [{
+        property: 'x',
+        start: -20,
+        end: 20,
+        duration: duration,
+        easing: 'linear'
+      }]
+      break
+
+    default:
+      startTransform = { ...baseTransform, scale: 0.98 }
+      animations = [{
+        property: 'scale',
+        start: 0.98,
+        end: 1.02,
+        duration: duration,
+        easing: 'easeInOut'
+      }]
+  }
+
+  return {
+    startTransform,
+    hasAnimation: animations.length > 0,
+    animations
+  }
+}
+
+/**
+ * Create enhanced video merge from EDL data with smooth animations
+ */
+async function createEnhancedVideoMergeFromEDL(
+  videoUrls: string[], 
+  outputFormat: string, 
+  outputResolution: string,
+  edlData: any,
+  options: any = {}
+): Promise<any> {
+  console.log('🎬 Creating enhanced video merge from EDL with smooth animations')
+  
+  const clips: any[] = []
+  
+  // Add title if provided
+  if (options.title) {
+    clips.push({
+      asset: {
+        type: 'title',
+        text: options.title,
+        style: options.textStyle || 'blockbuster',
+        color: options.textColor || '#ffffff',
+        size: 'x-large',
+        position: 'center'
+      },
+      start: 0,
+      length: 2
+    })
+  }
+
+  // Process EDL clips with smooth animations
+  let currentStart = options.title ? 2 : 0
+  
+  for (let i = 0; i < edlData.clips.length; i++) {
+    const edlClip = edlData.clips[i]
+    const videoUrl = videoUrls[i] || videoUrls[0] // Fallback to first video if not enough URLs
+    
+    console.log(`🎬 Processing EDL clip ${i + 1}:`, {
+      id: edlClip.id,
+      shotIntent: edlClip.shotIntent,
+      duration: edlClip.duration,
+      startTime: edlClip.startTime
+    })
+
+    // Create video clip with EDL-based smooth animations
+    const videoClip: any = {
+      asset: {
+        type: 'video',
+        src: videoUrl
+      },
+      start: currentStart,
+      length: edlClip.duration,
+      fit: 'cover'
+    }
+
+    // Add smooth transform animations based on EDL shot intent
+    const transformConfig = generateTransformForShotIntent(edlClip.shotIntent, edlClip.duration)
+    
+    if (transformConfig.hasAnimation) {
+      videoClip.transform = {
+        scale: transformConfig.startTransform.scale,
+        x: transformConfig.startTransform.translateX,
+        y: transformConfig.startTransform.translateY,
+        rotate: transformConfig.startTransform.rotate,
+        opacity: transformConfig.startTransform.opacity,
+        animations: transformConfig.animations
+      }
+    } else if (transformConfig.startTransform.scale !== 1) {
+      // Static transform if no animation
+      videoClip.transform = {
+        scale: transformConfig.startTransform.scale,
+        x: transformConfig.startTransform.translateX,
+        y: transformConfig.startTransform.translateY,
+        rotate: transformConfig.startTransform.rotate,
+        opacity: transformConfig.startTransform.opacity
+      }
+    }
+
+    // Add transitions based on EDL transition type
+    if (i > 0 || options.title) {
+      const transitionType = edlClip.transition === 'fade' ? 'fade' :
+                           edlClip.transition === 'crossfade' ? 'fade' :
+                           edlClip.transition === 'dissolve' ? 'fade' :
+                           options.transition || 'fade'
+      
+      videoClip.transition = {
+        in: transitionType,
+        out: transitionType
+      }
+    }
+
+    clips.push(videoClip)
+    currentStart += edlClip.duration
+  }
+
+  console.log(`🎥 Created ${clips.length} enhanced clips from EDL with smooth animations`)
+
+  // Create track and timeline
+  const track = { clips: clips }
+  const timeline: any = {
+    tracks: [track],
+    background: options.backgroundColor || '#000000'
+  }
+
+  // Add soundtrack if provided
+  if (options.music) {
+    timeline.soundtrack = {
+      src: options.music,
+      effect: 'fadeInFadeOut',
+      volume: 0.1
+    }
+  }
+
+  // Determine aspect ratio and resolution
+  const aspectRatio = outputFormat === 'gif' ? '1:1' : (options.aspectRatio || '16:9')
+  let mappedResolution = outputResolution
+  if (outputResolution === 'full-hd') mappedResolution = 'hd'
+
+  const output = {
+    format: outputFormat,
+    resolution: mappedResolution,
+    aspectRatio: aspectRatio
+  }
+
+  const edit = {
+    timeline: timeline,
+    output: output
+  }
+
+  console.log('🔧 Enhanced EDL-based edit configuration created with smooth animations')
   return edit
 }
 
@@ -508,7 +887,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    editConfig = await createLegacyVideoMerge(videoUrls, outputFormat, outputResolution, templateOptions)
+    // Check if we have EDL data for enhanced rendering
+    if (body.edlData && body.edlData.clips && body.edlData.clips.length > 0) {
+      console.log('🎬 Using EDL data for enhanced rendering with smooth animations')
+      editConfig = await createEnhancedVideoMergeFromEDL(videoUrls, outputFormat, outputResolution, body.edlData, templateOptions)
+    } else {
+      console.log('🎬 Using legacy video merge')
+      editConfig = await createLegacyVideoMerge(videoUrls, outputFormat, outputResolution, templateOptions)
+    }
   } else {
     return NextResponse.json({ 
       error: 'No content provided for rendering',

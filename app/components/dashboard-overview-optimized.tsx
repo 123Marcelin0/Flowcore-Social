@@ -40,12 +40,14 @@ import { CalendarPopup } from "@/components/ui/calendar-popup"
 import { AIPostWorkflow } from "./ai-post-workflow"
 import { PostDetailPopup } from "./post-detail-popup"
 import { OptimizedAIChat } from "./optimized-ai-chat"
+import { DashboardButtonGroup } from "./dashboard-button-group"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { usePost } from "@/lib/post-context"
 import { useAuth } from "@/lib/auth-context"
 import { useDate } from "@/lib/date-context"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 
 // Enhanced Media Preview Component
 interface MediaPreviewProps {
@@ -290,12 +292,9 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
   const { user } = useAuth()
   const { state, actions } = usePost()
   const { state: dateState } = useDate()
+  const router = useRouter()
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>([])
   const [selectedStatus, setSelectedStatus] = useState<string>("Alle")
-  const [isAiChatOpen, setIsAiChatOpen] = useState(false)
-  const [chatMessage, setChatMessage] = useState("")
-  const [chatHistory, setChatHistory] = useState<Array<{id: string, type: 'user' | 'ai', message: string, timestamp: Date}>>([])
-  const [isTyping, setIsTyping] = useState(false)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [selectedInterval, setSelectedInterval] = useState<TimeInterval | undefined>()
   const [timeFilter, setTimeFilter] = useState("Zuletzt erstellt")
@@ -307,7 +306,7 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
-  const [postsPerPage] = useState(16) // 4x4 grid for optimal performance
+  const [postsPerPage] = useState(16) // 4x4 grid
 
   // Get posts from context and convert to component format
   const posts = useMemo(() => {
@@ -391,9 +390,6 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
     )
   }, [])
 
-  const handleAiToggle = useCallback(() => {
-    setIsAiChatOpen(!isAiChatOpen)
-  }, [isAiChatOpen])
 
   const handleOpenAiWorkflow = useCallback(() => {
     setIsAiWorkflowOpen(true)
@@ -432,52 +428,16 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
   }
 
   return (
-    <div className="h-full w-full overflow-y-auto p-8">
+    <div className="h-full w-full overflow-y-auto p-8 bg-transparent">
       {/* Top Header Section */}
-      <div className="max-w-[1400px] mx-auto pb-4">
+      <div className="max-w-[1200px] mx-auto pb-6">
         <div className="mb-4">
-          {/* Status Filter and Actions */}
-          <div className="w-full flex items-center justify-between mb-4">
-            <div className="w-32"></div>
-            
-            <div className="flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-0.5">
-              {["Alle", "Geplant", "Veröffentlicht", "In Bearbeitung"].map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setSelectedStatus(status)}
-                  className={`px-6 py-2.5 text-sm font-medium transition-all relative
-                    ${selectedStatus === status
-                      ? 'rounded-full bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200'
-                      : 'text-gray-600 hover:bg-gray-50 rounded-full'
-                    }`}
-                >
-                  {status}
-                </button>
-              ))}
-              <button 
-                onClick={handleAiToggle}
-                className={`px-4 py-2.5 rounded-full flex items-center gap-1 transition-all
-                  ${isAiChatOpen 
-                    ? 'bg-gradient-to-r from-teal-500/10 to-cyan-500/10 text-teal-600 border border-teal-200' 
-                    : 'text-gray-600 hover:bg-gray-50'
-                  }`}
-              >
-                <Search className="w-4 h-4" />
-                <Sparkles className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex justify-end w-32">
-              <Button 
-                onClick={handleOpenAiWorkflow}
-                size="default" 
-                className="h-10 text-sm gap-2 px-4 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 rounded-full"
-              >
-                <Plus className="w-4 h-4" />
-                Neuer Post
-              </Button>
-            </div>
-          </div>
+          <DashboardButtonGroup 
+            selectedStatus={selectedStatus}
+            setSelectedStatus={setSelectedStatus}
+            onOpenAiWorkflow={handleOpenAiWorkflow}
+            showAiWorkflowButton={true}
+          />
 
           {/* Platform Filter */}
           <div className="flex items-center justify-between mb-3">
@@ -494,8 +454,8 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
                   onClick={() => togglePlatform(value as Platform)}
                   className={`inline-flex items-center p-2 rounded-full border transition-all
                     ${selectedPlatforms.includes(value as Platform)
-                      ? 'bg-blue-50 text-blue-600 border-blue-200 shadow-sm'
-                      : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
+                      ? 'bg-white/30 text-white border-white/50 shadow-sm backdrop-blur-sm'
+                      : 'bg-white/10 text-white/70 border-white/20 hover:bg-white/20 hover:text-white'
                     }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -504,23 +464,18 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
             </div>
           </div>
 
-          {/* Optimized AI Chat */}
-          <OptimizedAIChat 
-            isOpen={isAiChatOpen}
-            onToggle={handleAiToggle}
-          />
         </div>
 
         {/* Main Content Area */}
-        <div className={`transition-all duration-300 ${isAiChatOpen ? 'mt-2' : 'mt-4'}`}>
+        <div className="transition-all duration-300 mt-8">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-medium text-gray-400">
+            <h2 className="text-xs font-medium text-white/60">
               Beiträge & Entwürfe
             </h2>
           <div className="flex items-center gap-4">
             {/* Pagination Info */}
             {filteredPosts.length > 0 && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-white/50">
                 {currentPage * postsPerPage - postsPerPage + 1}-{Math.min(currentPage * postsPerPage, filteredPosts.length)} von {filteredPosts.length} Beiträgen
               </span>
             )}
@@ -533,7 +488,7 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
                   size="sm"
                   onClick={handlePrevPage}
                   disabled={!hasPrevPage}
-                  className="h-8 w-8 p-0 rounded-full border-gray-200"
+                  className="h-8 w-8 p-0 rounded-full border-white/30 bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
@@ -559,8 +514,8 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
                         onClick={() => handlePageClick(pageNum)}
                         className={`h-8 w-8 p-0 rounded-full text-xs ${
                           currentPage === pageNum 
-                            ? 'bg-teal-500 text-white' 
-                            : 'text-gray-600 hover:bg-gray-100'
+                            ? 'bg-white/40 backdrop-blur-sm text-white border border-white/50' 
+                            : 'text-white/70 hover:bg-white/20 hover:text-white'
                         }`}
                       >
                         {pageNum}
@@ -574,7 +529,7 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
                   size="sm"
                   onClick={handleNextPage}
                   disabled={!hasNextPage}
-                  className="h-8 w-8 p-0 rounded-full border-gray-200"
+                  className="h-8 w-8 p-0 rounded-full border-white/30 bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </Button>
@@ -583,115 +538,97 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
           </div>
         </div>
 
-        {/* Post Grid - Optimized with pagination */}
-        <div className="grid grid-cols-4 gap-3 pb-4">
+        {/* Post Grid - Clean, minimal card design */}
+        <div className="grid grid-cols-4 gap-8 pb-8 max-w-6xl mx-auto">
           {paginatedPosts.map((post) => (
             <Card 
               key={post.id} 
-              className="overflow-hidden group border border-gray-100 shadow-sm bg-white hover:shadow-md transition-all duration-300 rounded-2xl cursor-pointer"
+              className="group border-0 shadow-lg bg-white/95 hover:shadow-2xl transition-all duration-300 rounded-[2rem] cursor-pointer relative"
               onClick={() => handlePostClick(post)}
             >
-              {/* Media Preview */}
-              <div className="aspect-video relative bg-gray-50 rounded-t-2xl overflow-hidden">
-                {/* Media Type Indicator */}
-                <div className="absolute top-2 left-2 z-10">
-                  {post.mediaType === 'video' && (
-                    <div className="bg-black/80 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1.5">
-                      <Play className="w-3 h-3" />
-                      VIDEO
-                    </div>
-                  )}
-                  {post.mediaType === 'carousel' && (
-                    <div className="bg-black/80 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1.5">
-                      <ImageIcon className="w-3 h-3" />
-                      {post.mediaUrls.length} PHOTOS
-                    </div>
-                  )}
-                </div>
-
-                <MediaPreview 
-                  src={post.media}
-                  mediaUrls={post.mediaUrls}
-                  mediaType={post.mediaType}
-                  alt={`${post.mediaType} preview`}
-                  className={`object-cover w-full h-full transition-transform duration-300 group-hover:scale-105`}
-                />
-
-                {/* Status Badge */}
-                <div className="absolute top-3 right-3">
-                  <Badge 
-                    className={`${
-                      post.status === 'published' 
-                        ? 'bg-green-50/90 text-green-600 border-green-200' 
-                        : post.status === 'scheduled'
-                        ? 'bg-blue-50/90 text-blue-600 border-blue-200'
-                        : post.status === 'draft'
-                        ? 'bg-gray-50/90 text-gray-600 border-gray-200'
-                        : 'bg-red-50/90 text-red-600 border-red-200'
-                    } text-xs px-2.5 py-1 rounded-full border shadow-sm backdrop-blur-sm`}
-                  >
-                    {post.status === 'published' ? 'Veröffentlicht' : 
-                     post.status === 'scheduled' ? 'Geplant' : 
-                     post.status === 'draft' ? 'Entwurf' : 'Fehlgeschlagen'}
-                  </Badge>
-                </div>
-              </div>
-
-              {/* Content Preview */}
-              <div className="p-4">
-                <div className="flex items-center gap-1.5 mb-3">
-                  {post.platforms.slice(0, 4).map((platform) => {
-                    const Icon = {
-                      instagram: Instagram,
-                      facebook: Facebook,
-                      twitter: Twitter,
-                      linkedin: Linkedin,
-                      tiktok: Video
-                    }[platform]
-                    return (
-                      <div
-                        key={platform}
-                        className="w-6 h-6 bg-gray-50 rounded-full flex items-center justify-center"
-                      >
-                        {Icon && <Icon className="w-3.5 h-3.5 text-gray-600" />}
-                      </div>
-                    )
-                  })}
-                  <span className="text-xs text-gray-500 ml-auto">
-                    {new Date(post.date).toLocaleDateString('de-DE', { 
-                      day: '2-digit', 
-                      month: '2-digit' 
-                    })}
-                  </span>
-                </div>
-                
-                <p className="text-sm text-gray-700 mb-4 line-clamp-3 leading-relaxed">
-                  {post.text}
-                </p>
-                
-                {/* Metrics */}
-                {(post.likes || post.comments || post.views) && (
-                  <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
-                    {post.likes && post.likes > 0 && (
-                      <div className="flex items-center gap-1">
-                        <Heart className="w-3 h-3" />
-                        {post.likes.toLocaleString()}
-                      </div>
-                    )}
-                    {post.comments && post.comments > 0 && (
-                      <div className="flex items-center gap-1">
-                        <MessageCircle className="w-3 h-3" />
-                        {post.comments.toLocaleString()}
-                      </div>
-                    )}
-                    {post.views && post.views > 0 && (
-                      <div className="flex items-center gap-1">
-                        <Play className="w-3 h-3" />
-                        {post.views.toLocaleString()}
-                      </div>
-                    )}
+              {/* Card Container with Padding */}
+              <div className="p-2.5">
+                {/* Media Preview - Tall rectangle with padding from borders */}
+                <div className="aspect-[3/4] relative rounded-[1.5rem] overflow-hidden bg-gray-100">
+                  <MediaPreview 
+                    src={post.media}
+                    mediaUrls={post.mediaUrls}
+                    mediaType={post.mediaType}
+                    alt={`${post.mediaType} preview`}
+                    className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
+                  />
+                  
+                  {/* Date at top left with glowing transparent white effect */}
+                  <div className="absolute top-3 left-3">
+                    <h3 
+                      className="text-white font-semibold text-base"
+                      style={{
+                        textShadow: '0 0 20px rgba(255, 255, 255, 0.8), 0 0 40px rgba(255, 255, 255, 0.4)',
+                        color: 'rgba(255, 255, 255, 0.95)'
+                      }}
+                    >
+                      {new Date(post.date).toLocaleDateString('de-DE', { 
+                        day: '2-digit', 
+                        month: '2-digit'
+                      })}
+                    </h3>
                   </div>
-                )}
+
+                  {/* Platform icons in top right */}
+                  <div className="absolute top-3 right-3 flex gap-1">
+                    {post.platforms.slice(0, 2).map((platform) => {
+                      const Icon = {
+                        instagram: Instagram,
+                        facebook: Facebook,
+                        twitter: Twitter,
+                        linkedin: Linkedin,
+                        tiktok: Video
+                      }[platform]
+                      return (
+                        <div
+                          key={platform}
+                          className="w-6 h-6 bg-white/25 rounded-full flex items-center justify-center"
+                        >
+                          {Icon && <Icon className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Status indicator at bottom right */}
+                  <div className="absolute bottom-3 right-3">
+                    <div className="text-xs text-white/80 bg-black/30 px-2 py-1 rounded-full">
+                      {post.status === 'published' ? 'Live' : 
+                       post.status === 'scheduled' ? 'Geplant' : 
+                       post.status === 'draft' ? 'Entwurf' : 'Status'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Simple content preview below image */}
+                <div className="pt-3">
+                  <p className="text-gray-600 text-sm line-clamp-2 leading-relaxed">
+                    {post.text.substring(0, 100)}{post.text.length > 100 ? '...' : ''}
+                  </p>
+                  
+                  {/* Minimal metrics - only show if values > 0 */}
+                  {((post.likes && post.likes > 0) || (post.comments && post.comments > 0)) && (
+                    <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                      {post.likes && post.likes > 0 && (
+                        <div className="flex items-center gap-1">
+                          <Heart className="w-3 h-3" />
+                          {post.likes}
+                        </div>
+                      )}
+                      {post.comments && post.comments > 0 && (
+                        <div className="flex items-center gap-1">
+                          <MessageCircle className="w-3 h-3" />
+                          {post.comments}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </Card>
           ))}
@@ -724,13 +661,14 @@ export const DashboardOverviewOptimized = memo(function DashboardOverviewOptimiz
             <Button
               variant="outline"
               onClick={handleNextPage}
-              className="gap-2 rounded-full border-gray-200 hover:bg-gray-50"
+              className="gap-2 rounded-full border-white/30 bg-white/10 text-white/80 hover:bg-white/20 hover:text-white"
             >
               Weitere Beiträge laden ({filteredPosts.length - currentPage * postsPerPage} verbleibend)
               <ChevronDown className="w-4 h-4" />
             </Button>
           </div>
         )}
+
         </div>
       </div>
 

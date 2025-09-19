@@ -45,12 +45,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('🎬 Starting updated speaker-to-camera pipeline for uploadId:', uploadId)
+    console.log('🎬 Starting enhanced speaker-to-camera pipeline for uploadId:', uploadId)
     console.log('📝 Script provided:', !!script)
     console.log('🎨 Output quality:', outputQuality)
     console.log('📄 Generate files:', generateFiles)
     console.log('📱 Instagram format:', instagramFormat)
     console.log('🚫 Skip subtitles:', skipSubtitles)
+    console.log('🔧 Enhanced pipeline features: EDL generation, keyframe transforms, auto-fix passes')
     
     // Add timeout handling
     const timeoutPromise = new Promise((_, reject) => {

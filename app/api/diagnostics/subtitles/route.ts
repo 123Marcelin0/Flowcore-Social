@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
-import { SubtitleProcessor } from '@/lib/subtitle-processor'
+// Centralized subtitles: Keep minimal util import for diagnostics only
+import { generateSubtitlesFromScript } from '@/lib/subtitle-utils'
 import { extractAudioServerSide } from '@/lib/server-audio-extractor-ffmpeg'
 import os from 'os'
 import path from 'path'
@@ -53,17 +54,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const proc = new SubtitleProcessor({ enableDynamicProgramming: true })
-    const chunks = proc.process(wordList)
+    // Create basic video segments for subtitle generation
+    const videoSegments = segments.map((seg: any) => ({
+      start_ms: Number(seg.start || 0) * 1000,
+      end_ms: Number(seg.end || 0) * 1000,
+      keep: true
+    }))
+    
+    const scriptText = segments.map((seg: any) => seg.text || '').join(' ')
+    const chunks = generateSubtitlesFromScript(videoSegments, scriptText)
 
     const stats = {
       hasWordTiming: Array.isArray(words) && words.length > 0,
       segmentCount: segments.length || 0,
       wordCount: wordList.length,
       chunkCount: chunks.length,
-      avgChunkDuration: chunks.length ? (chunks.reduce((s, c) => s + (c.end - c.start), 0) / chunks.length) : 0,
-      avgCharsPerChunk: chunks.length ? (chunks.reduce((s, c) => s + (c.text || '').replace(/\n/g, ' ').length, 0) / chunks.length) : 0,
-      twoLineShare: chunks.length ? (chunks.filter(c => (c.text || '').includes('\n')).length / chunks.length) : 0
+      avgChunkDuration: chunks.length ? (chunks.reduce((s, c) => s + ((c.end_ms - c.start_ms) / 1000), 0) / chunks.length) : 0,
+      avgCharsPerChunk: chunks.length ? (chunks.reduce((s, c) => s + (c.text || '').length, 0) / chunks.length) : 0,
+      twoLineShare: 0 // Simplified approach doesn't use multi-line chunks
     }
 
     let vad: any = null
@@ -80,7 +88,13 @@ export async function POST(request: NextRequest) {
         await fs.promises.writeFile(tmpPath, audioBuf)
 
         const args = ['-i', tmpPath, '-af', 'silencedetect=n=-30dB:d=0.2', '-f', 'null', '-']
-        const ff = spawn(process.env.FFMPEG_PATH || 'ffmpeg', args)
+        let ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg'
+        try {
+          const mod: any = await import('@ffmpeg-installer/ffmpeg')
+          const installerPath = mod?.default?.path || mod?.path
+          if (installerPath) ffmpegPath = installerPath
+        } catch {}
+        const ff = spawn(ffmpegPath, args)
         let stderr = ''
         ff.stderr.on('data', (d) => { stderr += d.toString() })
         await new Promise<void>((resolve) => ff.on('close', () => resolve()))
@@ -125,6 +139,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 })
   }
 }
+
+
+
+
+
+
+
+
+
 
 
 
